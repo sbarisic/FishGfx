@@ -10,9 +10,9 @@ https://github.com/luca-piccioni/OpenGL.Net
 * Tile maps
 * Text
 * Basic drawing library
-** Lines
-** Circles
-** Rectangles
+	* Lines
+	* Circles
+	* Rectangles
 * Scissoring
 * Stencil buffer
 * Framebuffers
