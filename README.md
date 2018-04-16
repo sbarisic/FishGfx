@@ -9,7 +9,7 @@ https://github.com/luca-piccioni/OpenGL.Net
 * Sprites
 * Tile maps
 * Text
-* Basic drawing library
+* Basic drawing library (filled and outline [with thickness])
 	* Lines
 	* Circles
 	* Rectangles
@@ -18,4 +18,5 @@ https://github.com/luca-piccioni/OpenGL.Net
 * Scissoring
 * Stencil buffer
 * Framebuffers
+* Command buffers
 * Shaders
