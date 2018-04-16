@@ -54,6 +54,7 @@
     <Compile Include="Glfw3\Glfw.Delegate.cs" />
     <Compile Include="Glfw3\Glfw.Enum.cs" />
     <Compile Include="Glfw3\Glfw.Func.cs" />
+    <Compile Include="Graphics\CommandList.cs" />
     <Compile Include="Graphics\Gfx.cs" />
     <Compile Include="Graphics\RenderWindow.cs" />
     <Compile Include="OGL_Graphics\BufferObject.cs" />

@@ -14,7 +14,11 @@ namespace FishGfx.Graphics {
 		}
 
 		public static void Line(Vertex2 Start, Vertex2 End) {
+			// TODO
+		}
 
+		public static void Line(CommandList List, Vertex2 Start, Vertex2 End) {
+			// TODO
 		}
 	}
 }
