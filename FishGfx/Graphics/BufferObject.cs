@@ -7,8 +7,20 @@ using OpenGL;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace FishGfx.OGL_Graphics {
-	internal unsafe class BufferObject : GraphicsObject {
+namespace FishGfx.Graphics {
+	public enum BufferUsage {
+		StreamDraw = 35040,
+		StreamRead = 35041,
+		StreamCopy = 35042,
+		StaticDraw = 35044,
+		StaticRead = 35045,
+		StaticCopy = 35046,
+		DynamicDraw = 35048,
+		DynamicRead = 35049,
+		DynamicCopy = 35050
+	}
+
+	public unsafe class BufferObject : GraphicsObject {
 		public int Size { get; private set; }
 		public int ElementCount { get; private set; }
 
@@ -19,7 +31,7 @@ namespace FishGfx.OGL_Graphics {
 		public void SetData(uint Size, IntPtr Data, BufferUsage Usage = BufferUsage.DynamicDraw) {
 			this.Size = (int)Size;
 
-			Gl.NamedBufferData(ID, Size, Data, Usage);
+			Gl.NamedBufferData(ID, Size, Data, (OpenGL.BufferUsage)Usage);
 		}
 
 		public void SetData<T>(T[] Data, BufferUsage Usage = BufferUsage.DynamicDraw) where T : struct {

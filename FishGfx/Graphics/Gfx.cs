@@ -10,6 +10,7 @@ using System.Numerics;
 namespace FishGfx.Graphics {
 	public static class Gfx {
 		public static void Clear() {
+			Gl.ClearColor(69 / 255.0f, 112 / 255.0f, 56 / 255.0f, 1.0f);
 			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 		}
 

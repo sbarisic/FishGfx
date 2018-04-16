@@ -7,7 +7,6 @@ using OpenGL;
 using System.IO;
 using Vector2 = System.Numerics.Vector2;
 using Matrix4 = System.Numerics.Matrix4x4;
-using FishGfx.OGL_Graphics;
 
 namespace FishGfx.Graphics {
 	public enum ShaderType {
@@ -22,6 +21,14 @@ namespace FishGfx.Graphics {
 	public struct ShaderUniforms {
 		public Vector2 Viewport;
 		public Matrix4 View, Project;
+
+		public static ShaderUniforms CreateIdentity() {
+			ShaderUniforms U = new ShaderUniforms();
+			U.Viewport = new Vector2(1, 1);
+			U.View = Matrix4.Identity;
+			U.Project = Matrix4.Identity;
+			return U;
+		}
 	}
 
 	public class ShaderProgram : GraphicsObject {
@@ -66,7 +73,7 @@ namespace FishGfx.Graphics {
 				new ShaderStage(ShaderType.FragmentShader, "content/shaders/gui.frag"));
 		}*/
 
-		public ShaderUniforms Uniforms;
+		public ShaderUniforms Uniforms = ShaderUniforms.CreateIdentity();
 
 		List<ShaderStage> ShaderStages;
 		Dictionary<string, int> UniformLocations;

@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using OpenGL;
 
-namespace FishGfx.OGL_Graphics {
+namespace FishGfx.Graphics {
 	public abstract class GraphicsObject {
 		public uint ID;
 

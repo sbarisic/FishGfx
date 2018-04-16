@@ -14,5 +14,9 @@ namespace FishGfx {
 		public static readonly Color Blue = new Color() { R = 0, G = 0, B = 255, A = 255 };
 
 		public byte R, G, B, A;
+
+		public static Color Clamp(Color C, IEnumerable<Color> Palette) {
+			return Color.White; // TODO
+		}
 	}
 }

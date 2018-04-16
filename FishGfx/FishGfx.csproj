@@ -40,6 +40,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -55,10 +56,14 @@
     <Compile Include="Glfw3\Glfw.Enum.cs" />
     <Compile Include="Glfw3\Glfw.Func.cs" />
     <Compile Include="Graphics\CommandList.cs" />
+    <Compile Include="Graphics\Drawables\IDrawable.cs" />
+    <Compile Include="Graphics\Drawables\Mesh2D.cs" />
+    <Compile Include="Graphics\Texture.cs" />
     <Compile Include="Graphics\Gfx.cs" />
     <Compile Include="Graphics\RenderWindow.cs" />
-    <Compile Include="OGL_Graphics\BufferObject.cs" />
-    <Compile Include="OGL_Graphics\GraphicsObject.cs" />
+    <Compile Include="Graphics\VertexArray.cs" />
+    <Compile Include="Graphics\BufferObject.cs" />
+    <Compile Include="Graphics\GraphicsObject.cs" />
     <Compile Include="Graphics\ShaderProgram.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="System\Events.cs" />
@@ -67,9 +72,18 @@
   <ItemGroup />
   <ItemGroup>
     <Compile Include="Glfw3\Glfw.Struct.cs" />
+    <None Include="data\default.frag">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\default.vert">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="data\quake.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="glfw3.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
