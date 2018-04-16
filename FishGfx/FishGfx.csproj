@@ -49,6 +49,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Color.cs" />
     <Compile Include="Glfw3\Glfw.cs" />
     <Compile Include="Glfw3\Glfw.Delegate.cs" />
     <Compile Include="Glfw3\Glfw.Enum.cs" />
@@ -60,6 +61,7 @@
     <Compile Include="Graphics\ShaderProgram.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="System\Events.cs" />
+    <Compile Include="Vertex2.cs" />
   </ItemGroup>
   <ItemGroup />
   <ItemGroup>
