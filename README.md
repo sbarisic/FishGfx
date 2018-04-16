@@ -13,6 +13,8 @@ https://github.com/luca-piccioni/OpenGL.Net
 	* Lines
 	* Circles
 	* Rectangles
+	* Ellipses
+	* Curves (quadratic, bézier)
 * Scissoring
 * Stencil buffer
 * Framebuffers
