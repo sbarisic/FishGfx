@@ -27,7 +27,7 @@ namespace FishGfx.Graphics {
 		BufferTarget Target;
 
 		public BufferObject() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				ID = Gl.CreateBuffer();
 			else {
 				ID = Gl.GenBuffer();
@@ -36,14 +36,14 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void Bind() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
 
 			Gl.BindBuffer(Target, ID);
 		}
 
 		public override void Unbind() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
 
 			Gl.BindBuffer(Target, 0);
@@ -52,7 +52,7 @@ namespace FishGfx.Graphics {
 		public void SetData(uint Size, IntPtr Data, BufferUsage Usage = BufferUsage.DynamicDraw) {
 			this.Size = (int)Size;
 
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.NamedBufferData(ID, Size, Data, (OpenGL.BufferUsage)Usage);
 			else {
 				Bind();
@@ -72,7 +72,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void GraphicsDispose() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.UnmapNamedBuffer(ID);
 			else
 				Gl.UnmapBuffer(Target);

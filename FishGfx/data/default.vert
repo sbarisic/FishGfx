@@ -11,12 +11,6 @@ uniform mat4 Model;
 uniform mat4 View;
 uniform mat4 Project;
 
-out gl_PerVertex {
-	vec4 gl_Position;
-	float gl_PointSize;
-	float gl_ClipDistance[];
-};
-
 void main() {
 	frag_Clr = Clr;
 	frag_UV = UV;

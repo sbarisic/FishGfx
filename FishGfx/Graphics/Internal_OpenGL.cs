@@ -8,17 +8,17 @@ using System.Text;
 using System.Threading.Tasks;
 using Glfw3;
 using OpenGL;
+using FishGfx.System;
 
 namespace FishGfx.Graphics {
 	internal static unsafe class Internal_OpenGL {
 		static bool GLFWInitialized = false;
 		static bool OpenGLInitialized = false;
 
-		public static bool SupportsDSA {
-			get; private set;
-		}
+		public static string[] Extensions { get; private set; }
+		public static string Version { get; private set; }
 
-		public static bool Is45 {
+		public static bool Is45OrAbove {
 			get; private set;
 		}
 
@@ -52,8 +52,8 @@ namespace FishGfx.Graphics {
 			OpenGLInitialized = true;
 #if DEBUG
 			Gl.DebugMessageCallback((Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
-				if (Severity == Gl.DebugSeverity.Notification)
-					return;
+				/*if (Severity == Gl.DebugSeverity.Notification)
+					return;*/
 
 				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
 				Console.WriteLine(Encoding.ASCII.GetString((byte*)Buffer, Len));
@@ -67,11 +67,27 @@ namespace FishGfx.Graphics {
 #endif
 
 			Khronos.KhronosVersion Ver = Gl.QueryContextVersion();
-			Is45 = Ver.Major == 4 && Ver.Minor == 5;
+			Is45OrAbove = ((Ver.Major == 4 && Ver.Minor >= 5) || Ver.Major > 4);
+			Version = Ver.ToString();
 
-			Gl.Extensions Extensions = new Gl.Extensions();
-			Extensions.Query();
-			SupportsDSA = Extensions.DirectStateAccess_ARB || Extensions.DirectStateAccess_EXT;
+			Gl.Extensions Exts = new Gl.Extensions();
+			Exts.Query();
+
+			List<string> SupportedExtensions = new List<string>();
+			FieldInfo[] Fields = typeof(Gl.Extensions).GetFields();
+			foreach (var F in Fields) {
+				if ((bool)F.GetValue(Exts))
+					SupportedExtensions.Add(F.Name);
+			}
+
+			Extensions = SupportedExtensions.ToArray();
+
+			string Renderer = Gl.GetString(StringName.Renderer);
+			string GLSLVer = Gl.GetString(StringName.ShadingLanguageVersion);
+			string Vendor = Gl.GetString(StringName.Vendor);
+			string Vers = Gl.GetString(StringName.Version);
+
+			RenderAPI.Renderer = string.Format("{0} by {1}; GL {2}; GLSL {3}", Renderer, Vendor, Vers, GLSLVer);
 		}
 
 		public static void ResetGLState() {
@@ -79,14 +95,15 @@ namespace FishGfx.Graphics {
 
 			Gl.FrontFace(FrontFaceDirection.Cw);
 			Gl.CullFace(CullFaceMode.Back);
-			Gl.Enable(EnableCap.CullFace);
+			//Gl.Enable(EnableCap.CullFace);
+			Gl.Disable(EnableCap.CullFace);
 
-			Gl.Enable(EnableCap.Blend);
 			//Gl.BlendEquationSeparate(BlendEquationMode.FuncAdd, BlendEquationMode.FuncAdd);
 			//Gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
 			Gl.BlendEquation(BlendEquationMode.FuncAdd);
 			Gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+			Gl.Enable(EnableCap.Blend);
 		}
 	}
 }

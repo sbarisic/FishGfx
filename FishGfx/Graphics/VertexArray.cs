@@ -39,7 +39,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public VertexArray() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				ID = Gl.CreateVertexArray();
 			else
 				ID = Gl.GenVertexArray();
@@ -82,10 +82,11 @@ namespace FishGfx.Graphics {
 				BindingIndex = FreeBindingIndex++;
 
 			if (Obj != null) {
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.VertexArrayVertexBuffer(ID, (uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
 				else {
 					Bind();
+					Obj.Bind();
 					Gl.BindVertexBuffer((uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
 					Unbind();
 				}
@@ -99,7 +100,7 @@ namespace FishGfx.Graphics {
 
 			uint ObjID = Obj != null ? Obj.ID : 0;
 
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.VertexArrayElementBuffer(ID, ObjID);
 			else {
 				Bind();
@@ -110,7 +111,7 @@ namespace FishGfx.Graphics {
 
 		public void AttribEnable(uint AttribIdx, bool Enable = true) {
 			if (Enable) {
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.EnableVertexArrayAttrib(ID, AttribIdx);
 				else {
 					Bind();
@@ -118,7 +119,7 @@ namespace FishGfx.Graphics {
 					Unbind();
 				}
 			} else {
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.DisableVertexArrayAttrib(ID, AttribIdx);
 				else {
 					Bind();
@@ -129,7 +130,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public void AttribFormat(uint AttribIdx, int Size = 3, VertexAttribType AttribType = VertexAttribType.Float, bool Normalized = false, uint RelativeOffset = 0) {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.VertexArrayAttribFormat(ID, AttribIdx, Size, AttribType, Normalized, RelativeOffset);
 			else {
 				Bind();
@@ -141,7 +142,7 @@ namespace FishGfx.Graphics {
 		public void AttribBinding(uint AttribIdx, uint BindingIdx) {
 			AttribEnable(AttribIdx);
 
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.VertexArrayAttribBinding(ID, AttribIdx, BindingIdx);
 			else {
 				Bind();

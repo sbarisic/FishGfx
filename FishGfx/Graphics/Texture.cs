@@ -33,7 +33,7 @@ namespace FishGfx.Graphics {
 		private Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8) {
 			this.Target = Target;
 
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				ID = Gl.CreateTexture(Target);
 			else
 				ID = Gl.GenTexture();
@@ -55,7 +55,7 @@ namespace FishGfx.Graphics {
 		private void TextureParam(TextureParameterName ParamName, object Val) {
 			if (Val is int) {
 
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.TextureParameter(ID, ParamName, (int)Val);
 				else {
 					Bind();
@@ -65,7 +65,7 @@ namespace FishGfx.Graphics {
 
 			} else if (Val is float) {
 
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.TextureParameter(ID, ParamName, (float)Val);
 				else {
 					Bind();
@@ -92,7 +92,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public void SetMaxAnisotropy() {
-			if (!Internal_OpenGL.Is45)
+			if (!Internal_OpenGL.Is45OrAbove)
 				return;
 
 			Gl.Get(Gl.MAX_TEXTURE_MAX_ANISOTROPY, out float Max);
@@ -105,7 +105,7 @@ namespace FishGfx.Graphics {
 			MipLevels = Levels;
 
 			if (Multisampled) {
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.TextureStorage2DMultisample(ID, Multisamples, IntFormat, W, H, false);
 				else {
 					Bind();
@@ -113,7 +113,7 @@ namespace FishGfx.Graphics {
 					Unbind();
 				}
 			} else {
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.TextureStorage2D(ID, Levels, IntFormat, W, H);
 				else {
 					Bind();
@@ -132,7 +132,7 @@ namespace FishGfx.Graphics {
 					throw new Exception("Invalid Z/D parameter for cubemap");
 #endif
 
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.TextureSubImage2D(ID, Level, X, Y, W, H, PFormat, PType, Pixels);
 				else {
 					Bind();
@@ -141,7 +141,7 @@ namespace FishGfx.Graphics {
 				}
 
 			} else {
-				if (Internal_OpenGL.Is45)
+				if (Internal_OpenGL.Is45OrAbove)
 					Gl.TextureSubImage3D(ID, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
 				else {
 					Bind();
@@ -183,7 +183,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public void BindTextureUnit(uint Unit = 0) {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.BindTextureUnit(Unit, ID);
 			else {
 				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
@@ -192,7 +192,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public void UnbindTextureUnit(uint Unit = 0) {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.BindTextureUnit(Unit, 0);
 			else {
 				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
@@ -201,21 +201,21 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void Bind() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("This function is not used in OpenGL 4.5");
 
 			Gl.BindTexture(TextureTarget.Texture2d, ID);
 		}
 
 		public override void Unbind() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("This function is not used in OpenGL 4.5");
 
 			Gl.BindTexture(TextureTarget.Texture2d, 0);
 		}
 
 		public void GenerateMipmap() {
-			if (Internal_OpenGL.Is45)
+			if (Internal_OpenGL.Is45OrAbove)
 				Gl.GenerateTextureMipmap(ID);
 			else
 				Gl.GenerateMipmap(Target);

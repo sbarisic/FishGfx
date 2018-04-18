@@ -27,7 +27,7 @@ namespace FishGfx.Graphics {
 			Glfw.WindowHint(Glfw.Hint.ClientApi, Glfw.ClientApi.OpenGL);
 			Glfw.WindowHint(Glfw.Hint.ContextCreationApi, Glfw.ContextApi.Native);
 			Glfw.WindowHint(Glfw.Hint.OpenglProfile, Glfw.OpenGLProfile.Core);
-			Glfw.WindowHint(Glfw.Hint.OpenglForwardCompat, true);
+			Glfw.WindowHint(Glfw.Hint.OpenglForwardCompat, false);
 #if DEBUG
 			Glfw.WindowHint(Glfw.Hint.OpenglDebugContext, true);
 #endif

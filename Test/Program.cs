@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
 using System.Numerics;
 
 using FishGfx;
@@ -14,6 +15,12 @@ namespace Test {
 	class Program {
 		static void Main(string[] args) {
 			RenderWindow RWind = new RenderWindow(800, 600, "FishGfx Test");
+
+#if DEBUG
+			Console.WriteLine("Running {0}", RenderAPI.Version);
+			Console.WriteLine(RenderAPI.Renderer);
+			File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
+#endif
 
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
