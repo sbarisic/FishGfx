@@ -30,25 +30,40 @@ namespace Test {
 			Texture QTex = Texture.FromFile("data/quake.png");
 			QTex.SetFilterSmooth();
 
-			Mesh2D Msh = new Mesh2D();
-			Msh.PrimitiveType = PrimitiveType.Triangles;
+			Texture Tex2 = Texture.FromFile("data/opengl.png");
+			Tex2.SetFilterSmooth();
 
-			Msh.SetVertices(new Vector2[] {
-				new Vector2(0, 0),
-				new Vector2(0, 600),
-				new Vector2(800, 600),
-				new Vector2(0, 0),
-				new Vector2(800, 600),
-				new Vector2(800, 0)
-			});
-
-			Msh.SetUVs(new Vector2[] {
+			Vector2[] UVs = new Vector2[] {
 				new Vector2(0, 0),
 				new Vector2(0, 1),
 				new Vector2(1, 1),
 				new Vector2(0, 0),
 				new Vector2(1, 1),
 				new Vector2(1, 0)
+			};
+
+			Mesh2D Msh1 = new Mesh2D();
+			Msh1.SetUVs(UVs);
+
+			Msh1.SetVertices(new Vector2[] {
+				new Vector2(0, 0),
+				new Vector2(0, 600),
+				new Vector2(400, 600),
+				new Vector2(0, 0),
+				new Vector2(400, 600),
+				new Vector2(400, 0)
+			});
+
+			Mesh2D Msh2 = new Mesh2D();
+			Msh2.SetUVs(UVs);
+
+			Msh2.SetVertices(new Vector2[] {
+				new Vector2(400, 0),
+				new Vector2(400, 600),
+				new Vector2(800, 600),
+				new Vector2(400, 0),
+				new Vector2(800, 600),
+				new Vector2(800, 0)
 			});
 
 			while (!RWind.ShouldClose) {
@@ -56,9 +71,15 @@ namespace Test {
 				//Gfx.Line(new Vector2(0, 0), new Vector2(100, 100));
 
 				Default.Bind();
+
 				QTex.BindTextureUnit();
-				Msh.Draw();
+				Msh1.Draw();
 				QTex.UnbindTextureUnit();
+
+				Tex2.BindTextureUnit();
+				Msh2.Draw();
+				Tex2.UnbindTextureUnit();
+
 				Default.Unbind();
 
 				RWind.SwapBuffers();
