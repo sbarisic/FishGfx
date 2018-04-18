@@ -11,50 +11,6 @@ using System.Diagnostics;
 
 namespace FishGfx.Graphics {
 	public unsafe class RenderWindow {
-		static RenderWindow() {
-			Glfw.ConfigureNativesDirectory(Path.GetFullPath(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)));
-
-			if (!Glfw.Init())
-				throw new Exception("Could not initialize glfw");
-
-			Glfw.SetErrorCallback((Err, Msg) => {
-				throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
-			});
-
-			Gl.Initialize();
-		}
-
-		static void ResetGLState() {
-#if DEBUG
-			Gl.DebugMessageCallback((Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
-				if (Severity == Gl.DebugSeverity.Notification)
-					return;
-
-				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
-				Console.WriteLine(Encoding.ASCII.GetString((byte*)Buffer, Len));
-
-				if ((/*Severity == Gl.DebugSeverity.Medium ||*/ Severity == Gl.DebugSeverity.High) && Debugger.IsAttached)
-					Debugger.Break();
-			}, IntPtr.Zero);
-
-			Gl.Enable((EnableCap)Gl.DEBUG_OUTPUT);
-			Gl.Enable((EnableCap)Gl.DEBUG_OUTPUT_SYNCHRONOUS);
-#endif
-
-			Gl.Disable(EnableCap.DepthTest);
-
-			Gl.FrontFace(FrontFaceDirection.Cw);
-			Gl.CullFace(CullFaceMode.Back);
-			Gl.Enable(EnableCap.CullFace);
-
-			Gl.Enable(EnableCap.Blend);
-			//Gl.BlendEquationSeparate(BlendEquationMode.FuncAdd, BlendEquationMode.FuncAdd);
-			//Gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-
-			Gl.BlendEquation(BlendEquationMode.FuncAdd);
-			Gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-		}
-
 		Glfw.Window Wnd;
 
 		public bool ShouldClose {
@@ -78,10 +34,12 @@ namespace FishGfx.Graphics {
 
 			Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
 			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, 4);
-			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, 0);
+			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, 3);
 		}
 
 		public RenderWindow(int Width, int Height, string Title, bool Resizable = false) {
+			Internal_OpenGL.InitGLFW();
+
 			Glfw.WindowHint(Glfw.Hint.Resizable, Resizable);
 			SetOpenGLHints();
 
@@ -90,8 +48,10 @@ namespace FishGfx.Graphics {
 		}
 
 		public void MakeCurrent() {
+			Internal_OpenGL.InitOpenGL();
 			Glfw.MakeContextCurrent(Wnd);
-			ResetGLState();
+			Internal_OpenGL.SetupOpenGL();
+			Internal_OpenGL.ResetGLState();
 		}
 
 		public void SwapBuffers() {

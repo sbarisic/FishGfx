@@ -58,6 +58,7 @@
     <Compile Include="Graphics\CommandList.cs" />
     <Compile Include="Graphics\Drawables\IDrawable.cs" />
     <Compile Include="Graphics\Drawables\Mesh2D.cs" />
+    <Compile Include="Graphics\Internal_OpenGL.cs" />
     <Compile Include="Graphics\Texture.cs" />
     <Compile Include="Graphics\Gfx.cs" />
     <Compile Include="Graphics\RenderWindow.cs" />

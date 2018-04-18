@@ -1,4 +1,4 @@
-﻿#version 450
+﻿#version 430
 
 layout (location = 0) in vec4 Clr;
 layout (location = 1) in vec2 UV;
@@ -8,7 +8,7 @@ uniform sampler2D Texture;
 out vec4 OutClr;
 
 void main() {
-	vec4 TexClr = texture2D(Texture, UV);
+	vec4 TexClr = texture(Texture, UV);
 	
 	OutClr = Clr * TexClr;
 }

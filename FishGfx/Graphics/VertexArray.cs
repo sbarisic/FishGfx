@@ -39,7 +39,10 @@ namespace FishGfx.Graphics {
 		}
 
 		public VertexArray() {
-			ID = Gl.CreateVertexArray();
+			if (Internal_OpenGL.Is45)
+				ID = Gl.CreateVertexArray();
+			else
+				ID = Gl.GenVertexArray();
 
 			PrimitiveType = PrimitiveType.Triangles;
 			BufferObjects = new List<BufferObject>();
@@ -78,8 +81,15 @@ namespace FishGfx.Graphics {
 			if (BindingIndex == -1)
 				BindingIndex = FreeBindingIndex++;
 
-			if (Obj != null)
-				Gl.VertexArrayVertexBuffer(ID, (uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
+			if (Obj != null) {
+				if (Internal_OpenGL.Is45)
+					Gl.VertexArrayVertexBuffer(ID, (uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
+				else {
+					Bind();
+					Gl.BindVertexBuffer((uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
+					Unbind();
+				}
+			}
 
 			return (uint)BindingIndex;
 		}
@@ -87,26 +97,57 @@ namespace FishGfx.Graphics {
 		public void BindElementBuffer(BufferObject Obj) {
 			ElementBuffer = Obj;
 
-			if (Obj != null)
-				Gl.VertexArrayElementBuffer(ID, Obj.ID);
-			else
-				Gl.VertexArrayElementBuffer(ID, 0);
+			uint ObjID = Obj != null ? Obj.ID : 0;
+
+			if (Internal_OpenGL.Is45)
+				Gl.VertexArrayElementBuffer(ID, ObjID);
+			else {
+				Bind();
+				Gl.BindBuffer(BufferTarget.ElementArrayBuffer, ObjID);
+				Unbind();
+			}
 		}
 
 		public void AttribEnable(uint AttribIdx, bool Enable = true) {
-			if (Enable)
-				Gl.EnableVertexArrayAttrib(ID, AttribIdx);
-			else
-				Gl.DisableVertexArrayAttrib(ID, AttribIdx);
+			if (Enable) {
+				if (Internal_OpenGL.Is45)
+					Gl.EnableVertexArrayAttrib(ID, AttribIdx);
+				else {
+					Bind();
+					Gl.EnableVertexAttribArray(AttribIdx);
+					Unbind();
+				}
+			} else {
+				if (Internal_OpenGL.Is45)
+					Gl.DisableVertexArrayAttrib(ID, AttribIdx);
+				else {
+					Bind();
+					Gl.DisableVertexAttribArray(AttribIdx);
+					Unbind();
+				}
+			}
 		}
 
 		public void AttribFormat(uint AttribIdx, int Size = 3, VertexAttribType AttribType = VertexAttribType.Float, bool Normalized = false, uint RelativeOffset = 0) {
-			Gl.VertexArrayAttribFormat(ID, AttribIdx, Size, AttribType, Normalized, RelativeOffset);
+			if (Internal_OpenGL.Is45)
+				Gl.VertexArrayAttribFormat(ID, AttribIdx, Size, AttribType, Normalized, RelativeOffset);
+			else {
+				Bind();
+				Gl.VertexAttribFormat(AttribIdx, Size, (int)AttribType, Normalized, RelativeOffset);
+				Unbind();
+			}
 		}
 
 		public void AttribBinding(uint AttribIdx, uint BindingIdx) {
 			AttribEnable(AttribIdx);
-			Gl.VertexArrayAttribBinding(ID, AttribIdx, BindingIdx);
+
+			if (Internal_OpenGL.Is45)
+				Gl.VertexArrayAttribBinding(ID, AttribIdx, BindingIdx);
+			else {
+				Bind();
+				Gl.VertexAttribBinding(AttribIdx, BindingIdx);
+				Unbind();
+			}
 		}
 
 		public override void GraphicsDispose() {

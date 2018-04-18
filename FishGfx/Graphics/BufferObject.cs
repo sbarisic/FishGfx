@@ -24,14 +24,41 @@ namespace FishGfx.Graphics {
 		public int Size { get; private set; }
 		public int ElementCount { get; private set; }
 
+		BufferTarget Target;
+
 		public BufferObject() {
-			ID = Gl.CreateBuffer();
+			if (Internal_OpenGL.Is45)
+				ID = Gl.CreateBuffer();
+			else {
+				ID = Gl.GenBuffer();
+				Target = BufferTarget.ArrayBuffer;
+			}
+		}
+
+		public override void Bind() {
+			if (Internal_OpenGL.Is45)
+				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
+
+			Gl.BindBuffer(Target, ID);
+		}
+
+		public override void Unbind() {
+			if (Internal_OpenGL.Is45)
+				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
+
+			Gl.BindBuffer(Target, 0);
 		}
 
 		public void SetData(uint Size, IntPtr Data, BufferUsage Usage = BufferUsage.DynamicDraw) {
 			this.Size = (int)Size;
 
-			Gl.NamedBufferData(ID, Size, Data, (OpenGL.BufferUsage)Usage);
+			if (Internal_OpenGL.Is45)
+				Gl.NamedBufferData(ID, Size, Data, (OpenGL.BufferUsage)Usage);
+			else {
+				Bind();
+				Gl.BufferData(Target, Size, Data, (OpenGL.BufferUsage)Usage);
+				Unbind();
+			}
 		}
 
 		public void SetData<T>(T[] Data, BufferUsage Usage = BufferUsage.DynamicDraw) where T : struct {
@@ -45,7 +72,11 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void GraphicsDispose() {
-			Gl.UnmapNamedBuffer(ID);
+			if (Internal_OpenGL.Is45)
+				Gl.UnmapNamedBuffer(ID);
+			else
+				Gl.UnmapBuffer(Target);
+
 			Gl.DeleteBuffers(new uint[] { ID });
 		}
 	}

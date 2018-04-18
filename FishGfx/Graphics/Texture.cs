@@ -28,8 +28,15 @@ namespace FishGfx.Graphics {
 		public bool Multisampled { get; private set; }
 		public bool IsCubeMap { get; private set; }
 
+		TextureTarget Target;
+
 		private Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8) {
-			ID = Gl.CreateTexture(Target);
+			this.Target = Target;
+
+			if (Internal_OpenGL.Is45)
+				ID = Gl.CreateTexture(Target);
+			else
+				ID = Gl.GenTexture();
 
 			if (Target == TextureTarget.Texture2dMultisample)
 				Multisampled = true;
@@ -46,11 +53,27 @@ namespace FishGfx.Graphics {
 		}
 
 		private void TextureParam(TextureParameterName ParamName, object Val) {
-			if (Val is int)
-				Gl.TextureParameter(ID, ParamName, (int)Val);
-			else if (Val is float)
-				Gl.TextureParameter(ID, ParamName, (float)Val);
-			else throw new NotImplementedException();
+			if (Val is int) {
+
+				if (Internal_OpenGL.Is45)
+					Gl.TextureParameter(ID, ParamName, (int)Val);
+				else {
+					Bind();
+					Gl.TexParameter(Target, ParamName, (int)Val);
+					Unbind();
+				}
+
+			} else if (Val is float) {
+
+				if (Internal_OpenGL.Is45)
+					Gl.TextureParameter(ID, ParamName, (float)Val);
+				else {
+					Bind();
+					Gl.TexParameter(Target, ParamName, (int)Val);
+					Unbind();
+				}
+
+			} else throw new NotImplementedException();
 		}
 
 		public void SetWrap(int Val = Gl.CLAMP_TO_EDGE) {
@@ -69,6 +92,9 @@ namespace FishGfx.Graphics {
 		}
 
 		public void SetMaxAnisotropy() {
+			if (!Internal_OpenGL.Is45)
+				return;
+
 			Gl.Get(Gl.MAX_TEXTURE_MAX_ANISOTROPY, out float Max);
 			TextureParam((TextureParameterName)Gl.TEXTURE_MAX_ANISOTROPY, Max);
 		}
@@ -78,10 +104,23 @@ namespace FishGfx.Graphics {
 			Height = H;
 			MipLevels = Levels;
 
-			if (Multisampled)
-				Gl.TextureStorage2DMultisample(ID, Multisamples, IntFormat, W, H, false);
-			else
-				Gl.TextureStorage2D(ID, Levels, IntFormat, W, H);
+			if (Multisampled) {
+				if (Internal_OpenGL.Is45)
+					Gl.TextureStorage2DMultisample(ID, Multisamples, IntFormat, W, H, false);
+				else {
+					Bind();
+					Gl.TexStorage2DMultisample(Target, Multisamples, IntFormat, W, H, false);
+					Unbind();
+				}
+			} else {
+				if (Internal_OpenGL.Is45)
+					Gl.TextureStorage2D(ID, Levels, IntFormat, W, H);
+				else {
+					Bind();
+					Gl.TexStorage2D(Target, Levels, IntFormat, W, H);
+					Unbind();
+				}
+			}
 		}
 
 		public void SubImage(IntPtr Pixels, int X, int Y, int Z, int W, int H, int D,
@@ -93,9 +132,23 @@ namespace FishGfx.Graphics {
 					throw new Exception("Invalid Z/D parameter for cubemap");
 #endif
 
-				Gl.TextureSubImage2D(ID, Level, X, Y, W, H, PFormat, PType, Pixels);
-			} else
-				Gl.TextureSubImage3D(ID, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
+				if (Internal_OpenGL.Is45)
+					Gl.TextureSubImage2D(ID, Level, X, Y, W, H, PFormat, PType, Pixels);
+				else {
+					Bind();
+					Gl.TexSubImage2D(Target, Level, X, Y, W, H, PFormat, PType, Pixels);
+					Unbind();
+				}
+
+			} else {
+				if (Internal_OpenGL.Is45)
+					Gl.TextureSubImage3D(ID, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
+				else {
+					Bind();
+					Gl.TexSubImage3D(Target, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
+					Unbind();
+				}
+			}
 
 			if (MipLevels > 1)
 				GenerateMipmap();
@@ -130,15 +183,42 @@ namespace FishGfx.Graphics {
 		}
 
 		public void BindTextureUnit(uint Unit = 0) {
-			Gl.BindTextureUnit(Unit, ID);
+			if (Internal_OpenGL.Is45)
+				Gl.BindTextureUnit(Unit, ID);
+			else {
+				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
+				Bind();
+			}
 		}
 
 		public void UnbindTextureUnit(uint Unit = 0) {
-			Gl.BindTextureUnit(Unit, 0);
+			if (Internal_OpenGL.Is45)
+				Gl.BindTextureUnit(Unit, 0);
+			else {
+				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
+				Unbind();
+			}
+		}
+
+		public override void Bind() {
+			if (Internal_OpenGL.Is45)
+				throw new Exception("This function is not used in OpenGL 4.5");
+
+			Gl.BindTexture(TextureTarget.Texture2d, ID);
+		}
+
+		public override void Unbind() {
+			if (Internal_OpenGL.Is45)
+				throw new Exception("This function is not used in OpenGL 4.5");
+
+			Gl.BindTexture(TextureTarget.Texture2d, 0);
 		}
 
 		public void GenerateMipmap() {
-			Gl.GenerateTextureMipmap(ID);
+			if (Internal_OpenGL.Is45)
+				Gl.GenerateTextureMipmap(ID);
+			else
+				Gl.GenerateMipmap(Target);
 		}
 
 		public override void GraphicsDispose() {

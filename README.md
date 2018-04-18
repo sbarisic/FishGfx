@@ -1,8 +1,15 @@
 # FishGfx
-SFML but better. OpenGL 4.0 GLFW
+SFML but better. OpenGL 4.5, GLFW
 
 https://github.com/Chman/Glfw.Net
 https://github.com/luca-piccioni/OpenGL.Net
+
+# Completed
+
+* OpenGL 4.5 with optional fallback to 4.3
+* Textures
+* Vertex arrays
+* Shaders
 
 # TODO
 
@@ -19,4 +26,3 @@ https://github.com/luca-piccioni/OpenGL.Net
 * Stencil buffer
 * Framebuffers
 * Command buffers
-* Shaders
