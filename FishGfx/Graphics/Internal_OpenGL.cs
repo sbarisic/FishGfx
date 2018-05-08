@@ -11,6 +11,10 @@ using OpenGL;
 using FishGfx.System;
 
 namespace FishGfx.Graphics {
+	internal static class OpenGL_BODGES {
+		public static bool INTEL_BIND_ZERO_TEXTURE_BUG = false;
+	}
+
 	internal static unsafe class Internal_OpenGL {
 		static bool GLFWInitialized = false;
 		static bool OpenGLInitialized = false;
@@ -51,15 +55,24 @@ namespace FishGfx.Graphics {
 
 			OpenGLInitialized = true;
 #if DEBUG
+			bool IS_GL_DEBUG = Environment.GetCommandLineArgs().Contains("-debug");
+			const string LogName = "opengl_log.txt";
+
+			if (File.Exists(LogName))
+				File.Delete(LogName);
+
 			Gl.DebugMessageCallback((Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
+				Khronos.KhronosApi.LogComment(string.Format("OpenGL {0} {1} {2}, {3}: {4}", Src, DbgType, ID, Severity, Encoding.ASCII.GetString((byte*)Buffer, Len)));
+
 				/*if (Severity == Gl.DebugSeverity.Notification)
 					return;*/
 
 				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
 				Console.WriteLine(Encoding.ASCII.GetString((byte*)Buffer, Len));
 
-				if ((/*Severity == Gl.DebugSeverity.Medium ||*/ Severity == Gl.DebugSeverity.High) && Debugger.IsAttached)
+				if ((/*Severity == Gl.DebugSeverity.Medium ||*/ Severity == DebugSeverity.DebugSeverityHigh) && Debugger.IsAttached)
 					Debugger.Break();
+
 			}, IntPtr.Zero);
 
 			Gl.Enable((EnableCap)Gl.DEBUG_OUTPUT);
@@ -88,6 +101,25 @@ namespace FishGfx.Graphics {
 			string Vers = Gl.GetString(StringName.Version);
 
 			RenderAPI.Renderer = string.Format("{0} by {1}; GL {2}; GLSL {3}", Renderer, Vendor, Vers, GLSLVer);
+
+#if DEBUG
+			Khronos.KhronosApi.Log += (S, E) => {
+				/*if (E.Name == "glGetError")
+					return;*/
+
+				if (IS_GL_DEBUG) {
+					ConsoleColor Clr = Console.ForegroundColor;
+					Console.ForegroundColor = ConsoleColor.DarkYellow;
+
+					Console.WriteLine(E.ToString());
+					File.AppendAllText(LogName, E.ToString() + "\r\n");
+
+					Console.ForegroundColor = Clr;
+				}
+			};
+
+			Khronos.KhronosApi.LogEnabled = true;
+#endif
 		}
 
 		public static void ResetGLState() {

@@ -6,12 +6,19 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics {
 	public class CommandList {
-		public void Clear() {
-			// TODO
+		List<Action> Commands = new List<Action>();
+
+		internal void Enqueue(Action Cmd) {
+			Commands.Add(Cmd);
 		}
 
-		public void Draw() {
-			// TODO
+		public void Clear() {
+			Commands.Clear();
+		}
+
+		public void Execute() {
+			for (int i = 0; i < Commands.Count; i++)
+				Commands[i].Invoke();
 		}
 	}
 }

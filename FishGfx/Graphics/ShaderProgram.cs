@@ -191,15 +191,15 @@ namespace FishGfx.Graphics {
 		}
 
 		public void UniformMatrix4f(string Uniform, Matrix4 M, bool Transpose = false) {
-			Gl.ProgramUniformMatrix4f(ID, GetUniformLocation(Uniform), 1, Transpose, ref M);
+			Gl.ProgramUniformMatrix4f(ID, GetUniformLocation(Uniform), 1, Transpose, M);
 		}
 
 		public void Uniform2f<T>(string Uniform, T Val) where T : struct {
-			Gl.ProgramUniform2f(ID, GetUniformLocation(Uniform), 1, ref Val);
+			Gl.ProgramUniform2f(ID, GetUniformLocation(Uniform), 1, Val);
 		}
 
 		public void Uniform1f<T>(string Uniform, T Val) where T : struct {
-			Gl.ProgramUniform1f(ID, GetUniformLocation(Uniform), 1, ref Val);
+			Gl.ProgramUniform1f(ID, GetUniformLocation(Uniform), 1, Val);
 		}
 
 		public void SetModelMatrix(Matrix4 M) {

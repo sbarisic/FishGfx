@@ -14,6 +14,10 @@ using FishGfx.System;
 namespace Test {
 	class Program {
 		static void Main(string[] args) {
+			Run();
+		}
+
+		static void Run() {
 			RenderWindow RWind = new RenderWindow(800, 600, "FishGfx Test");
 
 #if DEBUG
@@ -22,16 +26,16 @@ namespace Test {
 			File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
 
-			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
-			Default.Uniforms.Viewport = new Vector2(800, 600);
-			Default.Uniforms.Project = Matrix4x4.CreateOrthographicOffCenter(0, 800, 0, 600, -10, 10);
-
 			Texture QTex = Texture.FromFile("data/quake.png");
 			QTex.SetFilterSmooth();
 
 			Texture Tex2 = Texture.FromFile("data/opengl.png");
 			Tex2.SetFilterSmooth();
+
+			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
+				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
+			Default.Uniforms.Viewport = new Vector2(800, 600);
+			Default.Uniforms.Project = Matrix4x4.CreateOrthographicOffCenter(0, 800, 0, 600, -10, 10);
 
 			Vector2[] UVs = new Vector2[] {
 				new Vector2(0, 0),
@@ -48,22 +52,22 @@ namespace Test {
 			Msh1.SetVertices(new Vector2[] {
 				new Vector2(0, 0),
 				new Vector2(0, 600),
-				new Vector2(400, 600),
+				new Vector2(800, 600),
 				new Vector2(0, 0),
-				new Vector2(400, 600),
-				new Vector2(400, 0)
+				new Vector2(800, 600),
+				new Vector2(800, 0)
 			});
 
 			Mesh2D Msh2 = new Mesh2D();
+			Msh2.PrimitiveType = PrimitiveType.LineStrip;
 			Msh2.SetUVs(UVs);
 
 			Msh2.SetVertices(new Vector2[] {
-				new Vector2(400, 0),
-				new Vector2(400, 600),
-				new Vector2(800, 600),
-				new Vector2(400, 0),
-				new Vector2(800, 600),
-				new Vector2(800, 0)
+				new Vector2(50, 50),
+				new Vector2(50, 400),
+				new Vector2(750, 550),
+				new Vector2(400, 350),
+				new Vector2(750, 50),
 			});
 
 			while (!RWind.ShouldClose) {
@@ -71,14 +75,14 @@ namespace Test {
 				//Gfx.Line(new Vector2(0, 0), new Vector2(100, 100));
 
 				Default.Bind();
-
+				
 				QTex.BindTextureUnit();
 				Msh1.Draw();
 				QTex.UnbindTextureUnit();
 
-				Tex2.BindTextureUnit();
+				//Tex2.BindTextureUnit();
 				Msh2.Draw();
-				Tex2.UnbindTextureUnit();
+				//Tex2.UnbindTextureUnit();
 
 				Default.Unbind();
 

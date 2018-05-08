@@ -192,9 +192,17 @@ namespace FishGfx.Graphics {
 		}
 
 		public void UnbindTextureUnit(uint Unit = 0) {
-			if (Internal_OpenGL.Is45OrAbove)
-				Gl.BindTextureUnit(Unit, 0);
-			else {
+			if (Internal_OpenGL.Is45OrAbove) {
+				if (OpenGL_BODGES.INTEL_BIND_ZERO_TEXTURE_BUG) {
+					// TODO: Do something?
+				} else {
+					try {
+						Gl.BindTextureUnit(Unit, 0);
+					} catch (GlException) {
+						OpenGL_BODGES.INTEL_BIND_ZERO_TEXTURE_BUG = true;
+					}
+				}
+			} else {
 				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
 				Unbind();
 			}
@@ -202,14 +210,14 @@ namespace FishGfx.Graphics {
 
 		public override void Bind() {
 			if (Internal_OpenGL.Is45OrAbove)
-				throw new Exception("This function is not used in OpenGL 4.5");
+				throw new InvalidOperationException("This function is not used in OpenGL 4.5");
 
 			Gl.BindTexture(TextureTarget.Texture2d, ID);
 		}
 
 		public override void Unbind() {
 			if (Internal_OpenGL.Is45OrAbove)
-				throw new Exception("This function is not used in OpenGL 4.5");
+				throw new InvalidOperationException("This function is not used in OpenGL 4.5");
 
 			Gl.BindTexture(TextureTarget.Texture2d, 0);
 		}
