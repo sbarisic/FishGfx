@@ -9,6 +9,7 @@ using Glfw3;
 using System.Reflection;
 using System.Diagnostics;
 using FishGfx.System;
+using System.Numerics;
 
 namespace FishGfx.Graphics {
 	public unsafe class RenderWindow {
@@ -68,9 +69,18 @@ namespace FishGfx.Graphics {
 			Glfw.DestroyWindow(Wnd);
 		}
 
+		public void GetWindowSize(out int Width, out int Height) {
+			Glfw.GetWindowSize(Wnd, out Width, out Height);
+		}
+
+		public Vector2 GetWindowSizeVec() {
+			GetWindowSize(out int W, out int H);
+			return new Vector2(W, H);
+		}
+
 		public void Center() {
 			RenderAPI.GetDesktopResolution(out int W, out int H);
-			Glfw.GetWindowSize(Wnd, out int WW, out int WH);
+			GetWindowSize(out int WW, out int WH);
 
 			int X = W / 2 - WW / 2;
 			int Y = H / 2 - WH / 2;

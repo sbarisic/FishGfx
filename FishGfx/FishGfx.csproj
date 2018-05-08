@@ -58,7 +58,9 @@
     <Compile Include="Glfw3\Glfw.Func.cs" />
     <Compile Include="Graphics\CommandList.cs" />
     <Compile Include="Graphics\Drawables\IDrawable.cs" />
+    <Compile Include="Graphics\Drawables\Mesh3D.cs" />
     <Compile Include="Graphics\Drawables\Mesh2D.cs" />
+    <Compile Include="Graphics\Drawables\Terrain.cs" />
     <Compile Include="Graphics\Internal_OpenGL.cs" />
     <Compile Include="Graphics\Texture.cs" />
     <Compile Include="Graphics\Gfx.cs" />
@@ -70,6 +72,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="System\Events.cs" />
     <Compile Include="System\RenderAPI.cs" />
+    <Compile Include="Vertex3.cs" />
     <Compile Include="Vertex2.cs" />
   </ItemGroup>
   <ItemGroup />
