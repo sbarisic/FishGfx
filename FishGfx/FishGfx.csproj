@@ -37,7 +37,7 @@
   <ItemGroup>
     <Reference Include="OpenGL.Net, Version=0.4.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\OpenGL_Net\bin_dbg\OpenGL.Net.dll</HintPath>
+      <HintPath>..\thirdparty\OpenGL_Net\bin_dbg\OpenGL.Net.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
