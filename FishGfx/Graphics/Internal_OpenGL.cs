@@ -124,6 +124,7 @@ namespace FishGfx.Graphics {
 
 		public static void ResetGLState() {
 			Gl.Disable(EnableCap.DepthTest);
+			//Gl.Enable(EnableCap.DepthTest);
 
 			Gl.FrontFace(FrontFaceDirection.Cw);
 			Gl.CullFace(CullFaceMode.Back);

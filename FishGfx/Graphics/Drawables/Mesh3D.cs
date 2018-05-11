@@ -64,7 +64,7 @@ namespace FishGfx.Graphics.Drawables {
 			VAO.AttribEnable(UV_ATTRIB, UVs != null);
 		}
 
-		public void SetElements(uint[] Elements) {
+		public void SetElements(params uint[] Elements) {
 			if (ElementBuffer == null)
 				ElementBuffer = new BufferObject();
 
@@ -75,7 +75,7 @@ namespace FishGfx.Graphics.Drawables {
 				VAO.BindElementBuffer(null);
 		}
 
-		public void SetVertices(Vertex3[] Verts) {
+		public void SetVertices(params Vertex3[] Verts) {
 			SetVertices(Verts.Select((V) => V.Position).ToArray());
 			SetUVs(Verts.Select((V) => V.UV).ToArray());
 			SetColors(Verts.Select((V) => V.Color).ToArray());

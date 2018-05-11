@@ -20,5 +20,16 @@ namespace FishGfx {
 		public static implicit operator Vertex3(Vector3 Pos) {
 			return new Vertex3(Pos);
 		}
+
+		public static Vertex3[] FromFloatArray(float[] Positions) {
+			Vertex3[] Result = new Vertex3[Positions.Length / 3];
+
+			for (int i = 0; i < Result.Length; i++) {
+				int idx = i * 3;
+				Result[i] = new Vertex3(new Vector3(Positions[idx], Positions[idx + 1], Positions[idx + 2]));
+			}
+
+			return Result;
+		}
 	}
 }

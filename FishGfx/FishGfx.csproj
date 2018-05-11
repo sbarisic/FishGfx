@@ -78,6 +78,9 @@
   <ItemGroup />
   <ItemGroup>
     <Compile Include="Glfw3\Glfw.Struct.cs" />
+    <None Include="data\default3d.vert">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="data\default.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
