@@ -19,14 +19,14 @@ namespace FishGfx.Graphics {
 	}
 
 	public struct ShaderUniforms {
-		public Vector2 Viewport;
-		public Matrix4 View, Project;
+		public Camera Camera;
 
 		public static ShaderUniforms CreateIdentity() {
 			ShaderUniforms U = new ShaderUniforms();
-			U.Viewport = new Vector2(1, 1);
-			U.View = Matrix4.Identity;
-			U.Project = Matrix4.Identity;
+
+			U.Camera = new Camera();
+			U.Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
+	
 			return U;
 		}
 	}
@@ -164,9 +164,14 @@ namespace FishGfx.Graphics {
 			/*Uniform2f("Viewport", Camera.ActiveCamera.ViewportSize);
 			UniformMatrix4f("View", Camera.ActiveCamera.View);
 			UniformMatrix4f("Project", Camera.ActiveCamera.Projection);*/
-			Uniform2f("Viewport", Uniforms.Viewport);
+
+			/*Uniform2f("Viewport", Uniforms.Viewport);
 			UniformMatrix4f("View", Uniforms.View);
-			UniformMatrix4f("Project", Uniforms.Project);
+			UniformMatrix4f("Project", Uniforms.Project);*/
+
+			Uniform2f("Viewport", Uniforms.Camera.ViewportSize);
+			UniformMatrix4f("View", Uniforms.Camera.View);
+			UniformMatrix4f("Project", Uniforms.Camera.Projection);
 
 			Gl.UseProgram(ID);
 		}

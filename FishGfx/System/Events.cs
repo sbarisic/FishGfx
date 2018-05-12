@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Glfw3;
 
 namespace FishGfx.System {
-	public class Events {
+	public static class Events {
 		public static void Poll() {
 			Glfw.PollEvents();
 		}
