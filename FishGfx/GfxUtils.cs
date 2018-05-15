@@ -55,6 +55,10 @@ namespace FishGfx {
 			return new Vector2(V.X, V.Y);
 		}
 
+		public static Vector2 XZ(this Vector3 V) {
+			return new Vector2(V.X, V.Z);
+		}
+
 		public static Vector2 XY(this Vector4 V) {
 			return new Vector2(V.X, V.Y);
 		}

@@ -182,6 +182,7 @@ namespace FishGfx.Graphics {
 			Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
 			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, 4);
 			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, 5);
+			Glfw.WindowHint(Glfw.Hint.Samples, 0);
 		}
 
 		public RenderWindow(int Width, int Height, string Title, bool Resizable = false, bool CenterWindow = true) {

@@ -104,8 +104,8 @@ namespace FishGfx.Graphics {
 
 #if DEBUG
 			Khronos.KhronosApi.Log += (S, E) => {
-				/*if (E.Name == "glGetError")
-					return;*/
+				if (E.Name == "glGetError")
+					return;
 
 				if (IS_GL_DEBUG) {
 					ConsoleColor Clr = Console.ForegroundColor;
@@ -123,13 +123,13 @@ namespace FishGfx.Graphics {
 		}
 
 		public static void ResetGLState() {
-			Gl.Disable(EnableCap.DepthTest);
-			//Gl.Enable(EnableCap.DepthTest);
+			//Gl.Disable(EnableCap.DepthTest);
+			Gl.Enable(EnableCap.DepthTest);
 
-			Gl.FrontFace(FrontFaceDirection.Cw);
+			Gl.FrontFace(FrontFaceDirection.Ccw);
 			Gl.CullFace(CullFaceMode.Back);
-			//Gl.Enable(EnableCap.CullFace);
-			Gl.Disable(EnableCap.CullFace);
+			Gl.Enable(EnableCap.CullFace);
+			//Gl.Disable(EnableCap.CullFace);
 
 			//Gl.BlendEquationSeparate(BlendEquationMode.FuncAdd, BlendEquationMode.FuncAdd);
 			//Gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
@@ -137,6 +137,7 @@ namespace FishGfx.Graphics {
 			Gl.BlendEquation(BlendEquationMode.FuncAdd);
 			Gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 			Gl.Enable(EnableCap.Blend);
+			//Gl.Disable(EnableCap.Blend);
 		}
 	}
 }

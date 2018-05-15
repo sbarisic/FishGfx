@@ -10,5 +10,6 @@ layout (location = 0) out vec4 OutClr;
 void main() {
 	vec4 TexClr = texture(Texture, UV);
 	
-	OutClr = Clr * TexClr;
+	//OutClr = Clr * TexClr;
+	OutClr = TexClr;
 }
