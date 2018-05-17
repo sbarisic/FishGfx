@@ -7,6 +7,16 @@ using System.Numerics;
 
 namespace FishGfx {
 	public static class GfxUtils {
+		static Random Rnd = new Random();
+
+		public static byte RandomByte() {
+			return (byte)Rnd.Next(256);
+		}
+
+		public static Color RandomColor() {
+			return new Color(RandomByte(), RandomByte(), RandomByte());
+		}
+
 		public static float Clamp(this float Num, float Min, float Max) {
 			if (Num < Min)
 				return Min;

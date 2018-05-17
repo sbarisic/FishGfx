@@ -34,6 +34,16 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug_Advanced|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\Debug_Advanced\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x64</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="OpenGL.Net, Version=0.4.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -56,6 +66,7 @@
     <Compile Include="Glfw3\Glfw.Delegate.cs" />
     <Compile Include="Glfw3\Glfw.Enum.cs" />
     <Compile Include="Glfw3\Glfw.Func.cs" />
+    <Compile Include="Graphics\FramebufferObject.cs" />
     <Compile Include="Graphics\Camera.cs" />
     <Compile Include="Graphics\CommandList.cs" />
     <Compile Include="Graphics\Drawables\IDrawable.cs" />
@@ -63,6 +74,7 @@
     <Compile Include="Graphics\Drawables\Mesh2D.cs" />
     <Compile Include="Graphics\Drawables\Terrain.cs" />
     <Compile Include="Graphics\Internal_OpenGL.cs" />
+    <Compile Include="Graphics\RenderTexture.cs" />
     <Compile Include="Graphics\Texture.cs" />
     <Compile Include="Graphics\Gfx.cs" />
     <Compile Include="Graphics\RenderWindow.cs" />
@@ -80,6 +92,12 @@
   <ItemGroup />
   <ItemGroup>
     <Compile Include="Glfw3\Glfw.Struct.cs" />
+    <None Include="data\defaultRayCast.frag">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\defaultFlatColor.frag">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="data\default3d.vert">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

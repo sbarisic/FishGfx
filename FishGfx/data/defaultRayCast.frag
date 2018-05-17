@@ -6,9 +6,11 @@ layout (location = 1) in vec2 UV;
 uniform sampler2D Texture;
 
 layout (location = 0) out vec4 OutClr;
+layout (location = 1) out vec4 RayClr;
 
 void main() {
 	vec4 TexClr = texture(Texture, UV);
-	OutClr = Clr * TexClr;
-	//OutClr = vec4(1.0f, 0.0f, 0.0f, 1.0f);
+
+	OutClr = TexClr;
+	RayClr = Clr;
 }

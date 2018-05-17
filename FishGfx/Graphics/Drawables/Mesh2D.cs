@@ -52,7 +52,7 @@ namespace FishGfx.Graphics.Drawables {
 
 		public void SetColors(Color[] Colors) {
 			if (ColorBuffer == null) {
-				VAO.AttribFormat(COLOR_ATTRIB, Size: 4, AttribType: VertexAttribType.UnsignedByte);
+				VAO.AttribFormat(COLOR_ATTRIB, Size: 4, AttribType: VertexAttribType.UnsignedByte, Normalized: true);
 				VAO.AttribBinding(COLOR_ATTRIB, VAO.BindVertexBuffer(ColorBuffer = new BufferObject(), Stride: 4 * sizeof(byte)));
 			}
 

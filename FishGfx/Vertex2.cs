@@ -11,10 +11,13 @@ namespace FishGfx {
 		public Vector2 UV;
 		public Color Color;
 
-		public Vertex2(Vector2 Pos) {
+		public Vertex2(Vector2 Pos, Vector2 UV) {
 			Position = Pos;
-			UV = new Vector2(0, 0);
+			this.UV = UV;
 			Color = Color.White;
+		}
+
+		public Vertex2(Vector2 Pos) : this(Pos, new Vector2(0, 0)) {
 		}
 
 		public static implicit operator Vertex2(Vector2 Pos) {

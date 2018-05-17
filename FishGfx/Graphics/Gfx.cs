@@ -34,7 +34,17 @@ namespace FishGfx.Graphics {
 			}
 
 			Gl.ClearColor(69 / 255.0f, 112 / 255.0f, 56 / 255.0f, 1.0f);
-			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+		}
+
+		public static void Clear(Color ClearColor) {
+			if (List != null) {
+				List.Enqueue(() => Clear(ClearColor));
+				return;
+			}
+
+			Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
+			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 		}
 
 		public static void Line(Vertex2 Start, Vertex2 End) {

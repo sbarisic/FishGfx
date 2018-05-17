@@ -30,7 +30,7 @@ namespace FishGfx.Graphics {
 
 		TextureTarget Target;
 
-		private Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8) {
+		internal Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8) {
 			this.Target = Target;
 
 			if (Internal_OpenGL.Is45OrAbove)
@@ -152,6 +152,20 @@ namespace FishGfx.Graphics {
 
 			if (MipLevels > 1)
 				GenerateMipmap();
+		}
+
+		public Color[] GetPixels() {
+			Color[] Clrs = new Color[Width * Height];
+
+			// TODO: Older OpenGL way?
+			fixed (Color* ClrsPtr = Clrs)
+				Gl.GetTextureImage(ID, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, Clrs.Length * sizeof(Color), (IntPtr)ClrsPtr);
+
+			return Clrs;
+		}
+
+		public Color GetPixel(int X, int Y) {
+			return GetPixels()[(Height - Y - 1) * Width + X];
 		}
 
 		public void SubImage2D(Image Img, int X = 0, int Y = 0, int W = -1, int H = -1, int Level = 0) {

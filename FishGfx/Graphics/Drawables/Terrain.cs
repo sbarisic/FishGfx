@@ -10,11 +10,11 @@ using Clr = System.Drawing.Color;
 namespace FishGfx.Graphics.Drawables {
 	public class Terrain : IDrawable {
 		Mesh3D TerrainMesh;
-		Texture Texture;
-
-		int Width;
-		int Height;
 		float[] HeightData;
+
+		public int Width { get; private set; }
+		public int Height { get; private set; }
+		public Texture OverlayTexture;
 
 		public Terrain() {
 			TerrainMesh = new Mesh3D();
@@ -23,9 +23,11 @@ namespace FishGfx.Graphics.Drawables {
 
 		/// <param name="Img">Heightmap</param>
 		/// <param name="ScaleValue">Image heightmap range, 255 default</param>
-		public void LoadFromImage(Image Img, float ScaleValue = 255) {
-			Texture = Texture.FromImage(Img);
-			Texture.SetFilterSmooth();
+		public void LoadFromImage(Image Img, float ScaleValue = 255, bool CreateOverlayTexture = true, bool GeneratePickerColors = true) {
+			if (CreateOverlayTexture) {
+				OverlayTexture = Texture.FromImage(Img);
+				OverlayTexture.SetFilterSmooth();
+			}
 
 			Width = Img.Width;
 			Height = Img.Height;
@@ -44,8 +46,7 @@ namespace FishGfx.Graphics.Drawables {
 			}
 
 			List<Vertex3> Verts = new List<Vertex3>();
-
-			for (int y = 0; y < Height; y++)
+			for (int y = 0; y < Height; y++) {
 				for (int x = 0; x < Width; x++) {
 					float u = x / (float)Width;
 					float ustep = 1 / (float)Width;
@@ -70,6 +71,18 @@ namespace FishGfx.Graphics.Drawables {
 					Vertex3 BottomRight = new Vector3(x + 1, HBottomRight, y - 1);
 					BottomRight.UV = new Vector2(u + ustep, v + vstep);
 
+					if (GeneratePickerColors) {
+						//int ColorInt = (y * Width + x);
+						//Color Clr = new Color((byte)((ColorInt >> 16) & 0xFF), (byte)((ColorInt >> 8) & 0xFF), (byte)((ColorInt >> 0) & 0xFF));
+						Color Clr = new Color(y * Width + x);
+						Clr.A = 255;
+
+						Current.Color = Clr;
+						Right.Color = Clr;
+						Bottom.Color = Clr;
+						BottomRight.Color = Clr;
+					}
+
 					// Emit quad
 					Verts.Add(Current);
 					Verts.Add(Right);
@@ -78,6 +91,7 @@ namespace FishGfx.Graphics.Drawables {
 					Verts.Add(Right);
 					Verts.Add(BottomRight);
 				}
+			}
 
 			TerrainMesh.SetVertices(Verts.ToArray());
 		}
@@ -99,9 +113,9 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public void Draw() {
-			Texture.BindTextureUnit();
+			OverlayTexture?.BindTextureUnit();
 			TerrainMesh.Draw();
-			Texture.UnbindTextureUnit();
+			OverlayTexture?.UnbindTextureUnit();
 		}
 	}
 }

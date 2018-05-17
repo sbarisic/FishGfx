@@ -145,7 +145,21 @@ namespace FishGfx.Graphics {
 		RightControl = 345,
 		RightAlt = 346,
 		RightSuper = 347,
-		Menu = 348
+		Menu = 348,
+
+		// Mouse buttons
+		MouseButton1 = 400,
+		MouseButton2 = 401,
+		MouseButton3 = 402,
+		MouseButton4 = 403,
+		MouseButton5 = 404,
+		MouseButton6 = 405,
+		MouseButton7 = 406,
+		MouseButton8 = 407,
+		MouseLast = MouseButton8,
+		MouseLeft = MouseButton1,
+		MouseRight = MouseButton2,
+		MouseMiddle = MouseButton3
 	}
 
 	public delegate void OnMouseMoveFunc(RenderWindow Wnd, float X, float Y);
@@ -155,10 +169,15 @@ namespace FishGfx.Graphics {
 		Glfw.Window Wnd;
 		Glfw.CursorPosFunc GlfwOnMouseMove;
 		Glfw.KeyFunc GlfwOnKey;
+		Glfw.MouseButtonFunc GlfwOnMouseButton;
 
 		public event OnMouseMoveFunc OnMouseMove;
 		public event OnMouseMoveFunc OnMouseMoveDelta;
 		public event OnKeyFunc OnKey;
+
+		public Color[] PixelData;
+		public int MouseX { get; private set; }
+		public int MouseY { get; private set; }
 
 		public bool ShouldClose {
 			get {
@@ -178,10 +197,11 @@ namespace FishGfx.Graphics {
 #if DEBUG
 			Glfw.WindowHint(Glfw.Hint.OpenglDebugContext, true);
 #endif
+			// TODO: Allow external version select
 
 			Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
 			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, 4);
-			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, 5);
+			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, 4);
 			Glfw.WindowHint(Glfw.Hint.Samples, 0);
 		}
 
@@ -200,6 +220,8 @@ namespace FishGfx.Graphics {
 				bool MouseDeltaInitialized = false;
 
 				Glfw.SetCursorPosCallback(Wnd, GlfwOnMouseMove = (W, X, Y) => {
+					MouseX = (int)X;
+					MouseY = (int)Y;
 					OnMouseMove?.Invoke(this, (float)X, (float)Y);
 
 					if (MouseDeltaInitialized)
@@ -220,6 +242,14 @@ namespace FishGfx.Graphics {
 				}
 			});
 
+			Glfw.SetMouseButtonCallback(Wnd, GlfwOnMouseButton = (Wnd, Button, State, Mods) => {
+				if (OnKey != null) {
+					bool IsPressed = State == Glfw.InputState.Press || State == Glfw.InputState.Repeat ? true : false;
+					bool IsRepeat = State == Glfw.InputState.Repeat;
+					OnKey(this, Key.MouseButton1 + (int)Button, -1, IsPressed, IsRepeat, (KeyMods)Mods);
+				}
+			});
+
 			MakeCurrent();
 		}
 
@@ -233,6 +263,29 @@ namespace FishGfx.Graphics {
 		public void SwapBuffers() {
 			RenderAPI.CollectGarbage();
 			Glfw.SwapBuffers(Wnd);
+		}
+
+		public void ReadPixels() {
+			GetWindowSize(out int W, out int H);
+
+			if (PixelData == null)
+				PixelData = new Color[W * H];
+
+			if (PixelData.Length < W * H)
+				PixelData = new Color[W * H];
+
+			fixed (Color* ClrPtr = PixelData)
+				Gl.ReadPixels(0, 0, W, H, PixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrPtr);
+		}
+
+		public Color GetPixel(int X, int Y) {
+			GetWindowSize(out int W, out int H);
+			int Idx = (H - Y - 1) * W + X;
+
+			if (Idx < 0 || Idx >= PixelData.Length)
+				return Color.Black;
+
+			return PixelData[Idx];
 		}
 
 		public void Close() {
