@@ -13,12 +13,16 @@ https://github.com/luca-piccioni/OpenGL.Net
 * Framebuffers
 * 2D and 3D meshes
 * Cameras
+* Terrain, 3D mesh from heightmap
 
 # TODO
 
 * Sprites
 * Tile maps
 * Text
+	* Signed distance field
+	* Classic font atlas
+	* Loading glyphs with Freetype?
 * Basic drawing library (filled and outline [with thickness])
 	* Lines
 	* Circles
