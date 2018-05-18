@@ -158,8 +158,15 @@ namespace FishGfx.Graphics {
 			Color[] Clrs = new Color[Width * Height];
 
 			// TODO: Older OpenGL way?
-			fixed (Color* ClrsPtr = Clrs)
-				Gl.GetTextureImage(ID, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, Clrs.Length * sizeof(Color), (IntPtr)ClrsPtr);
+			fixed (Color* ClrsPtr = Clrs) {
+				if (Internal_OpenGL.Is45OrAbove)
+					Gl.GetTextureImage(ID, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, Clrs.Length * sizeof(Color), (IntPtr)ClrsPtr);
+				else {
+					Bind();
+					Gl.GetTexImage(TextureTarget.Texture2d, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrsPtr);
+					Unbind();
+				}
+			}
 
 			return Clrs;
 		}

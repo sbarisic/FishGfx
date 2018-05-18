@@ -86,6 +86,7 @@
     <Compile Include="System\Events.cs" />
     <Compile Include="System\RenderAPI.cs" />
     <Compile Include="GfxUtils.cs" />
+    <Compile Include="BoundingBox.cs" />
     <Compile Include="Vertex3.cs" />
     <Compile Include="Vertex2.cs" />
   </ItemGroup>

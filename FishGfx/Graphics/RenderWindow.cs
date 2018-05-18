@@ -166,6 +166,9 @@ namespace FishGfx.Graphics {
 	public delegate void OnKeyFunc(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods);
 
 	public unsafe class RenderWindow {
+		static int SupportedMajor = 0;
+		static int SupportedMinor = 0;
+
 		Glfw.Window Wnd;
 		Glfw.CursorPosFunc GlfwOnMouseMove;
 		Glfw.KeyFunc GlfwOnKey;
@@ -189,7 +192,7 @@ namespace FishGfx.Graphics {
 			}
 		}
 
-		static void SetOpenGLHints() {
+		static void SetOpenGLHints(int Major, int Minor) {
 			Glfw.WindowHint(Glfw.Hint.ClientApi, Glfw.ClientApi.OpenGL);
 			Glfw.WindowHint(Glfw.Hint.ContextCreationApi, Glfw.ContextApi.Native);
 			Glfw.WindowHint(Glfw.Hint.OpenglProfile, Glfw.OpenGLProfile.Core);
@@ -200,18 +203,33 @@ namespace FishGfx.Graphics {
 			// TODO: Allow external version select
 
 			Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
-			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, 4);
-			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, 4);
+			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, Major);
+			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, Minor);
 			Glfw.WindowHint(Glfw.Hint.Samples, 0);
+		}
+
+		Glfw.Window TryCreateWindow(int Major, int Minor, int W, int H, string Title) {
+			SetOpenGLHints(Major, Minor);
+			return Glfw.CreateWindow(W, H, Title);
 		}
 
 		public RenderWindow(int Width, int Height, string Title, bool Resizable = false, bool CenterWindow = true) {
 			Internal_OpenGL.InitGLFW();
-
 			Glfw.WindowHint(Glfw.Hint.Resizable, Resizable);
-			SetOpenGLHints();
 
-			Wnd = Glfw.CreateWindow(Width, Height, Title);
+			// YOLO
+			if (SupportedMajor != 0 && SupportedMinor != 0 && (Wnd = TryCreateWindow(SupportedMajor, SupportedMinor, Width, Height, Title))) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 6, Width, Height, Title)) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 5, Width, Height, Title)) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 4, Width, Height, Title)) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 3, Width, Height, Title)) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 2, Width, Height, Title)) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 1, Width, Height, Title)) {
+			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 0, Width, Height, Title)) {
+			} else
+				throw new Exception("Could not create any supported OpenGL context");
+
+
 			if (CenterWindow)
 				Center();
 

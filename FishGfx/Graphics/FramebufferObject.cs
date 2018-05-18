@@ -15,7 +15,11 @@ namespace FishGfx.Graphics {
 		public bool Multisampled { get; private set; }
 
 		public Framebuffer() {
-			ID = Gl.CreateFramebuffer();
+			if (Internal_OpenGL.Is45OrAbove)
+				ID = Gl.CreateFramebuffer();
+			else
+				ID = Gl.GenFramebuffer();
+
 			Textures = new Dictionary<FramebufferAttachment, Texture>();
 		}
 
@@ -30,7 +34,13 @@ namespace FishGfx.Graphics {
 
 			Textures.Add(Attachment, Tex);
 
-			Gl.NamedFramebufferTexture(ID, Attachment, Tex.ID, 0);
+			if (Internal_OpenGL.Is45OrAbove)
+				Gl.NamedFramebufferTexture(ID, Attachment, Tex.ID, 0);
+			else {
+				Bind();
+				Gl.FramebufferTexture(FramebufferTarget.Framebuffer, Attachment, Tex.ID, 0);
+				Unbind();
+			}
 		}
 
 		Texture GetTexture(FramebufferAttachment Attachment) {
@@ -60,7 +70,13 @@ namespace FishGfx.Graphics {
 			for (int i = 0; i < Indices.Length; i++)
 				Indices[i] += (int)FramebufferAttachment.ColorAttachment0;
 
-			Gl.NamedFramebufferDrawBuffers(ID, Indices.Length, Indices);
+			if (Internal_OpenGL.Is45OrAbove)
+				Gl.NamedFramebufferDrawBuffers(ID, Indices.Length, Indices);
+			else {
+				Bind();
+				Gl.DrawBuffers(Indices);
+				Unbind();
+			}
 		}
 
 		public void Clear(Color? Color = null, int ColorAttachment = 0, float? Depth = null, int? Stencil = null) {
@@ -77,7 +93,14 @@ namespace FishGfx.Graphics {
 
 		void BindFramebuffer(FramebufferTarget Target) {
 #if DEBUG
-			FramebufferStatus S = Gl.CheckNamedFramebufferStatus(ID, Target);
+			FramebufferStatus S;
+
+			if (Internal_OpenGL.Is45OrAbove)
+				S = Gl.CheckNamedFramebufferStatus(ID, Target);
+			else
+				S = Gl.CheckFramebufferStatus(Target);
+
+
 			if (S != FramebufferStatus.FramebufferComplete)
 				throw new InvalidOperationException("Incomplete framebuffer");
 #endif

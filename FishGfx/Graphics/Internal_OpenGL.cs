@@ -38,6 +38,11 @@ namespace FishGfx.Graphics {
 				throw new Exception("Could not initialize glfw");
 
 			Glfw.SetErrorCallback((Err, Msg) => {
+//#if !DEBUG
+				if (Err == Glfw.ErrorCode.VersionUnavailable)
+					return;
+//#endif
+
 				throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
 			});
 		}

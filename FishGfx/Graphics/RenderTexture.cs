@@ -38,6 +38,11 @@ namespace FishGfx.Graphics {
 			return Tex;
 		}
 
+		public void Bind(params int[] DrawBuffers) {
+			Framebuffer.DrawBuffers(DrawBuffers);
+			Framebuffer.Bind();
+		}
+
 		public void Bind() {
 			Framebuffer.Bind();
 		}

@@ -16,6 +16,8 @@ namespace FishGfx.Graphics.Drawables {
 		public int Height { get; private set; }
 		public Texture OverlayTexture;
 
+		public BoundingBox BoundingBox { get; private set; } = BoundingBox.Empty;
+
 		public Terrain() {
 			TerrainMesh = new Mesh3D();
 			TerrainMesh.PrimitiveType = PrimitiveType.Triangles;
@@ -59,16 +61,16 @@ namespace FishGfx.Graphics.Drawables {
 					float HBottom = GetHeight(x, y - 1);
 					float HBottomRight = GetHeight(x + 1, y - 1);
 
-					Vertex3 Current = new Vector3(x, HCurrent, y);
+					Vertex3 Current = new Vector3(x, HCurrent, y + 1);
 					Current.UV = new Vector2(u, v);
 
-					Vertex3 Right = new Vector3(x + 1, HRight, y);
+					Vertex3 Right = new Vector3(x + 1, HRight, y + 1);
 					Right.UV = new Vector2(u + ustep, v);
 
-					Vertex3 Bottom = new Vector3(x, HBottom, y - 1);
+					Vertex3 Bottom = new Vector3(x, HBottom, y);
 					Bottom.UV = new Vector2(u, v + vstep);
 
-					Vertex3 BottomRight = new Vector3(x + 1, HBottomRight, y - 1);
+					Vertex3 BottomRight = new Vector3(x + 1, HBottomRight, y);
 					BottomRight.UV = new Vector2(u + ustep, v + vstep);
 
 					if (GeneratePickerColors) {
@@ -93,10 +95,13 @@ namespace FishGfx.Graphics.Drawables {
 				}
 			}
 
+			foreach (var Vert in Verts)
+				BoundingBox = BoundingBox.Inflate(Vert.Position);
+
 			TerrainMesh.SetVertices(Verts.ToArray());
 		}
 
-		float GetHeight(int X, int Y) {
+		public float GetHeight(int X, int Y) {
 			if (X < 0)
 				X = 0;
 
@@ -110,6 +115,10 @@ namespace FishGfx.Graphics.Drawables {
 				Y = Height - 1;
 
 			return HeightData[Y * Width + X];
+		}
+
+		void InflateBoundingBox(Vertex3 Vert) {
+
 		}
 
 		public void Draw() {
