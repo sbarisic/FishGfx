@@ -74,6 +74,17 @@ namespace FishGfx.Graphics {
 			SetPerspective(Viewport.X, Viewport.Y, HFOV, NearPlane, FarPlane, PreserveCenter);
 		}
 
+		public void LookAt(Vector3 Pos) {
+			Matrix4x4 ViewLookAt = Matrix4x4.CreateLookAt(Position, Pos, UpNormal);
+			Matrix4x4.Invert(ViewLookAt, out Matrix4x4 WorldLookAt);
+
+			Matrix4x4.Decompose(WorldLookAt, out Vector3 WorldScale, out Quaternion WorldRotation, out Vector3 WorldTranslation);
+			Position = WorldTranslation;
+			Rotation = WorldRotation;
+
+			(Pitch, Yaw, _) = Rotation;
+		}
+
 		void Refresh() {
 			if (!Dirty)
 				return;
@@ -90,11 +101,16 @@ namespace FishGfx.Graphics {
 
 		public void Update(Vector2 MouseDelta) {
 			const float MouseScale = 1.0f / 5f;
+			const float MaxAngle = 360;
 
 			if (MouseMovement && (MouseDelta.X != 0 || MouseDelta.Y != 0)) {
 				Yaw -= MouseDelta.X * MouseScale;
-				Pitch -= MouseDelta.Y * MouseScale;
+				while (Yaw > MaxAngle)
+					Yaw -= MaxAngle;
+				while (Yaw < 0)
+					Yaw += MaxAngle;
 
+				Pitch -= MouseDelta.Y * MouseScale;
 				Pitch = Pitch.Clamp(-90, 90);
 
 				//Matrix4x4 Rot = Matrix4x4.CreateRotationX(-MouseDelta.Y * MouseScale) * Matrix4x4.CreateRotationY(-MouseDelta.X * MouseScale);
