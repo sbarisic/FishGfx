@@ -47,6 +47,33 @@ namespace FishGfx.Graphics {
 			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 		}
 
+		public static void CullFront() {
+			if (List != null) {
+				List.Enqueue(CullFront);
+				return;
+			}
+
+			Internal_OpenGL.CullFront();
+		}
+
+		public static void CullBack() {
+			if (List != null) {
+				List.Enqueue(CullBack);
+				return;
+			}
+
+			Internal_OpenGL.CullBack();
+		}
+
+		public static void EnableCullFace(bool Enable) {
+			if (List != null) {
+				List.Enqueue(() => EnableCullFace(Enable));
+				return;
+			}
+
+			Internal_OpenGL.EnableCullFace(Enable);
+		}
+		
 		public static void Line(Vertex2 Start, Vertex2 End) {
 			if (List != null) {
 				List.Enqueue(() => Line(Start, End));

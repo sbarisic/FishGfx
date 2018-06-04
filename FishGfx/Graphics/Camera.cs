@@ -41,6 +41,8 @@ namespace FishGfx.Graphics {
 		float Yaw, Pitch;
 		public Vector3 CameraUpNormal;
 
+		public Vector2 PitchClamp = new Vector2(-90, 90);
+
 		public Camera() {
 			View = Matrix4x4.Identity;
 			Projection = Matrix4x4.Identity;
@@ -83,6 +85,7 @@ namespace FishGfx.Graphics {
 			Rotation = WorldRotation;
 
 			(Pitch, Yaw, _) = Rotation;
+			PerformClamps();
 		}
 
 		void Refresh() {
@@ -99,6 +102,11 @@ namespace FishGfx.Graphics {
 			View = ViewMat;
 		}
 
+		void PerformClamps() {
+			Pitch = Pitch.Clamp(PitchClamp.X, PitchClamp.Y);
+			Rotation = Quaternion.CreateFromYawPitchRoll(Yaw * (float)Math.PI / 180, Pitch * (float)Math.PI / 180, 0);
+		}
+
 		public void Update(Vector2 MouseDelta) {
 			const float MouseScale = 1.0f / 5f;
 			const float MaxAngle = 360;
@@ -111,11 +119,7 @@ namespace FishGfx.Graphics {
 					Yaw += MaxAngle;
 
 				Pitch -= MouseDelta.Y * MouseScale;
-				Pitch = Pitch.Clamp(-90, 90);
-
-				//Matrix4x4 Rot = Matrix4x4.CreateRotationX(-MouseDelta.Y * MouseScale) * Matrix4x4.CreateRotationY(-MouseDelta.X * MouseScale);
-				Rotation = Quaternion.CreateFromYawPitchRoll(Yaw * (float)Math.PI / 180, Pitch * (float)Math.PI / 180, 0);
-				// TODO: Take into account the camera up normal
+				PerformClamps();
 			}
 		}
 

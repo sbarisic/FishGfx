@@ -182,6 +182,12 @@ namespace FishGfx.Graphics {
 		public int MouseX { get; private set; }
 		public int MouseY { get; private set; }
 
+		public Vector2 MousePos {
+			get {
+				return new Vector2(MouseX, MouseY);
+			}
+		}
+
 		public bool ShouldClose {
 			get {
 				return Glfw.WindowShouldClose(Wnd);

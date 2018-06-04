@@ -38,10 +38,10 @@ namespace FishGfx.Graphics {
 				throw new Exception("Could not initialize glfw");
 
 			Glfw.SetErrorCallback((Err, Msg) => {
-//#if !DEBUG
+				//#if !DEBUG
 				if (Err == Glfw.ErrorCode.VersionUnavailable)
 					return;
-//#endif
+				//#endif
 
 				throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
 			});
@@ -127,13 +127,33 @@ namespace FishGfx.Graphics {
 #endif
 		}
 
+		public static void CullFront() {
+			Gl.CullFace(CullFaceMode.Front);
+		}
+
+		public static void CullBack() {
+			Gl.CullFace(CullFaceMode.Back);
+		}
+		
+		public static void EnableCullFace(bool Enable) {
+			if (Enable)
+				Gl.Enable(EnableCap.CullFace);
+			else
+				Gl.Disable(EnableCap.CullFace);
+		}
+
+		public static void SetDepth(DepthFunction Func) {
+			Gl.DepthFunc(Func);
+		}
+
 		public static void ResetGLState() {
+			SetDepth(DepthFunction.Lequal);
 			//Gl.Disable(EnableCap.DepthTest);
 			Gl.Enable(EnableCap.DepthTest);
 
 			Gl.FrontFace(FrontFaceDirection.Ccw);
-			Gl.CullFace(CullFaceMode.Back);
-			Gl.Enable(EnableCap.CullFace);
+			CullBack();
+			EnableCullFace(true);
 			//Gl.Disable(EnableCap.CullFace);
 
 			//Gl.BlendEquationSeparate(BlendEquationMode.FuncAdd, BlendEquationMode.FuncAdd);
