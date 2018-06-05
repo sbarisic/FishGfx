@@ -23,6 +23,9 @@ namespace FishGfx {
 		public Vertex3(Vector3 Pos, Color Clr) : this(Pos, Vector2.Zero, Clr) {
 		}
 
+		public Vertex3(Vector3 Pos, Vector2 UV) : this(Pos, UV, Color.White) {
+		}
+
 		public static implicit operator Vertex3(Vector3 Pos) {
 			return new Vertex3(Pos);
 		}

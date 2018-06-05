@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using System.Numerics;
 
 namespace FishGfx {
-	public static class GfxUtils {
+	public static partial class GfxUtils {
 		static Random Rnd = new Random();
 
 		public static byte RandomByte() {
