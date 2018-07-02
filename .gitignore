@@ -288,5 +288,3 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
-
-!/FishGfx/data/models/pin/pin.obj
