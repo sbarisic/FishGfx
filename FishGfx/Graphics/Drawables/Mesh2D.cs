@@ -87,6 +87,20 @@ namespace FishGfx.Graphics.Drawables {
 			SetColors(Verts.Select((V) => V.Color).ToArray());
 		}
 
+		public void Draw(int First, int Count) {
+			if (VAO.HasElementBuffer)
+				throw new Exception("Use DrawElements when you supply element buffer");
+
+			VAO.Draw(First, Count);
+		}
+
+		public void DrawElements(int Offset, int Count) {
+			if (!VAO.HasElementBuffer)
+				throw new Exception("Use Draw when you don't supply element buffer");
+
+			VAO.DrawElements(Offset, Count, ElementType: DrawElementsType.UnsignedInt);
+		}
+
 		public void Draw() {
 			Gl.PolygonMode(MaterialFace.FrontAndBack, (OpenGL.PolygonMode)PolygonMode);
 			//Gl.LineWidth(10);
@@ -95,9 +109,9 @@ namespace FishGfx.Graphics.Drawables {
 				VertexArray.VertexAttrib(COLOR_ATTRIB, DefaultColor);
 
 			if (!VAO.HasElementBuffer)
-				VAO.Draw(0, VertBuffer.ElementCount);
+				Draw(0, VertBuffer.ElementCount);
 			else
-				VAO.DrawElements(ElementType: DrawElementsType.UnsignedInt);
+				DrawElements(0, -1);
 		}
 	}
 }

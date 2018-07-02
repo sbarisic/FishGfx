@@ -65,6 +65,25 @@ namespace FishGfx.Graphics {
 			Internal_OpenGL.CullBack();
 		}
 
+
+		public static void FrontFace(bool Clockwise = false) {
+			if (List != null) {
+				List.Enqueue(() => FrontFace(Clockwise));
+				return;
+			}
+
+			Internal_OpenGL.FrontFace(Clockwise);
+		}
+
+		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
+			if (List != null) {
+				List.Enqueue(() => Scissor(X, Y, W, H, Enable));
+				return;
+			}
+
+			Internal_OpenGL.Scissor(X, Y, W, H, Enable);
+		}
+
 		public static void EnableCullFace(bool Enable) {
 			if (List != null) {
 				List.Enqueue(() => EnableCullFace(Enable));
@@ -73,7 +92,16 @@ namespace FishGfx.Graphics {
 
 			Internal_OpenGL.EnableCullFace(Enable);
 		}
-		
+
+		public static void EnableDepthDest(bool Enable) {
+			if (List != null) {
+				List.Enqueue(() => EnableDepthDest(Enable));
+				return;
+			}
+
+			Internal_OpenGL.EnableDepthTest(Enable);
+		}
+
 		public static void Line(Vertex2 Start, Vertex2 End) {
 			if (List != null) {
 				List.Enqueue(() => Line(Start, End));

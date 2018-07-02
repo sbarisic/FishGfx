@@ -72,6 +72,10 @@ namespace FishGfx.Graphics {
 				/*if (Severity == Gl.DebugSeverity.Notification)
 					return;*/
 
+				// Will use video memory blah blah
+				if (Src == DebugSource.DebugSourceApi && DbgType == DebugType.DebugTypeOther && ID == 131185)
+					return;
+
 				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
 				Console.WriteLine(Encoding.ASCII.GetString((byte*)Buffer, Len));
 
@@ -134,7 +138,7 @@ namespace FishGfx.Graphics {
 		public static void CullBack() {
 			Gl.CullFace(CullFaceMode.Back);
 		}
-		
+
 		public static void EnableCullFace(bool Enable) {
 			if (Enable)
 				Gl.Enable(EnableCap.CullFace);
@@ -146,12 +150,34 @@ namespace FishGfx.Graphics {
 			Gl.DepthFunc(Func);
 		}
 
+		public static void EnableDepthTest(bool Enable) {
+			if (Enable)
+				Gl.Enable(EnableCap.DepthTest);
+			else
+				Gl.Disable(EnableCap.DepthTest);
+		}
+
+		public static void FrontFace(bool Clockwise = false) {
+			if (Clockwise)
+				Gl.FrontFace(FrontFaceDirection.Cw);
+			else
+				Gl.FrontFace(FrontFaceDirection.Ccw);
+		}
+
+		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
+			Gl.Scissor(X, Y, W, H);
+
+			if (Enable)
+				Gl.Enable(EnableCap.ScissorTest);
+			else
+				Gl.Disable(EnableCap.ScissorTest);
+		}
+
 		public static void ResetGLState() {
 			SetDepth(DepthFunction.Lequal);
-			//Gl.Disable(EnableCap.DepthTest);
-			Gl.Enable(EnableCap.DepthTest);
+			EnableDepthTest(true);
 
-			Gl.FrontFace(FrontFaceDirection.Ccw);
+			FrontFace();
 			CullBack();
 			EnableCullFace(true);
 			//Gl.Disable(EnableCap.CullFace);

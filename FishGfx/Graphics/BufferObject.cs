@@ -72,10 +72,11 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void GraphicsDispose() {
-			if (Internal_OpenGL.Is45OrAbove)
+			// TODO
+			/*if (Internal_OpenGL.Is45OrAbove)
 				Gl.UnmapNamedBuffer(ID);
 			else
-				Gl.UnmapBuffer(Target);
+				Gl.UnmapBuffer(Target);*/
 
 			Gl.DeleteBuffers(new uint[] { ID });
 		}
