@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FishGfx", "FishGfx\FishGfx.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Test", "Test\Test.csproj", "{84133B8B-65E1-4C23-A9EA-4FCEB6ACDF79}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RealSenseTest", "RealSenseTest\RealSenseTest.csproj", "{89B7B786-A16D-43C3-A594-547DEAEE28BF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{84133B8B-65E1-4C23-A9EA-4FCEB6ACDF79}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{84133B8B-65E1-4C23-A9EA-4FCEB6ACDF79}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{84133B8B-65E1-4C23-A9EA-4FCEB6ACDF79}.Release|Any CPU.Build.0 = Release|Any CPU
+		{89B7B786-A16D-43C3-A594-547DEAEE28BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{89B7B786-A16D-43C3-A594-547DEAEE28BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{89B7B786-A16D-43C3-A594-547DEAEE28BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{89B7B786-A16D-43C3-A594-547DEAEE28BF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

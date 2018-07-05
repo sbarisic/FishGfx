@@ -23,6 +23,24 @@ namespace FishGfx.Graphics.Drawables {
 			TerrainMesh.PrimitiveType = PrimitiveType.Triangles;
 		}
 
+		public void LoadFromGenerator(Func<float, float, float> Gen, float Scale, int Width, int Height, bool GeneratePickerColors = true) {
+			this.Width = Width;
+			this.Height = Height;
+
+			if (HeightData == null || (HeightData.Length != Width * Height))
+				HeightData = new float[Width * Height];
+			
+			for (int y = 0; y < Height; y++)
+				for (int x = 0; x < Width; x++) {
+					float xx = (float)x / Width;
+					float yy = (float)y / Height;
+
+					HeightData[y * Width + x] = Gen(xx, yy) * Scale;
+				}
+
+			RecalcAfterLoad(GeneratePickerColors);
+		}
+
 		/// <param name="Img">Heightmap</param>
 		/// <param name="ScaleValue">Image heightmap range, 255 default</param>
 		public void LoadFromImage(Image Img, float ScaleValue = 255, bool CreateOverlayTexture = true, bool GeneratePickerColors = true) {
@@ -33,7 +51,8 @@ namespace FishGfx.Graphics.Drawables {
 
 			Width = Img.Width;
 			Height = Img.Height;
-			HeightData = new float[Width * Height];
+			if (HeightData == null || (HeightData.Length != Width * Height))
+				HeightData = new float[Width * Height];
 
 			// TODO: Direct pixel access, faster
 			using (Bitmap Bmp = new Bitmap(Img)) {
@@ -47,6 +66,10 @@ namespace FishGfx.Graphics.Drawables {
 					}
 			}
 
+			RecalcAfterLoad(GeneratePickerColors);
+		}
+
+		void RecalcAfterLoad(bool GeneratePickerColors) {
 			List<Vertex3> Verts = new List<Vertex3>();
 			for (int y = 0; y < Height; y++) {
 				for (int x = 0; x < Width; x++) {
@@ -115,10 +138,6 @@ namespace FishGfx.Graphics.Drawables {
 				Y = Height - 1;
 
 			return HeightData[Y * Width + X];
-		}
-
-		void InflateBoundingBox(Vertex3 Vert) {
-
 		}
 
 		public void Draw() {

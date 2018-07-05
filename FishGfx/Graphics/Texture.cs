@@ -272,5 +272,11 @@ namespace FishGfx.Graphics {
 			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Bgra);
 			return Tex;
 		}
+
+		public static Texture FromPixelsRgb(int Width, int Height, IntPtr Data) {
+			Texture Tex = new Texture(Width, Height);
+			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Rgb);
+			return Tex;
+		}
 	}
 }

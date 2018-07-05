@@ -34,8 +34,7 @@ namespace Test {
 
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
-			Default.Uniforms.Viewport = new Vector2(800, 600);
-			Default.Uniforms.Project = Matrix4x4.CreateOrthographicOffCenter(0, 800, 0, 600, -10, 10);
+			Default.Uniforms.Camera.SetOrthogonal(0, 0, 800, 600, -10, 10);
 
 			Vector2[] UVs = new Vector2[] {
 				new Vector2(0, 0),
