@@ -33,7 +33,7 @@ namespace Test {
 			Tex2.SetFilterSmooth();
 
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
+				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
 			Default.Uniforms.Camera.SetOrthogonal(0, 0, 800, 600, -10, 10);
 
 			Vector2[] UVs = new Vector2[] {
@@ -80,7 +80,7 @@ namespace Test {
 				QTex.UnbindTextureUnit();
 
 				//Tex2.BindTextureUnit();
-				Msh2.Draw();
+				//Msh2.Draw();
 				//Tex2.UnbindTextureUnit();
 
 				Default.Unbind();

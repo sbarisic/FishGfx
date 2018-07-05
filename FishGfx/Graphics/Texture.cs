@@ -154,6 +154,14 @@ namespace FishGfx.Graphics {
 				GenerateMipmap();
 		}
 
+		public void SetPixels2D_RGB8(IntPtr Data, int Width, int Height) {
+			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Rgb);
+		}
+
+		public void SetPixels2D_BGR8(IntPtr Data, int Width, int Height) {
+			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Bgr);
+		}
+
 		public Color[] GetPixels() {
 			Color[] Clrs = new Color[Width * Height];
 
@@ -256,6 +264,10 @@ namespace FishGfx.Graphics {
 	}
 
 	public unsafe partial class Texture : GraphicsObject {
+		public static Texture Empty(int W, int H) {
+			return new Texture(W, H);
+		}
+
 		public static Texture FromImage(Image Img) {
 			Texture Tex = new Texture(Img.Width, Img.Height);
 			Tex.SubImage2D(Img);
@@ -270,12 +282,6 @@ namespace FishGfx.Graphics {
 		public static Texture FromPixels(int Width, int Height, IntPtr Data) {
 			Texture Tex = new Texture(Width, Height);
 			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Bgra);
-			return Tex;
-		}
-
-		public static Texture FromPixelsRgb(int Width, int Height, IntPtr Data) {
-			Texture Tex = new Texture(Width, Height);
-			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Rgb);
 			return Tex;
 		}
 	}

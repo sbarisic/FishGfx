@@ -147,6 +147,7 @@
     <Compile Include="Graphics\BufferObject.cs" />
     <Compile Include="Graphics\GraphicsObject.cs" />
     <Compile Include="Graphics\ShaderProgram.cs" />
+    <Compile Include="MicroConfig.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RealSense\RealSenseCamera.cs" />
     <Compile Include="System\Events.cs" />
