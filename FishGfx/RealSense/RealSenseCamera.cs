@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Numerics;
 using System.Threading.Tasks;
 using Intel.RealSense;
 
 namespace FishGfx.RealSense {
 	public delegate void OnFramesReceived(params FrameData[] Frames);
+	public delegate Vertex3[] OnPointCloudReceived(int Count, Vertex3[] Verts, FrameData[] Frames);
 
 	public enum FrameType {
 		Any = 0,
@@ -97,12 +99,16 @@ namespace FishGfx.RealSense {
 		}
 	}
 
-	public static class RealSenseCamera {
+	public static unsafe class RealSenseCamera {
 		static Context Ctx = new Context();
 		static Config Cfg = new Config();
 		static Pipeline Pipeline = new Pipeline(Ctx);
 
 		static PipelineProfile Profile;
+		static PointCloud PointCloud;
+
+		static Points.Vertex[] PointVerts = new Points.Vertex[0];
+		static Points.TextureCoordinate[] PointUVs = new Points.TextureCoordinate[0];
 
 		public static void DisableAllStreams() {
 			Cfg.DisableAllStreams();
@@ -183,11 +189,14 @@ namespace FishGfx.RealSense {
 			Profile = null;
 		}
 
-		public static bool PollForFrames(OnFramesReceived OnFrames) {
+		public static bool PollForFrames(OnFramesReceived OnFrames, OnPointCloudReceived OnPointCloud = null) {
 			if (Pipeline.PollForFrames(out FrameSet Frames)) {
 				using (Frames) {
 					Frame[] AllFrames = Frames.ToArray();
 					FrameData[] FrameData = new FrameData[AllFrames.Length];
+
+					VideoFrame Video = null;
+					DepthFrame Depth = null;
 
 					for (int i = 0; i < FrameData.Length; i++) {
 						VideoFrame Vid = AllFrames[i] as VideoFrame;
@@ -196,6 +205,11 @@ namespace FishGfx.RealSense {
 						int H = Vid?.Height ?? Dpt?.Height ?? 0;
 						int Bpp = Vid?.BitsPerPixel ?? Dpt?.BitsPerPixel ?? 0;
 						int Stride = Vid?.Stride ?? Dpt?.Stride ?? 0;
+
+						if (Vid != null)
+							Video = Vid;
+						if (Dpt != null)
+							Depth = Dpt;
 
 						FrameData[i] = new FrameData() {
 							Idx = AllFrames[i].Profile.Index,
@@ -206,6 +220,34 @@ namespace FishGfx.RealSense {
 							Stride = Stride,
 							Type = (FrameType)AllFrames[i].Profile.Stream
 						};
+					}
+
+					if (OnPointCloud != null) {
+						if (PointCloud == null)
+							PointCloud = new PointCloud();
+
+						Vertex3[] Verts;
+						int VertCount = 0;
+
+						using (Points Pts = PointCloud.Calculate(Depth)) {
+							PointCloud.MapTexture(Video);
+							Verts = OnPointCloud(VertCount = Pts.Count, null, null);
+
+							if (PointVerts.Length < VertCount) {
+								PointVerts = new Points.Vertex[VertCount];
+								PointUVs = new Points.TextureCoordinate[VertCount];
+							}
+
+							Pts.CopyTo(PointVerts);
+							Pts.CopyTo(PointUVs);
+						}
+
+						fixed (Points.Vertex* PointVertsPtr = PointVerts)
+						fixed (Points.TextureCoordinate* PointUVsPtr = PointUVs)
+							for (int i = 0; i < VertCount; i++)
+								Verts[i] = new Vertex3(*(Vector3*)&PointVertsPtr[i], *(Vector2*)&PointUVsPtr[i]);
+
+						OnPointCloud(VertCount, Verts, FrameData);
 					}
 
 					OnFrames(FrameData);
