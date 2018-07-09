@@ -126,7 +126,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Color.cs" />
-    <Compile Include="GfxUtils_ObjLoader.cs" />
+    <Compile Include="Formats\Foam.cs" />
+    <Compile Include="Formats\Smd.cs" />
+    <Compile Include="Formats\Obj.cs" />
     <Compile Include="Glfw3\Glfw.cs" />
     <Compile Include="Glfw3\Glfw.Delegate.cs" />
     <Compile Include="Glfw3\Glfw.Enum.cs" />
@@ -160,6 +162,9 @@
   <ItemGroup />
   <ItemGroup>
     <Compile Include="Glfw3\Glfw.Struct.cs" />
+    <None Include="data\realsense.frag">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="data\defaultRayCast.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

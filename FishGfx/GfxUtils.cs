@@ -4,9 +4,12 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Numerics;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
 
 namespace FishGfx {
-	public static partial class GfxUtils {
+	public static unsafe partial class GfxUtils {
 		static Random Rnd = new Random();
 
 		public static byte RandomByte() {
@@ -55,6 +58,10 @@ namespace FishGfx {
 				return Max;
 
 			return Num;
+		}
+
+		public static Vector3 XZY(this Vector3 Vec) {
+			return new Vector3(Vec.X, Vec.Z, Vec.Y);
 		}
 
 		public static Vector3 XYZ(this Vector4 V) {
@@ -133,6 +140,40 @@ namespace FishGfx {
 			X = Q.X;
 			Y = Q.Y;
 			Z = Q.Z;
+		}
+
+		public static float ParseFloat(this string Str) {
+			return float.Parse(Str, CultureInfo.InvariantCulture);
+		}
+
+		public static int ParseInt(this string Str) {
+			return int.Parse(Str, CultureInfo.InvariantCulture);
+		}
+
+		public static void WriteStruct<T>(this BinaryWriter Writer, T Val) where T : struct {
+			GCHandle Handle = GCHandle.Alloc(Val, GCHandleType.Pinned);
+			IntPtr Ptr = Handle.AddrOfPinnedObject();
+			int Len = Marshal.SizeOf<T>();
+
+			byte[] Bytes = new byte[Len];
+			Marshal.Copy(Ptr, Bytes, 0, Bytes.Length);
+			Writer.Write(Bytes);
+
+			Handle.Free();
+		}
+
+		public static T ReadStruct<T>(this BinaryReader Reader) where T : struct {
+			T Val = default(T);
+			GCHandle Handle = GCHandle.Alloc(Val, GCHandleType.Pinned);
+			IntPtr Ptr = Handle.AddrOfPinnedObject();
+			int Len = Marshal.SizeOf<T>();
+
+			byte[] Bytes = new byte[Len];
+			Reader.Read(Bytes, 0, Bytes.Length);
+			Marshal.Copy(Bytes, 0, Ptr, Len);
+
+			Handle.Free();
+			return Val;
 		}
 	}
 }
