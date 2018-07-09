@@ -49,8 +49,10 @@ namespace FishGfx.Graphics {
 			Gl.BindBuffer(Target, 0);
 		}
 
-		public void SetData(uint Size, IntPtr Data, BufferUsage Usage = BufferUsage.DynamicDraw) {
+		public void SetData(uint Size, IntPtr Data, int ElementCount, BufferUsage Usage = BufferUsage.DynamicDraw) {
 			this.Size = (int)Size;
+
+			this.ElementCount = ElementCount;
 
 			if (Internal_OpenGL.Is45OrAbove)
 				Gl.NamedBufferData(ID, Size, Data, (OpenGL.BufferUsage)Usage);
@@ -64,10 +66,9 @@ namespace FishGfx.Graphics {
 		public void SetData<T>(T[] Data, BufferUsage Usage = BufferUsage.DynamicDraw) where T : struct {
 			if (Data == null)
 				return;
-
-			ElementCount = Data.Length;
+			
 			GCHandle PinHandle = GCHandle.Alloc(Data, GCHandleType.Pinned);
-			SetData((uint)(Marshal.SizeOf(typeof(T)) * Data.Length), PinHandle.AddrOfPinnedObject(), Usage);
+			SetData((uint)(Marshal.SizeOf(typeof(T)) * Data.Length), PinHandle.AddrOfPinnedObject(), Data.Length, Usage);
 			PinHandle.Free();
 		}
 

@@ -81,6 +81,7 @@ namespace FishGfx.Graphics.Drawables {
 				VAO.BindElementBuffer(null);
 		}
 
+		// TODO: Port code from Mesh3D
 		public void SetVertices(params Vertex2[] Verts) {
 			SetVertices(Verts.Select((V) => V.Position).ToArray());
 			SetUVs(Verts.Select((V) => V.UV).ToArray());

@@ -26,12 +26,12 @@ namespace FishGfx.Graphics {
 
 			U.Camera = new Camera();
 			U.Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
-	
+
 			return U;
 		}
 	}
 
-	public class ShaderProgram : GraphicsObject {
+	public unsafe class ShaderProgram : GraphicsObject {
 		/*// TODO: Lazyload
 		public static ShaderProgram Default { get; private set; }
 		public static ShaderProgram DefaultFullbright { get; private set; }
@@ -199,12 +199,31 @@ namespace FishGfx.Graphics {
 			Gl.ProgramUniformMatrix4f(ID, GetUniformLocation(Uniform), 1, Transpose, M);
 		}
 
-		public void Uniform2f<T>(string Uniform, T Val) where T : struct {
-			Gl.ProgramUniform2f(ID, GetUniformLocation(Uniform), 1, Val);
+		public bool Uniform2f<T>(string Uniform, T Val) where T : struct {
+			int Loc = GetUniformLocation(Uniform);
+			if (Loc == -1)
+				return false;
+
+			Gl.ProgramUniform2f(ID, Loc, 1, Val);
+			return true;
 		}
 
-		public void Uniform1f<T>(string Uniform, T Val) where T : struct {
-			Gl.ProgramUniform1f(ID, GetUniformLocation(Uniform), 1, Val);
+		public bool Uniform1f<T>(string Uniform, T Val) where T : struct {
+			int Loc = GetUniformLocation(Uniform);
+			if (Loc == -1)
+				return false;
+
+			Gl.ProgramUniform1f(ID, Loc, 1, Val);
+			return true;
+		}
+
+		public bool Uniform1(string Uniform, int Val) {
+			int Loc = GetUniformLocation(Uniform);
+			if (Loc == -1)
+				return false;
+
+			Gl.ProgramUniform1(ID, Loc, 1, &Val);
+			return true;
 		}
 
 		public void SetModelMatrix(Matrix4 M) {

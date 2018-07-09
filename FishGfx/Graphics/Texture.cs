@@ -162,6 +162,10 @@ namespace FishGfx.Graphics {
 			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Bgr);
 		}
 
+		public void SetPixels2D_R16(IntPtr Data, int Width, int Height) {
+			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Red, PixelType.UnsignedShort);
+		}
+
 		public Color[] GetPixels() {
 			Color[] Clrs = new Color[Width * Height];
 

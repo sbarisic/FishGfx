@@ -52,7 +52,7 @@ namespace FishGfx.Graphics {
 			CameraUpNormal = UpNormal;
 		}
 
-		public void SetOrthogonal(float Left, float Bottom, float Right, float Top, float NearPlane = 1, float FarPlane = 10000, bool PreserveCenter = false) {
+		public void SetOrthogonal(float Left, float Bottom, float Right, float Top, float NearPlane = 1, float FarPlane = 10000/*, bool PreserveCenter = false*/) {
 			Projection = Matrix4x4.CreateOrthographicOffCenter(Left, Right, Bottom, Top, NearPlane, FarPlane);
 
 			float Width = Math.Abs(Left - Right);
@@ -63,7 +63,7 @@ namespace FishGfx.Graphics {
 			this.Far = FarPlane;
 		}
 
-		public void SetPerspective(float Width, float Height, float HFOV = 1.5708f, float NearPlane = 1, float FarPlane = 7500, bool PreserveCenter = false) {
+		public void SetPerspective(float Width, float Height, float HFOV = 1.5708f, float NearPlane = 1, float FarPlane = 7500/*, bool PreserveCenter = false*/) {
 			HorizontalFOV = HFOV;
 			Projection = Matrix4x4.CreatePerspectiveFieldOfView(VerticalFOV = VerticalFOVFromHorizontal(HFOV, Width, Height), Width / Height, NearPlane, FarPlane);
 			ViewportSize = new Vector2(Width, Height);
@@ -72,8 +72,19 @@ namespace FishGfx.Graphics {
 			this.Far = FarPlane;
 		}
 
-		public void SetPerspective(Vector2 Viewport, float HFOV = 1.5708f, float NearPlane = 1, float FarPlane = 7500, bool PreserveCenter = false) {
-			SetPerspective(Viewport.X, Viewport.Y, HFOV, NearPlane, FarPlane, PreserveCenter);
+		public void SetPerspective(Vector2 Viewport, float HFOV = 1.5708f, float NearPlane = 1, float FarPlane = 7500/*, bool PreserveCenter = false*/) {
+			SetPerspective(Viewport.X, Viewport.Y, HFOV, NearPlane, FarPlane/*, PreserveCenter*/);
+		}
+
+		public void SetPerspectiveOffCenter(float Left, float Bottom, float Right, float Top, float NearPlane = 1, float FarPlane = 10000) {
+			Projection = Matrix4x4.CreatePerspectiveOffCenter(Left, Right, Bottom, Top, NearPlane, FarPlane);
+
+			float Width = Math.Abs(Left - Right);
+			float Height = Math.Abs(Bottom - Top);
+			ViewportSize = new Vector2(Width, Height);
+
+			this.Near = NearPlane;
+			this.Far = FarPlane;
 		}
 
 		public void LookAt(Vector3 Pos) {

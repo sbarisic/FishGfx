@@ -7,7 +7,7 @@ using System.Numerics;
 using OpenGL;
 
 namespace FishGfx.Graphics.Drawables {
-	public class Mesh3D : IDrawable {
+	public unsafe class Mesh3D : IDrawable {
 		internal const int VERTEX_ATTRIB = 0;
 		internal const int COLOR_ATTRIB = 1;
 		internal const int UV_ATTRIB = 2;
@@ -34,6 +34,17 @@ namespace FishGfx.Graphics.Drawables {
 			this.Usage = Usage;
 		}
 
+		void SetVertices(uint Size, IntPtr Data, int ElementCount, int RelativeOffset, int Stride) {
+			if (VertBuffer == null) {
+				VAO.AttribFormat(VERTEX_ATTRIB, ElementCount);
+				VAO.AttribBinding(VERTEX_ATTRIB, VAO.BindVertexBuffer(VertBuffer = new BufferObject(), Offset: RelativeOffset, Stride: Stride));
+			}
+
+			if (Data != IntPtr.Zero)
+				VertBuffer.SetData(Size, Data, (int)(Size / Stride), Usage);
+			VAO.AttribEnable(VERTEX_ATTRIB, Data != IntPtr.Zero);
+		}
+
 		public void SetVertices(Vector3[] Verts) {
 			if (VertBuffer == null) {
 				VAO.AttribFormat(VERTEX_ATTRIB, 3);
@@ -44,6 +55,18 @@ namespace FishGfx.Graphics.Drawables {
 			VAO.AttribEnable(VERTEX_ATTRIB, Verts != null);
 		}
 
+		void SetColors(uint Size, IntPtr Data, int ElementCount, int RelativeOffset, int Stride) {
+			if (ColorBuffer == null) {
+				VAO.AttribFormat(COLOR_ATTRIB, Size: ElementCount, AttribType: VertexAttribType.UnsignedByte, Normalized: true);
+				VAO.AttribBinding(COLOR_ATTRIB, VAO.BindVertexBuffer(ColorBuffer = new BufferObject(), Offset: RelativeOffset, Stride: Stride));
+			}
+
+			if (Data != IntPtr.Zero)
+				ColorBuffer.SetData(Size, Data, (int)(Size / Stride), Usage);
+			VAO.AttribEnable(COLOR_ATTRIB, Data != IntPtr.Zero);
+		}
+
+
 		public void SetColors(Color[] Colors) {
 			if (ColorBuffer == null) {
 				VAO.AttribFormat(COLOR_ATTRIB, Size: 4, AttribType: VertexAttribType.UnsignedByte, Normalized: true);
@@ -52,6 +75,17 @@ namespace FishGfx.Graphics.Drawables {
 
 			ColorBuffer.SetData(Colors, Usage: Usage);
 			VAO.AttribEnable(COLOR_ATTRIB, Colors != null);
+		}
+
+		void SetUVs(uint Size, IntPtr Data, int ElementCount, int RelativeOffset, int Stride) {
+			if (UVBuffer == null) {
+				VAO.AttribFormat(UV_ATTRIB, ElementCount);
+				VAO.AttribBinding(UV_ATTRIB, VAO.BindVertexBuffer(UVBuffer = new BufferObject(), Offset: RelativeOffset, Stride: Stride));
+			}
+
+			if (Data != IntPtr.Zero)
+				UVBuffer.SetData(Size, Data, (int)(Size / Stride), Usage);
+			VAO.AttribEnable(UV_ATTRIB, Data != IntPtr.Zero);
 		}
 
 		public void SetUVs(Vector2[] UVs) {
@@ -74,11 +108,22 @@ namespace FishGfx.Graphics.Drawables {
 			} else
 				VAO.BindElementBuffer(null);
 		}
-
+		
 		public void SetVertices(params Vertex3[] Verts) {
-			SetVertices(Verts.Select((V) => V.Position).ToArray());
-			SetUVs(Verts.Select((V) => V.UV).ToArray());
-			SetColors(Verts.Select((V) => V.Color).ToArray());
+			SetVertices(Verts.Length, Verts);
+		}
+
+		public void SetVertices(int Count, Vertex3[] Verts) {
+			fixed (Vertex3* VertsPtr = Verts)
+				SetVertices(Count, new IntPtr(VertsPtr));
+		}
+
+		void SetVertices(int Count, IntPtr VertsPtr) {
+			uint Size = (uint)(Count * sizeof(Vertex3));
+
+			SetVertices(Size, VertsPtr, 3, 0, sizeof(Vertex3));
+			SetUVs(Size, VertsPtr, 2, 3 * sizeof(float), sizeof(Vertex3));
+			SetColors(Size, VertsPtr, 4, 5 * sizeof(float), sizeof(Vertex3));
 		}
 
 		public void Draw() {
