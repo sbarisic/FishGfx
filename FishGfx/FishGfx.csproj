@@ -133,6 +133,7 @@
     <Compile Include="Glfw3\Glfw.Delegate.cs" />
     <Compile Include="Glfw3\Glfw.Enum.cs" />
     <Compile Include="Glfw3\Glfw.Func.cs" />
+    <Compile Include="Graphics\Drawables\Sprite.cs" />
     <Compile Include="Graphics\FramebufferObject.cs" />
     <Compile Include="Graphics\Camera.cs" />
     <Compile Include="Graphics\CommandList.cs" />

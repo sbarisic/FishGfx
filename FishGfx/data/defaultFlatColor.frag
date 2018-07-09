@@ -11,6 +11,6 @@ void main() {
 	vec4 TexClr = texture(Texture, UV);
 	
 	//OutClr = Clr * TexClr;
-	//OutClr = TexClr;
-	OutClr = Clr;
+	OutClr = TexClr;
+	//OutClr = Clr;
 }

@@ -10,6 +10,7 @@ using FishGfx;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
 using FishGfx.System;
+using System.Diagnostics;
 
 namespace Test {
 	class Program {
@@ -23,65 +24,38 @@ namespace Test {
 #if DEBUG
 			Console.WriteLine("Running {0}", RenderAPI.Version);
 			Console.WriteLine(RenderAPI.Renderer);
-			File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
+			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
-
-			Texture QTex = Texture.FromFile("data/quake.png");
-			QTex.SetFilterSmooth();
-
-			Texture Tex2 = Texture.FromFile("data/opengl.png");
-			Tex2.SetFilterSmooth();
 
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
 			Default.Uniforms.Camera.SetOrthogonal(0, 0, 800, 600, -10, 10);
 
-			Vector2[] UVs = new Vector2[] {
-				new Vector2(0, 0),
-				new Vector2(0, 1),
-				new Vector2(1, 1),
-				new Vector2(0, 0),
-				new Vector2(1, 1),
-				new Vector2(1, 0)
-			};
+			Texture Tex1 = Texture.FromFile("data/quake.png");
+			Tex1.SetFilterSmooth();
 
-			Mesh2D Msh1 = new Mesh2D();
-			Msh1.SetUVs(UVs);
+			Texture Tex2 = Texture.FromFile("data/opengl.png");
+			Tex2.SetFilterSmooth();
 
-			Msh1.SetVertices(new Vector2[] {
-				new Vector2(0, 0),
-				new Vector2(0, 600),
-				new Vector2(800, 600),
-				new Vector2(0, 0),
-				new Vector2(800, 600),
-				new Vector2(800, 0)
-			});
+			/*Sprite S = new Sprite(0, 0, 800, 600);
+			S.Texture = Tex1;*/
 
-			Mesh2D Msh2 = new Mesh2D();
-			Msh2.PrimitiveType = PrimitiveType.LineStrip;
-			Msh2.SetUVs(UVs);
+			Random Rnd = new Random();
 
-			Msh2.SetVertices(new Vector2[] {
-				new Vector2(50, 50),
-				new Vector2(50, 400),
-				new Vector2(750, 550),
-				new Vector2(400, 350),
-				new Vector2(750, 50),
-			});
+			Sprite[] AllSprites = new Sprite[10000];
+			for (int i = 0; i < AllSprites.Length; i++) {
+				AllSprites[i] = new Sprite(Rnd.Next(800), Rnd.Next(600), Rnd.Next(8, 80), Rnd.Next(6, 60));
+				AllSprites[i].Texture = Tex1;
+			}
 
 			while (!RWind.ShouldClose) {
 				Gfx.Clear();
-				//Gfx.Line(new Vector2(0, 0), new Vector2(100, 100));
 
 				Default.Bind();
-				
-				QTex.BindTextureUnit();
-				Msh1.Draw();
-				QTex.UnbindTextureUnit();
 
-				//Tex2.BindTextureUnit();
-				//Msh2.Draw();
-				//Tex2.UnbindTextureUnit();
+				//S.Draw();
+				for (int i = 0; i < AllSprites.Length; i++)
+					AllSprites[i].Draw();
 
 				Default.Unbind();
 
