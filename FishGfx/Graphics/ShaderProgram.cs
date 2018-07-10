@@ -18,16 +18,25 @@ namespace FishGfx.Graphics {
 		ComputeShader = 37305
 	}
 
-	public struct ShaderUniforms {
-		public Camera Camera;
+	public static class ShaderUniforms {
+		public static Camera Camera;
 
-		public static ShaderUniforms CreateIdentity() {
+		public static Matrix4 Model;
+
+		/*public static ShaderUniforms CreateIdentity() {
 			ShaderUniforms U = new ShaderUniforms();
 
 			U.Camera = new Camera();
 			U.Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
 
 			return U;
+		}*/
+
+		static ShaderUniforms() {
+			Camera = new Camera();
+			Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
+
+			Model = Matrix4.Identity;
 		}
 	}
 
@@ -72,8 +81,6 @@ namespace FishGfx.Graphics {
 			GUI = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/gui.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "content/shaders/gui.frag"));
 		}*/
-
-		public ShaderUniforms Uniforms = ShaderUniforms.CreateIdentity();
 
 		List<ShaderStage> ShaderStages;
 		Dictionary<string, int> UniformLocations;
@@ -158,9 +165,7 @@ namespace FishGfx.Graphics {
 
 			if (Dirty && !Errors)
 				Link();
-
-			SetModelMatrix(Matrix4.Identity);
-
+			
 			/*Uniform2f("Viewport", Camera.ActiveCamera.ViewportSize);
 			UniformMatrix4f("View", Camera.ActiveCamera.View);
 			UniformMatrix4f("Project", Camera.ActiveCamera.Projection);*/
@@ -169,9 +174,10 @@ namespace FishGfx.Graphics {
 			UniformMatrix4f("View", Uniforms.View);
 			UniformMatrix4f("Project", Uniforms.Project);*/
 
-			Uniform2f("Viewport", Uniforms.Camera.ViewportSize);
-			UniformMatrix4f("View", Uniforms.Camera.View);
-			UniformMatrix4f("Project", Uniforms.Camera.Projection);
+			Uniform2f("Viewport", ShaderUniforms.Camera.ViewportSize);
+			UniformMatrix4f("View", ShaderUniforms.Camera.View);
+			UniformMatrix4f("Project", ShaderUniforms.Camera.Projection);
+			UniformMatrix4f("Model", ShaderUniforms.Model);
 
 			Gl.UseProgram(ID);
 		}
@@ -224,10 +230,6 @@ namespace FishGfx.Graphics {
 
 			Gl.ProgramUniform1(ID, Loc, 1, &Val);
 			return true;
-		}
-
-		public void SetModelMatrix(Matrix4 M) {
-			UniformMatrix4f("Model", M);
 		}
 
 		public override void GraphicsDispose() {

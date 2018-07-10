@@ -7,6 +7,7 @@ using System.IO;
 using System.Numerics;
 
 using FishGfx;
+using FishGfx.Formats;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
 using FishGfx.System;
@@ -27,41 +28,44 @@ namespace Test {
 			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
 
-			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
+			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
-			Default.Uniforms.Camera.SetOrthogonal(0, 0, 800, 600, -10, 10);
 
-			Texture Tex1 = Texture.FromFile("data/quake.png");
+			GenericMesh GMsh = Smd.Load("data/models/smd/oildrum001_explosive/oildrum001_explosive_reference.smd")[0];
+			GMsh.SwapYZ();
+			Mesh3D Msh = new Mesh3D(GMsh);
+
+			Texture Tex1 = Texture.FromFile("data/" + GMsh.MaterialName + ".png");
 			Tex1.SetFilterSmooth();
 
-			Texture Tex2 = Texture.FromFile("data/opengl.png");
-			Tex2.SetFilterSmooth();
+			GMsh.CalculateBoundingSphere(out Vector3 Pos, out float Rad);
+			SetupCamera(Pos, Rad);
 
-			/*Sprite S = new Sprite(0, 0, 800, 600);
-			S.Texture = Tex1;*/
-
-			Random Rnd = new Random();
-
-			Sprite[] AllSprites = new Sprite[10000];
-			for (int i = 0; i < AllSprites.Length; i++) {
-				AllSprites[i] = new Sprite(Rnd.Next(800), Rnd.Next(600), Rnd.Next(8, 80), Rnd.Next(6, 60));
-				AllSprites[i].Texture = Tex1;
-			}
-
+			Stopwatch SWatch = Stopwatch.StartNew();
 			while (!RWind.ShouldClose) {
 				Gfx.Clear();
+				ShaderUniforms.Model = Matrix4x4.CreateRotationY((float)SWatch.ElapsedMilliseconds / 1000);
 
 				Default.Bind();
+				Tex1.BindTextureUnit();
 
-				//S.Draw();
-				for (int i = 0; i < AllSprites.Length; i++)
-					AllSprites[i].Draw();
+				Msh.Draw();
 
+				Tex1.UnbindTextureUnit();
 				Default.Unbind();
 
 				RWind.SwapBuffers();
 				Events.Poll();
 			}
+		}
+
+		static void SetupCamera(Vector3 Target, float Radius) {
+			// Cam.SetOrthogonal(0, 0, 800, 600, -10, 10);
+			Camera Cam = ShaderUniforms.Camera;
+
+			Cam.SetPerspective(800, 600);
+			Cam.Position = new Vector3(10, 30, 50) * 100;
+			Cam.LookAtFitToScreen(Target, Radius + (Radius * (50.0f / 100)));
 		}
 	}
 }

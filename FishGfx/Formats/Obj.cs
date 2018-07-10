@@ -10,16 +10,38 @@ using FishGfx;
 
 namespace FishGfx.Formats {
 	public static class Obj {
-		public static void Save(string FileName, Vertex3[] Verts) {
+		public static void Save(string FileName, IEnumerable<GenericMesh> Meshes) {
 			using (StreamWriter SW = new StreamWriter(FileName)) {
+				int GlobalVertOffset = 0;
 
-				foreach (var Vert in Verts) {
-					SW.WriteLine(string.Format(CultureInfo.InvariantCulture, "v {0} {1} {2}", Vert.Position.X, Vert.Position.Y, Vert.Position.Z));
-					SW.WriteLine(string.Format(CultureInfo.InvariantCulture, "vt {0} {1}", Vert.UV.X, Vert.UV.Y));
+				SW.WriteLine("mtllib " + Path.GetFileNameWithoutExtension(FileName) + ".mtl");
+
+				foreach (var Mesh in Meshes) {
+					foreach (var Vert in Mesh.Vertices)
+						SW.WriteLine(string.Format(CultureInfo.InvariantCulture, "v {0} {1} {2}", Vert.Position.X, Vert.Position.Y, Vert.Position.Z));
+
+					foreach (var Vert in Mesh.Vertices)
+						SW.WriteLine(string.Format(CultureInfo.InvariantCulture, "vt {0} {1}", Vert.UV.X, Vert.UV.Y));
+
+
+					SW.WriteLine();
+					SW.WriteLine("usemtl " + Mesh.MaterialName);
+
+					for (int i = 0; i < Mesh.Vertices.Count; i += 3)
+						SW.WriteLine("f {0}/{0} {1}/{1} {2}/{2}", GlobalVertOffset + i + 1, GlobalVertOffset + i + 2, GlobalVertOffset + i + 3);
+
+					GlobalVertOffset += Mesh.Vertices.Count;
 				}
+			}
 
-				for (int i = 0; i < Verts.Length; i += 3)
-					SW.WriteLine("f {0}/{0} {1}/{1} {2}/{2}", i + 1, i + 2, i + 3);
+			FileName = Path.ChangeExtension(FileName, ".mtl");
+
+			using (StreamWriter SW = new StreamWriter(FileName)) {
+				foreach (var Mesh in Meshes) {
+					SW.WriteLine("newmtl " + Mesh.MaterialName);
+					SW.WriteLine("map_Kd " + Mesh.MaterialName + ".png");
+					SW.WriteLine();
+				}
 			}
 		}
 

@@ -94,37 +94,36 @@ namespace FishGfx.Formats {
 	}
 
 	public class Smd {
-		public static void Save(string FileName, Vertex3[] Verts) {
+		public static void Save(string FileName, IEnumerable<GenericMesh> Verts) {
 			throw new NotImplementedException();
 		}
 
-		public static Vertex3[] Load(string FileName) {
+		public static GenericMesh[] Load(string FileName) {
 			Smd SMD = new Smd();
 			SMD.LoadFile(FileName);
-			SMD.SwapYZ = true;
-			return SMD.Vertices;
+			return SMD.Meshes.ToArray();
 		}
 
 		SmdNode WorldNode;
-		List<SmdTriangle> Triangles;
-		public bool SwapYZ;
-
-		public Vertex3[] Vertices {
-			get {
-				List<Vertex3> Verts = new List<Vertex3>();
-
-				foreach (var Tri in Triangles) {
-					for (int i = 0; i < 3; i++)
-						Verts.Add(new Vertex3(SwapYZ ? Tri.Position[i].XZY() : Tri.Position[i], Tri.UV[i]));
-				}
-
-				return Verts.ToArray();
-			}
-		}
+		List<GenericMesh> Meshes;
 
 		public Smd() {
 			WorldNode = new SmdNode(-1, "World");
-			Triangles = new List<SmdTriangle>();
+			Meshes = new List<GenericMesh>();
+		}
+
+		void AddTriangle(SmdTriangle Tri) {
+			foreach (var Mesh in Meshes) {
+				if (Mesh.MaterialName == Tri.Material) {
+					for (int i = 0; i < 3; i++)
+						Mesh.Vertices.Add(new Vertex3(Tri.Position[i], Tri.UV[i]));
+
+					return;
+				}
+			}
+
+			Meshes.Add(new GenericMesh(Tri.Material));
+			AddTriangle(Tri);
 		}
 
 		SmdNode[] GetAllNodes(SmdNode Parent = null, List<SmdNode> AddTo = null) {
@@ -243,7 +242,7 @@ namespace FishGfx.Formats {
 					} else if (CurSegment == SMDSegment.Triangles) {
 						if (L == "end") {
 							if (CurTri != null)
-								Triangles.Add(CurTri.Value);
+								AddTriangle(CurTri.Value);
 
 							CurSegment = SMDSegment.End;
 							continue;
@@ -253,7 +252,7 @@ namespace FishGfx.Formats {
 								MaterialName = MaterialName.Substring(0, MaterialName.IndexOf('.'));
 
 							if (CurTri != null)
-								Triangles.Add(CurTri.Value);
+								AddTriangle(CurTri.Value);
 
 							CurTri = new SmdTriangle(MaterialName);
 							CurTriIdx = 0;

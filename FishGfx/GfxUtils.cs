@@ -60,6 +60,18 @@ namespace FishGfx {
 			return Num;
 		}
 
+		public static Vector3 Abs(this Vector3 V) {
+			return new Vector3(Math.Abs(V.X), Math.Abs(V.Y), Math.Abs(V.Z));
+		}
+
+		public static float MaxElement(this Vector3 V) {
+			return Math.Max(Math.Max(V.X, V.Y), V.Z);
+		}
+
+		public static float MinElement(this Vector3 V) {
+			return Math.Min(Math.Min(V.X, V.Y), V.Z);
+		}
+
 		public static Vector3 XZY(this Vector3 Vec) {
 			return new Vector3(Vec.X, Vec.Z, Vec.Y);
 		}

@@ -52,6 +52,18 @@ namespace FishGfx.Graphics {
 			CameraUpNormal = UpNormal;
 		}
 
+		public void LookAtFitToScreen(Vector3 Target, float Radius) {
+			Vector3 Eye = Position;
+
+			Vector3 ToEye = Vector3.Normalize(Eye - Target);
+
+			float Tan = (float)Math.Tan(Math.Min(HorizontalFOV, VerticalFOV) * 0.5f);
+			float Distance = Radius / Tan;
+
+			Position = Target + (Distance * ToEye);
+			LookAt(Target);
+		}
+
 		public void SetOrthogonal(float Left, float Bottom, float Right, float Top, float NearPlane = 1, float FarPlane = 10000/*, bool PreserveCenter = false*/) {
 			Projection = Matrix4x4.CreateOrthographicOffCenter(Left, Right, Bottom, Top, NearPlane, FarPlane);
 

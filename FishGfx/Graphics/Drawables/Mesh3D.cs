@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Numerics;
 using OpenGL;
+using FishGfx.Formats;
 
 namespace FishGfx.Graphics.Drawables {
 	public unsafe class Mesh3D : IDrawable {
@@ -32,6 +33,13 @@ namespace FishGfx.Graphics.Drawables {
 		public Mesh3D(BufferUsage Usage = BufferUsage.StaticDraw) {
 			VAO = new VertexArray();
 			this.Usage = Usage;
+		}
+
+		public Mesh3D(Vertex3[] Vertices) : this() {
+			SetVertices(Vertices);
+		}
+
+		public Mesh3D(GenericMesh Msh) : this(Msh.Vertices.ToArray()) {
 		}
 
 		void SetVertices(uint Size, IntPtr Data, int ElementCount, int RelativeOffset, int Stride) {
@@ -108,7 +116,7 @@ namespace FishGfx.Graphics.Drawables {
 			} else
 				VAO.BindElementBuffer(null);
 		}
-		
+
 		public void SetVertices(params Vertex3[] Verts) {
 			SetVertices(Verts.Length, Verts);
 		}

@@ -27,13 +27,19 @@ namespace RealSenseTest {
 		static void Main(string[] args) {
 			SetupCamera();
 			RenderWindow RWind = new RenderWindow(W, H, "RealSense Test");
-			
+
 			ClrTex = Texture.Empty(W, H);
 			DptTex = Texture.Empty(W, H);
 
+			Camera OrthoCam = new Camera();
+			OrthoCam.SetOrthogonal(0, 0, 800, 600, -10, 10);
+
+			Camera PerspCam = new Camera();
+			PerspCam.SetPerspective(W, H, (float)(91.2 * Math.PI / 180));
+			PerspCam.Rotation = Quaternion.CreateFromAxisAngle(new Vector3(1, 0, 0), (float)Math.PI);
+
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/realsense.frag"));
-			Default.Uniforms.Camera.SetOrthogonal(0, 0, 800, 600, -10, 10);
 			Default.Uniform1("ColorTexture", 0);
 			Default.Uniform1("DepthTexture", 1);
 
@@ -41,8 +47,7 @@ namespace RealSenseTest {
 				new ShaderStage(ShaderType.FragmentShader, "data/realsense.frag"));
 			Default3D.Uniform1("ColorTexture", 0);
 			Default3D.Uniform1("DepthTexture", 1);
-			Default3D.Uniforms.Camera.SetPerspective(W, H, (float)(91.2 * Math.PI / 180));
-			Default3D.Uniforms.Camera.Rotation = Quaternion.CreateFromAxisAngle(new Vector3(1, 0, 0), (float)Math.PI);
+
 
 			Mesh2D Quad = new Mesh2D();
 			Quad.SetUVs(new Vector2[] { new Vector2(1, 1), new Vector2(1, 0), new Vector2(0, 1), new Vector2(1, 0), new Vector2(0, 0), new Vector2(0, 1) });
@@ -58,6 +63,7 @@ namespace RealSenseTest {
 				RealSenseCamera.PollForFrames(OnFrameData, OnPointCloud);
 
 				//Default.Bind();
+				ShaderUniforms.Camera = PerspCam;
 				Default3D.Bind();
 				{
 
@@ -104,7 +110,7 @@ namespace RealSenseTest {
 			ClrTex.SetPixels2D_RGB8(ClrFrame.Data, ClrFrame.Width, ClrFrame.Height);
 			DptTex.SetPixels2D_R16(DepthFrame.Data, DepthFrame.Width, DepthFrame.Height);
 		}
-		
+
 		static Vertex3[] VertsArr = new Vertex3[0];
 
 		static Vertex3[] OnPointCloud(int Count, Vertex3[] Verts, FrameData[] Frames) {
@@ -114,7 +120,7 @@ namespace RealSenseTest {
 
 				return VertsArr;
 			}
-			
+
 			/*Verts = Verts.Where(V => V.Position != Vector3.Zero && V.UV.X > 0 && V.UV.X < 1 && V.UV.Y > 0 && V.UV.Y < 1).ToArray();
 			Count = Verts.Length;*/
 

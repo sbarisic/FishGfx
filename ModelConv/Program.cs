@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -55,23 +56,27 @@ namespace ModelConv {
 			if (!Directory.Exists(OutDirectoryName))
 				Directory.CreateDirectory(OutDirectoryName);
 
-			Vertex3[] InputVerts = null;
+			List<GenericMesh> Meshes = new List<GenericMesh>();
 
 			if (InFmt == ModelFormat.Obj)
-				InputVerts = Obj.Load(InFile);
-			else if (InFmt == ModelFormat.Foam)
-				InputVerts = Foam.Load(InFile);
+				Meshes.Add(new GenericMesh(Obj.Load(InFile)));
+
+			/*else if (InFmt == ModelFormat.Foam)
+				InputVerts = Foam.Load(InFile);*/
+
 			else if (InFmt == ModelFormat.Smd)
-				InputVerts = Smd.Load(InFile);
+				Meshes.AddRange(Smd.Load(InFile));
 			else
 				throw new NotImplementedException();
 
-			if (OutFmt == ModelFormat.Foam)
+			/*if (OutFmt == ModelFormat.Foam)
 				Foam.Save(OutFile, InputVerts);
-			else if (OutFmt == ModelFormat.Obj)
-				Obj.Save(OutFile, InputVerts);
+			else*/
+
+			if (OutFmt == ModelFormat.Obj)
+				Obj.Save(OutFile, Meshes);
 			else if (OutFmt == ModelFormat.Smd)
-				Smd.Save(OutFile, InputVerts);
+				Smd.Save(OutFile, Meshes);
 			else
 				throw new NotImplementedException();
 		}

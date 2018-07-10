@@ -209,6 +209,7 @@ namespace FishGfx.Graphics {
 		void GetImageData(Image Img, int X, int Y, int W, int H, Action<IntPtr> A) {
 			using (Bitmap Bmp = new Bitmap(Img)) {
 				Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
+
 				BitmapData Data = Bmp.LockBits(new Rectangle(X, Y, W, H), ImageLockMode.ReadOnly, IPixFormat.Format32bppArgb);
 				A(Data.Scan0);
 				Bmp.UnlockBits(Data);
