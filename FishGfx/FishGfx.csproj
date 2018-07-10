@@ -127,6 +127,7 @@
   <ItemGroup>
     <Compile Include="Color.cs" />
     <Compile Include="Formats\Foam.cs" />
+    <Compile Include="Formats\GenericMesh.cs" />
     <Compile Include="Formats\Smd.cs" />
     <Compile Include="Formats\Obj.cs" />
     <Compile Include="Glfw3\Glfw.cs" />
@@ -163,6 +164,33 @@
   <ItemGroup />
   <ItemGroup>
     <Compile Include="Glfw3\Glfw.Struct.cs" />
+    <None Include="data\models\smd\dynamite\dynamite.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\naquada-reactor\naquada-reactor.qc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\naquada-reactor\naquada-reactor_anims\close.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\naquada-reactor\naquada-reactor_anims\idle.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\naquada-reactor\naquada-reactor_anims\open.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\naquada-reactor\naquada-reactor_Naduada-Reactor_Ref.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\naquada-reactor\naquada-reactor_physics.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\oildrum001_explosive\oildrum001_explosive_reference.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\smd\w_spade\w_spade.smd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="data\realsense.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -192,7 +220,16 @@
     <Content Include="data\background.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="data\dynamite.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="data\models\pin\pin_mat.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\oil_drum001a.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\oil_drum001h.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\opengl.png">
@@ -201,7 +238,13 @@
     <Content Include="data\quake.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="data\reactor-skin.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="data\test.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\w_spade.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="glfw3.dll">
