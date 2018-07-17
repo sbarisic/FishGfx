@@ -26,5 +26,14 @@ namespace FishGfx {
 		public static implicit operator Vertex2(Vector2 Pos) {
 			return new Vertex2(Pos);
 		}
+
+		public static IEnumerable<Vertex2> CreateQuad(Vector2 Pos, Vector2 Size, Vector2 UV, Vector2 UVSize) {
+			yield return new Vertex2(Pos, UV);
+			yield return new Vertex2(Pos + Size.GetHeight(), UV + UVSize.GetHeight());
+			yield return new Vertex2(Pos + Size, UV + UVSize);
+			yield return new Vertex2(Pos, UV);
+			yield return new Vertex2(Pos + Size, UV + UVSize);
+			yield return new Vertex2(Pos + Size.GetWidth(), UV + UVSize.GetWidth());
+		}
 	}
 }

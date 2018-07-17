@@ -32,7 +32,7 @@ namespace FishGfx.Graphics {
 
 			GLFWInitialized = true;
 
-			Glfw.ConfigureNativesDirectory(Path.GetFullPath(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)));
+			//Glfw.ConfigureNativesDirectory(Path.GetFullPath(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)));
 
 			if (!Glfw.Init())
 				throw new Exception("Could not initialize glfw");
@@ -177,7 +177,7 @@ namespace FishGfx.Graphics {
 			SetDepth(DepthFunction.Lequal);
 			EnableDepthTest(true);
 
-			FrontFace();
+			FrontFace(true);
 			CullBack();
 			EnableCullFace(true);
 			//Gl.Disable(EnableCap.CullFace);

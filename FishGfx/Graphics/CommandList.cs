@@ -8,7 +8,7 @@ namespace FishGfx.Graphics {
 	public class CommandList {
 		List<Action> Commands = new List<Action>();
 
-		internal void Enqueue(Action Cmd) {
+		/*internal void Enqueue(Action Cmd) {
 			Commands.Add(Cmd);
 		}
 
@@ -19,6 +19,6 @@ namespace FishGfx.Graphics {
 		public void Execute() {
 			for (int i = 0; i < Commands.Count; i++)
 				Commands[i].Invoke();
-		}
+		}*/
 	}
 }

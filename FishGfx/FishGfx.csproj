@@ -125,6 +125,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AABB.cs" />
     <Compile Include="Color.cs" />
     <Compile Include="Formats\Foam.cs" />
     <Compile Include="Formats\GenericMesh.cs" />

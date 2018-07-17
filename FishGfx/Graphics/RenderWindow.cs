@@ -273,7 +273,7 @@ namespace FishGfx.Graphics {
 					OnKey(this, Key.MouseButton1 + (int)Button, -1, IsPressed, IsRepeat, (KeyMods)Mods);
 				}
 			});
-
+			
 			MakeCurrent();
 		}
 
