@@ -164,6 +164,7 @@ namespace FishGfx.Graphics {
 
 	public delegate void OnMouseMoveFunc(RenderWindow Wnd, float X, float Y);
 	public delegate void OnKeyFunc(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods);
+	public delegate void OnCharFunc(RenderWindow Wnd, string Char, uint Unicode);
 
 	public unsafe class RenderWindow {
 		static int SupportedMajor = 0;
@@ -173,10 +174,12 @@ namespace FishGfx.Graphics {
 		Glfw.CursorPosFunc GlfwOnMouseMove;
 		Glfw.KeyFunc GlfwOnKey;
 		Glfw.MouseButtonFunc GlfwOnMouseButton;
+		Glfw.CharFunc GlfwOnChar;
 
 		public event OnMouseMoveFunc OnMouseMove;
 		public event OnMouseMoveFunc OnMouseMoveDelta;
 		public event OnKeyFunc OnKey;
+		public event OnCharFunc OnChar;
 
 		public Color[] PixelData;
 		public int MouseX { get; private set; }
@@ -273,7 +276,12 @@ namespace FishGfx.Graphics {
 					OnKey(this, Key.MouseButton1 + (int)Button, -1, IsPressed, IsRepeat, (KeyMods)Mods);
 				}
 			});
-			
+
+
+			Glfw.SetCharCallback(Wnd, GlfwOnChar = (Wnd, Unicode) => {
+				OnChar?.Invoke(this, ((char)Unicode).ToString(), Unicode);
+			});
+
 			MakeCurrent();
 		}
 

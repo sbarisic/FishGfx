@@ -7,20 +7,34 @@ using System.Numerics;
 
 namespace FishGfx {
 	public struct AABB {
+		public static readonly AABB Empty = new AABB(Vector3.Zero, Vector3.Zero);
+
 		public Vector3 Position;
 		public Vector3 Size;
+
+		public bool IsEmpty {
+			get {
+				return Size.X == 0 && Size.Y == 0 && Size.Z == 0;
+			}
+		}
 
 		public AABB(Vector3 Position, Vector3 Size) {
 			this.Position = Position;
 			this.Size = Size;
 		}
 
+		public AABB(Vector3 Size ) : this(Vector3.Zero, Size) {
+		}
+
 		public AABB(Vector2 Position, Vector2 Size) : this(new Vector3(Position, 0), new Vector3(Size, 0)) {
+		}
+
+		public AABB(Vector2 Size) : this(Vector2.Zero, Size) {
 		}
 
 		public bool Collide(AABB Other) {
 			foreach (var BoxVert in Other.GetVertices())
-				if (IsInside(BoxVert)) 
+				if (IsInside(BoxVert))
 					return true;
 
 			foreach (var Vert in GetVertices())
@@ -96,6 +110,18 @@ namespace FishGfx {
 
 		public override string ToString() {
 			return string.Format("{0} .. {2} ({1})", Position, Size, Position + Size);
+		}
+
+		public static AABB operator +(AABB A, AABB B) {
+			return new AABB(A.Position + B.Position, A.Size + B.Size);
+		}
+
+		public static AABB operator +(AABB A, Vector3 Pos) {
+			return new AABB(A.Position + Pos, A.Size);
+		}
+
+		public static AABB operator +(AABB A, Vector2 Pos) {
+			return A + new Vector3(Pos, 0);
 		}
 	}
 }

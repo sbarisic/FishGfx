@@ -60,7 +60,13 @@ namespace FishGfx {
 			return Num;
 		}
 
+		public static Vector3 Round(this Vector3 V) {
+			return new Vector3((int)V.X, (int)V.Y, (int)V.Z);
+		}
 
+		public static Vector2 Round(this Vector2 V) {
+			return new Vector2((int)V.X, (int)V.Y);
+		}
 
 		public static Vector2 GetWidth(this Vector2 V) {
 			return new Vector2(V.X, 0);
@@ -84,6 +90,18 @@ namespace FishGfx {
 
 		public static Vector3 Abs(this Vector3 V) {
 			return new Vector3(Math.Abs(V.X), Math.Abs(V.Y), Math.Abs(V.Z));
+		}
+
+		public static Vector2 Abs(this Vector2 V) {
+			return new Vector2(Math.Abs(V.X), Math.Abs(V.Y));
+		}
+
+		public static Vector2 Max(this Vector2 V, Vector2 V2) {
+			return new Vector2(Math.Max(V.X, V2.X), Math.Max(V.Y, V2.Y));
+		}
+
+		public static Vector2 Min(this Vector2 V, Vector2 V2) {
+			return new Vector2(Math.Min(V.X, V2.X), Math.Min(V.Y, V2.Y));
 		}
 
 		public static Vector3 Max(this Vector3 V, Vector3 V2) {

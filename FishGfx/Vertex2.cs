@@ -27,13 +27,17 @@ namespace FishGfx {
 			return new Vertex2(Pos);
 		}
 
+		public static IEnumerable<Vertex2> CreateQuad(Vector2 Pos, Vector2 Size, Vector2 UV, Vector2 UVSize, Color Clr) {
+			yield return new Vertex2(Pos, UV, Clr);
+			yield return new Vertex2(Pos + Size.GetHeight(), UV + UVSize.GetHeight(), Clr);
+			yield return new Vertex2(Pos + Size, UV + UVSize, Clr);
+			yield return new Vertex2(Pos, UV, Clr);
+			yield return new Vertex2(Pos + Size, UV + UVSize, Clr);
+			yield return new Vertex2(Pos + Size.GetWidth(), UV + UVSize.GetWidth(), Clr);
+		}
+
 		public static IEnumerable<Vertex2> CreateQuad(Vector2 Pos, Vector2 Size, Vector2 UV, Vector2 UVSize) {
-			yield return new Vertex2(Pos, UV);
-			yield return new Vertex2(Pos + Size.GetHeight(), UV + UVSize.GetHeight());
-			yield return new Vertex2(Pos + Size, UV + UVSize);
-			yield return new Vertex2(Pos, UV);
-			yield return new Vertex2(Pos + Size, UV + UVSize);
-			yield return new Vertex2(Pos + Size.GetWidth(), UV + UVSize.GetWidth());
+			return CreateQuad(Pos, Size, UV, UVSize, Color.White);
 		}
 	}
 }
