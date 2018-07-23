@@ -165,6 +165,7 @@ namespace FishGfx.Graphics {
 	public delegate void OnMouseMoveFunc(RenderWindow Wnd, float X, float Y);
 	public delegate void OnKeyFunc(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods);
 	public delegate void OnCharFunc(RenderWindow Wnd, string Char, uint Unicode);
+	public delegate void OnWindowResizeFunc(RenderWindow Wnd, int W, int H);
 
 	public unsafe class RenderWindow {
 		static int SupportedMajor = 0;
@@ -175,15 +176,34 @@ namespace FishGfx.Graphics {
 		Glfw.KeyFunc GlfwOnKey;
 		Glfw.MouseButtonFunc GlfwOnMouseButton;
 		Glfw.CharFunc GlfwOnChar;
+		Glfw.WindowSizeFunc GlfwOnWindowResize;
 
 		public event OnMouseMoveFunc OnMouseMove;
 		public event OnMouseMoveFunc OnMouseMoveDelta;
 		public event OnKeyFunc OnKey;
 		public event OnCharFunc OnChar;
+		public event OnWindowResizeFunc OnWindowResize;
 
 		public Color[] PixelData;
 		public int MouseX { get; private set; }
 		public int MouseY { get; private set; }
+		public int WindowWidth { get; private set; }
+		public int WindowHeight { get; private set; }
+
+		public string ClipboardString {
+			get {
+				return Glfw.GetClipboardString(Wnd);
+			}
+			set {
+				Glfw.SetClipboardString(Wnd, value);
+			}
+		}
+
+		public Vector2 WindowSize {
+			get {
+				return new Vector2(WindowWidth, WindowHeight);
+			}
+		}
 
 		public Vector2 MousePos {
 			get {
@@ -242,6 +262,9 @@ namespace FishGfx.Graphics {
 			if (CenterWindow)
 				Center();
 
+			WindowWidth = Width;
+			WindowHeight = Height;
+
 			{
 				float OldMouseX = 0, OldMouseY = 0;
 				bool MouseDeltaInitialized = false;
@@ -280,6 +303,13 @@ namespace FishGfx.Graphics {
 
 			Glfw.SetCharCallback(Wnd, GlfwOnChar = (Wnd, Unicode) => {
 				OnChar?.Invoke(this, ((char)Unicode).ToString(), Unicode);
+			});
+
+			Glfw.SetWindowSizeCallback(Wnd, GlfwOnWindowResize = (Wnd, W, H) => {
+				WindowWidth = W;
+				WindowHeight = H;
+
+				OnWindowResize?.Invoke(this, W, H);
 			});
 
 			MakeCurrent();
@@ -325,11 +355,11 @@ namespace FishGfx.Graphics {
 			Glfw.DestroyWindow(Wnd);
 		}
 
-		public void GetWindowSize(out int Width, out int Height) {
+		void GetWindowSize(out int Width, out int Height) {
 			Glfw.GetWindowSize(Wnd, out Width, out Height);
 		}
 
-		public Vector2 GetWindowSizeVec() {
+		Vector2 GetWindowSizeVec() {
 			GetWindowSize(out int W, out int H);
 			return new Vector2(W, H);
 		}
