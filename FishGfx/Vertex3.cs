@@ -17,6 +17,9 @@ namespace FishGfx {
 			Color = Clr;
 		}
 
+		public Vertex3(float X, float Y, float Z) : this(new Vector3(X, Y, Z)) {
+		}
+
 		public Vertex3(Vector3 Pos) : this(Pos, Vector2.Zero, Color.White) {
 		}
 

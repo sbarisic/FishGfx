@@ -189,7 +189,7 @@ namespace FishGfx.RealSense {
 			Profile = null;
 		}
 
-		public static bool PollForFrames(OnFramesReceived OnFrames, OnPointCloudReceived OnPointCloud = null) {
+		public static bool PollForFrames(OnFramesReceived OnFrames = null, OnPointCloudReceived OnPointCloud = null) {
 			if (Pipeline.PollForFrames(out FrameSet Frames)) {
 				using (Frames) {
 					Frame[] AllFrames = Frames.ToArray();
@@ -249,8 +249,8 @@ namespace FishGfx.RealSense {
 
 						OnPointCloud(VertCount, Verts, FrameData);
 					}
-
-					OnFrames(FrameData);
+					
+					OnFrames?.Invoke(FrameData);
 
 					for (int i = 0; i < AllFrames.Length; i++)
 						AllFrames[i].Dispose();
