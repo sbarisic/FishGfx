@@ -11,6 +11,13 @@ namespace FishGfx {
 		public Vector2 UV;
 		public Color Color;
 
+		public Vertex3(Vertex3 Clone) : this(Clone.Position, Clone.UV, Clone.Color) {
+		}
+
+		public Vertex3(Vertex3 Clone, Color NewClr) : this(Clone) {
+			Color = NewClr;
+		}
+
 		public Vertex3(Vector3 Pos, Vector2 UV, Color Clr) {
 			Position = Pos;
 			this.UV = UV;

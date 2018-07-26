@@ -94,7 +94,7 @@ namespace FishGfx.Graphics {
 			if (Default3D == null)
 				throw new Exception(nameof(Default3D) + " shader not assigned");
 
-			if (Mesh2D == null)
+			if (Mesh3D == null)
 				Mesh3D = new Mesh3D(BufferUsage.DynamicDraw);
 
 			Mesh3D.PrimitiveType = Primitive;
@@ -117,7 +117,7 @@ namespace FishGfx.Graphics {
 		public static void Point(Vertex3[] Positions) {
 			Init3D(PrimitiveType.Points);
 			Mesh3D.SetVertices(Positions);
-			
+
 			Default3D.Bind();
 			Mesh3D.Draw();
 			Default3D.Unbind();
