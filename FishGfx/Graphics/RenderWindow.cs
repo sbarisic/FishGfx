@@ -190,6 +190,12 @@ namespace FishGfx.Graphics {
 		public int WindowWidth { get; private set; }
 		public int WindowHeight { get; private set; }
 
+		public bool ShowCursor {
+			set {
+				Glfw.SetInputMode(Wnd, Glfw.InputMode.Cursor, value ? Glfw.CursorMode.Normal : Glfw.CursorMode.Hidden);
+			}
+		}
+
 		public string ClipboardString {
 			get {
 				return Glfw.GetClipboardString(Wnd);
