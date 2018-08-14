@@ -12,6 +12,22 @@ using IPixFormat = System.Drawing.Imaging.PixelFormat;
 using System.Diagnostics;
 
 namespace FishGfx.Graphics {
+	public enum TextureWrap : int {
+		Repeat = Gl.REPEAT,
+		MirroredRepeat = Gl.MIRRORED_REPEAT,
+		ClampToEdge = Gl.CLAMP_TO_EDGE,
+		ClampToBorder = Gl.CLAMP_TO_BORDER
+	}
+
+	public enum TextureFilter : int {
+		Nearest = Gl.NEAREST,
+		Linear = Gl.LINEAR,
+		NearestMipmapNearest = Gl.NEAREST_MIPMAP_NEAREST,
+		LinearMipmapNearest = Gl.LINEAR_MIPMAP_NEAREST,
+		NearestMipmapLinear = Gl.NEAREST_MIPMAP_LINEAR,
+		LinearMipmapLinear = Gl.LINEAR_MIPMAP_LINEAR
+	}
+
 	public unsafe partial class Texture : GraphicsObject {
 		internal const int Multisamples = 4;
 
@@ -76,6 +92,10 @@ namespace FishGfx.Graphics {
 			} else throw new NotImplementedException();
 		}
 
+		public void SetWrap(TextureWrap Wrap) {
+			SetWrap((int)Wrap);
+		}
+
 		public void SetWrap(int Val = Gl.CLAMP_TO_EDGE) {
 			TextureParam(TextureParameterName.TextureWrapS, Val);
 			TextureParam(TextureParameterName.TextureWrapT, Val);
@@ -87,8 +107,12 @@ namespace FishGfx.Graphics {
 			TextureParam(TextureParameterName.TextureMagFilter, Mag);
 		}
 
-		public void SetFilterSmooth() {
-			SetFilter(Gl.LINEAR, Gl.LINEAR);
+		public void SetFilter(TextureFilter Min, TextureFilter Mag) {
+			SetFilter((int)Min, (int)Mag);
+		}
+
+		public void SetFilter(TextureFilter Filter) {
+			SetFilter(Filter, Filter);
 		}
 
 		public void SetMaxAnisotropy() {

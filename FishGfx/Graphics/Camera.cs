@@ -117,9 +117,9 @@ namespace FishGfx.Graphics {
 			Dirty = false;
 
 			World = CreateModel(Position, Vector3.One, Rotation);
-			WorldForwardNormal = Vector3.Normalize(Vector4.Transform(new Vector4(ForwardNormal, 0), World).XYZ());
-			WorldRightNormal = Vector3.Normalize(Vector4.Transform(new Vector4(RightNormal, 0), World).XYZ());
-			WorldUpNormal = Vector3.Normalize(Vector4.Transform(new Vector4(UpNormal, 0), World).XYZ());
+			WorldForwardNormal = ToWorldNormal(ForwardNormal);
+			WorldRightNormal = ToWorldNormal(RightNormal);
+			WorldUpNormal = ToWorldNormal(UpNormal);
 
 			Matrix4x4.Invert(World, out Matrix4x4 ViewMat);
 			View = ViewMat;
@@ -128,6 +128,15 @@ namespace FishGfx.Graphics {
 		void PerformClamps() {
 			Pitch = Pitch.Clamp(PitchClamp.X, PitchClamp.Y);
 			Rotation = Quaternion.CreateFromYawPitchRoll(Yaw * (float)Math.PI / 180, Pitch * (float)Math.PI / 180, 0);
+		}
+
+		public Vector3 ToWorldNormal(Vector3 V) {
+			Vector3 Ret = Vector4.Transform(new Vector4(V, 0), World).XYZ();
+
+			if (Ret.X == 0 && Ret.Y == 0 && Ret.Z == 0)
+				return Vector3.Zero;
+
+			return Vector3.Normalize(Ret);
 		}
 
 		public void Update(Vector2 MouseDelta) {

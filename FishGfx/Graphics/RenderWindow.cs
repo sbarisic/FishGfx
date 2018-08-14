@@ -168,6 +168,7 @@ namespace FishGfx.Graphics {
 	public unsafe class RenderWindow {
 		static int SupportedMajor = 0;
 		static int SupportedMinor = 0;
+		static bool _CaptureCursor;
 
 		Glfw.Window Wnd;
 		Glfw.CursorPosFunc GlfwOnMouseMove;
@@ -195,6 +196,18 @@ namespace FishGfx.Graphics {
 
 			set {
 				Glfw.SetWindowShouldClose(Wnd, value);
+			}
+		}
+
+
+		public bool CaptureCursor {
+			get {
+				return _CaptureCursor;
+			}
+
+			set {
+				_CaptureCursor = value;
+				Glfw.SetInputMode(Wnd, Glfw.InputMode.Cursor, _CaptureCursor ? Glfw.CursorMode.Disabled : Glfw.CursorMode.Normal);
 			}
 		}
 
@@ -274,6 +287,7 @@ namespace FishGfx.Graphics {
 				}
 			});
 
+			CaptureCursor = false;
 			MakeCurrent();
 		}
 

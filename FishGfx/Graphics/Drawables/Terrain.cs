@@ -46,7 +46,7 @@ namespace FishGfx.Graphics.Drawables {
 		public void LoadFromImage(Image Img, float ScaleValue = 255, bool CreateOverlayTexture = true, bool GeneratePickerColors = true) {
 			if (CreateOverlayTexture) {
 				OverlayTexture = Texture.FromImage(Img);
-				OverlayTexture.SetFilterSmooth();
+				OverlayTexture.SetFilter(TextureFilter.Linear);
 			}
 
 			Width = Img.Width;
