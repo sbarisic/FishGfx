@@ -8,9 +8,5 @@ uniform sampler2D Texture;
 layout (location = 0) out vec4 OutClr;
 
 void main() {
-	vec4 TexClr = texture(Texture, UV);
-	
-	//OutClr = Clr * TexClr;
-	OutClr = TexClr;
-	//OutClr = Clr;
+	OutClr = texture(Texture, UV) * Clr;
 }

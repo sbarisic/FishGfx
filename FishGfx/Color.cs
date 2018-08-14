@@ -51,12 +51,37 @@ namespace FishGfx {
 			this.ColorInt = ColorInt;
 		}
 
+		public Color(float R, float G, float B) : this((byte)(R * 255), (byte)(G * 255), (byte)(B * 255)) {
+		}
+
+		public Color(double R, double G, double B) : this((float)R, (float)G, (float)B) {
+		}
+
 		public override string ToString() {
 			return string.Format("({0} {1} {2} {3})", R, G, B, A);
 		}
 
+		public override bool Equals(object Obj) {
+			if (Obj is Color Clr)
+				return Clr == this;
+
+			return false;
+		}
+
+		public override int GetHashCode() {
+			return ColorInt.GetHashCode();
+		}
+
 		public static Color Clamp(Color C, IEnumerable<Color> Palette) {
 			return Color.White; // TODO
+		}
+
+		public static bool operator ==(Color A, Color B) {
+			return A.R == B.R && A.G == B.G && A.B == B.B && A.A == B.A;
+		}
+
+		public static bool operator !=(Color A, Color B) {
+			return !(A == B);
 		}
 	}
 }

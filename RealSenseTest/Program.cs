@@ -124,7 +124,7 @@ namespace RealSenseTest {
 			/*Verts = Verts.Where(V => V.Position != Vector3.Zero && V.UV.X > 0 && V.UV.X < 1 && V.UV.Y > 0 && V.UV.Y < 1).ToArray();
 			Count = Verts.Length;*/
 
-			Points.SetVertices(Count, Verts);
+			Points.SetVertices(Verts, Count);
 			return null;
 		}
 	}

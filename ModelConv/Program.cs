@@ -59,7 +59,7 @@ namespace ModelConv {
 			List<GenericMesh> Meshes = new List<GenericMesh>();
 
 			if (InFmt == ModelFormat.Obj)
-				Meshes.Add(new GenericMesh(Obj.Load(InFile)));
+				Meshes.AddRange(Obj.Load(InFile));
 
 			/*else if (InFmt == ModelFormat.Foam)
 				InputVerts = Foam.Load(InFile);*/

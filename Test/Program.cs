@@ -55,14 +55,7 @@ namespace Test {
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
 
-			GenericMesh HolodeckMesh = new GenericMesh(Obj.Load("data/models/holodeck/holodeck.obj"));
-			HolodeckMesh.SwapWindingOrder();
-			Mesh3D Holodeck = new Mesh3D(HolodeckMesh);
-
-			Texture Tex = Texture.FromFile("data/models/holodeck/wall.png");
-			Tex.SetWrap(TextureWrap.Repeat);
-			Tex.SetFilter(TextureFilter.Linear);
-
+			RenderModel Holodeck = LoadHolodeck();
 			SetupCamera();
 
 			Stopwatch SWatch = Stopwatch.StartNew();
@@ -78,11 +71,7 @@ namespace Test {
 				Gfx.Clear();
 
 				Default.Bind();
-				{
-					Tex.BindTextureUnit();
-					Holodeck.Draw();
-					Tex.UnbindTextureUnit();
-				}
+				Holodeck.Draw();
 				Default.Unbind();
 
 				Update(Dt);
@@ -92,7 +81,7 @@ namespace Test {
 		}
 
 		static void Update(float Dt) {
-			const float MoveSpeed = 100;
+			const float MoveSpeed = 250;
 
 			if (!(MoveVec.X == 0 && MoveVec.Y == 0 && MoveVec.Z == 0))
 				Cam.Position += Cam.ToWorldNormal(Vector3.Normalize(MoveVec)) * MoveSpeed * Dt;
@@ -105,6 +94,32 @@ namespace Test {
 			Cam.SetPerspective(RWind.WindowSize.X, RWind.WindowSize.Y);
 			Cam.Position = new Vector3(0, 50, 0);
 			Cam.LookAt(new Vector3(100, 0, 20));
+		}
+
+		static RenderModel LoadHolodeck() {
+			RenderModel Holodeck = new RenderModel(Obj.Load("data/models/holodeck/holodeck.obj").Select((M) => { M.SwapWindingOrder(); return M; }));
+
+			Texture Tex = Texture.FromFile("data/textures/colors/white.png");
+			foreach (var Mat in Holodeck.GetMaterialNames())
+				Holodeck.SetMaterialTexture(Mat, Tex);
+
+			Holodeck.GetMaterialMesh("door").DefaultColor = new Color(1.0000, 0.0941, 0.0000);
+			Holodeck.GetMaterialMesh("doorframe").DefaultColor = new Color(0.5647, 0.3059, 0.0941);
+			Holodeck.GetMaterialMesh("doorinset").DefaultColor = new Color(0.9137, 0.9137, 0.9137);
+			Holodeck.GetMaterialMesh("light").DefaultColor = new Color(0.8314, 0.8471, 0.5608);
+			Holodeck.GetMaterialMesh("holdeck_material").DefaultColor = new Color(0.5880, 0.5880, 0.5880);
+
+			Tex = Texture.FromFile("data/textures/holodeck/wall.png");
+			Tex.SetWrap(TextureWrap.Repeat);
+			Tex.SetFilter(TextureFilter.Linear);
+			Holodeck.SetMaterialTexture("holodeckwirefrane", Tex);
+			//Holodeck.GetMaterialMesh("holodeckwirefrane").DefaultColor = new Color(0.1, 0.1, 0.1);
+
+			Tex = Texture.FromFile("data/textures/holodeck/screen.png");
+			Tex.SetFilter(TextureFilter.Linear);
+			Holodeck.SetMaterialTexture("screens", Tex);
+
+			return Holodeck;
 		}
 	}
 }

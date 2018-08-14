@@ -45,10 +45,13 @@ namespace FishGfx.Formats {
 			}
 		}
 
-		public static Vertex3[] Load(string FileName) {
-			List<Vertex3> ObjVertices = new List<Vertex3>();
-			string[] Lines = File.ReadAllLines(FileName);
+		public static GenericMesh[] Load(string FileName) {
+			List<GenericMesh> Meshes = new List<GenericMesh>();
+			GenericMesh CurMesh = null;
 
+			//List<Vertex3> ObjVertices = new List<Vertex3>();
+
+			string[] Lines = File.ReadAllLines(FileName);
 			List<Vector3> Verts = new List<Vector3>();
 			List<Vector2> UVs = new List<Vector2>();
 
@@ -78,17 +81,30 @@ namespace FishGfx.Formats {
 						break;
 
 					case "f": // Face
-						for (int i = 2; i < Tokens.Length - 1; i++) {
-							string[] V = Tokens[1].Split('/');
-							ObjVertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
-
-							V = Tokens[i].Split('/');
-							ObjVertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
-
-							V = Tokens[i + 1].Split('/');
-							ObjVertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+						if (CurMesh == null) {
+							CurMesh = new GenericMesh("default");
+							Meshes.Add(CurMesh);
 						}
 
+						for (int i = 2; i < Tokens.Length - 1; i++) {
+							string[] V = Tokens[1].Split('/');
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+
+							V = Tokens[i].Split('/');
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+
+							V = Tokens[i + 1].Split('/');
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+						}
+
+						break;
+
+					case "usemtl":
+						CurMesh = Meshes.Where(M => M.MaterialName == Tokens[1]).FirstOrDefault();
+						if (CurMesh == null) {
+							CurMesh = new GenericMesh(Tokens[1]);
+							Meshes.Add(CurMesh);
+						}
 						break;
 
 					default:
@@ -96,7 +112,7 @@ namespace FishGfx.Formats {
 				}
 			}
 
-			return ObjVertices.ToArray();
+			return Meshes.ToArray();
 		}
 	}
 }

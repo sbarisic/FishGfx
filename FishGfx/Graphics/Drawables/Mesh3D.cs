@@ -36,7 +36,24 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public Mesh3D(Vertex3[] Vertices) : this() {
-			SetVertices(Vertices);
+			bool HasColors = false;
+			bool HasUVs = false;
+
+			for (int i = 0; i < Vertices.Length; i++) {
+				if (Vertices[i].Color != Color.White) {
+					HasColors = true;
+					if (HasUVs)
+						break;
+				}
+
+				if (Vertices[i].UV != Vector2.Zero) {
+					HasUVs = true;
+					if (HasColors)
+						break;
+				}
+			}
+
+			SetVertices(Vertices, Vertices.Length, HasUVs, HasColors);
 		}
 
 		public Mesh3D(GenericMesh Msh) : this(Msh.Vertices.ToArray()) {
@@ -118,20 +135,24 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public void SetVertices(params Vertex3[] Verts) {
-			SetVertices(Verts.Length, Verts);
+			SetVertices(Verts, Verts.Length);
 		}
 
-		public void SetVertices(int Count, Vertex3[] Verts) {
+		public void SetVertices(Vertex3[] Verts, int Count, bool HasUVs = true, bool HasColors = true) {
 			fixed (Vertex3* VertsPtr = Verts)
-				SetVertices(Count, new IntPtr(VertsPtr));
+				SetVertices(new IntPtr(VertsPtr), Count, HasUVs, HasColors);
 		}
 
-		void SetVertices(int Count, IntPtr VertsPtr) {
+		void SetVertices(IntPtr VertsPtr, int Count, bool HasUVs = true, bool HasColors = true) {
 			uint Size = (uint)(Count * sizeof(Vertex3));
 
 			SetVertices(Size, VertsPtr, 3, 0, sizeof(Vertex3));
-			SetUVs(Size, VertsPtr, 2, 3 * sizeof(float), sizeof(Vertex3));
-			SetColors(Size, VertsPtr, 4, 5 * sizeof(float), sizeof(Vertex3));
+
+			if (HasUVs)
+				SetUVs(Size, VertsPtr, 2, 3 * sizeof(float), sizeof(Vertex3));
+
+			if (HasColors)
+				SetColors(Size, VertsPtr, 4, 5 * sizeof(float), sizeof(Vertex3));
 		}
 
 		public void Draw() {
