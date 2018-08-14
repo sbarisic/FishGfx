@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 using OpenGL;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Numerics;
 
 using GLPixelFormat = OpenGL.PixelFormat;
 using IPixFormat = System.Drawing.Imaging.PixelFormat;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace FishGfx.Graphics {
 	public enum TextureWrap : int {
@@ -43,6 +45,8 @@ namespace FishGfx.Graphics {
 		public int MipLevels { get; private set; }
 		public bool Multisampled { get; private set; }
 		public bool IsCubeMap { get; private set; }
+
+		public Vector2 Size { get { return new Vector2(Width, Height); } }
 
 		TextureTarget Target;
 
@@ -209,6 +213,25 @@ namespace FishGfx.Graphics {
 
 		public Color GetPixel(int X, int Y) {
 			return GetPixels()[(Height - Y - 1) * Width + X];
+		}
+
+		public Bitmap GetPixelsAsBitmap() {
+			Bitmap Bmp = new Bitmap(Width, Height);
+			BitmapData Data = Bmp.LockBits(new Rectangle(0, 0, Bmp.Width, Bmp.Height), ImageLockMode.WriteOnly, IPixFormat.Format32bppArgb);
+
+			Color[] Pixels = GetPixels();
+			for (int i = 0; i < Pixels.Length; i++) {
+				int Offset = i * sizeof(Color);
+				Marshal.Copy(BitConverter.GetBytes(Pixels[i].ColorInt), 0, Data.Scan0 + Offset, 4);
+			}
+
+			Bmp.UnlockBits(Data);
+			Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
+			return Bmp;
+		}
+
+		public void SubRect2D(Image Img, int X, int Y) {
+			GetImageData(Img, 0, 0, Img.Width, Img.Height, (Ptr) => SubImage(Ptr, X, Y, 0, Img.Width, Img.Height, 0, GLPixelFormat.Bgra));
 		}
 
 		public void SubImage2D(Image Img, int X = 0, int Y = 0, int W = -1, int H = -1, int Level = 0) {

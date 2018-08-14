@@ -16,6 +16,12 @@ namespace FishGfx {
 		public static readonly Color Green = new Color() { R = 0, G = 255, B = 0, A = 255 };
 		public static readonly Color Blue = new Color() { R = 0, G = 0, B = 255, A = 255 };
 
+		public static readonly Color Yellow = new Color() { R = 255, G = 255, B = 0, A = 255 };
+		public static readonly Color Cyan = new Color() { R = 0, G = 255, B = 255, A = 255 };
+		public static readonly Color Magenta = new Color() { R = 255, G = 0, B = 255, A = 255 };
+
+		public static readonly Color Orange = new Color() { R = 230, G = 140, B = 0, A = 255 };
+
 		public byte R, G, B, A;
 
 		public int ColorInt {

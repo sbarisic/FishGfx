@@ -218,7 +218,7 @@ namespace FishGfx.Graphics {
 			int Loc = GetUniformLocation(Uniform);
 			if (Loc == -1)
 				return false;
-
+			
 			Gl.ProgramUniform1f(ID, Loc, 1, Val);
 			return true;
 		}

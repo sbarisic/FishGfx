@@ -58,7 +58,40 @@ namespace FishGfx.RealSense {
 
 		internal Sensor DataSensor;
 
-		public void GetPixel(int X, int Y, out byte R, out byte G, out byte B) {
+		public Color GetPixel(Vector2 UV, bool Clamp = true) {
+			GetPixel((int)(UV.X * Width), (int)(UV.Y * Height), out byte R, out byte G, out byte B, Clamp);
+			return new Color(R, G, B);
+		}
+
+		public void GetPixel(int X, int Y, out byte R, out byte G, out byte B, bool Clamp = true) {
+			if (Clamp) {
+				if (X < 0)
+					X = 0;
+				if (Y < 0)
+					Y = 0;
+				if (X >= Width)
+					X = Width - 1;
+				if (Y >= Height)
+					Y = Height - 1;
+			} else {
+				if (X < 0) {
+					R = G = B = 0;
+					return;
+				}
+				if (Y < 0) {
+					R = G = B = 0;
+					return;
+				}
+				if (X >= Width) {
+					R = G = B = 0;
+					return;
+				}
+				if (Y >= Height) {
+					R = G = B = 0;
+					return;
+				}
+			}
+
 			int Offset = Y * Stride + (X * BitsPerPixel / 8);
 
 			switch (Format) {
@@ -100,6 +133,8 @@ namespace FishGfx.RealSense {
 	}
 
 	public static unsafe class RealSenseCamera {
+		static object ThreadLock = new object();
+
 		static Context Ctx = new Context();
 		static Config Cfg = new Config();
 		static Pipeline Pipeline = new Pipeline(Ctx);
@@ -175,91 +210,108 @@ namespace FishGfx.RealSense {
 		}
 
 		public static void Start() {
-			if (Profile != null)
-				throw new Exception("Already started");
+			lock (ThreadLock) {
+				if (Profile != null)
+					throw new Exception("Already started");
 
-			Profile = Pipeline.Start(Cfg);
+				Profile = Pipeline.Start(Cfg);
+			}
 		}
 
 		public static void Stop() {
-			if (Profile == null)
-				throw new Exception("Already stopped");
+			lock (ThreadLock) {
+				if (Profile == null)
+					throw new Exception("Already stopped");
 
-			Pipeline.Stop();
-			Profile = null;
+				Pipeline.Stop();
+				Profile = null;
+			}
 		}
 
-		public static bool PollForFrames(OnFramesReceived OnFrames, OnPointCloudReceived OnPointCloud = null) {
-			if (Pipeline.PollForFrames(out FrameSet Frames)) {
-				using (Frames) {
-					Frame[] AllFrames = Frames.ToArray();
-					FrameData[] FrameData = new FrameData[AllFrames.Length];
+		public static bool PollForFrames(OnFramesReceived OnFrames = null, OnPointCloudReceived OnPointCloud = null) {
+			lock (ThreadLock) {
+				if (Profile == null)
+					return false;
 
-					VideoFrame Video = null;
-					DepthFrame Depth = null;
+				if (Pipeline.PollForFrames(out FrameSet Frames)) {
+					using (Frames) {
+						Frame[] AllFrames = Frames.ToArray();
+						FrameData[] FrameData = new FrameData[AllFrames.Length];
 
-					for (int i = 0; i < FrameData.Length; i++) {
-						VideoFrame Vid = AllFrames[i] as VideoFrame;
-						DepthFrame Dpt = AllFrames[i] as DepthFrame;
-						int W = Vid?.Width ?? Dpt?.Width ?? 0;
-						int H = Vid?.Height ?? Dpt?.Height ?? 0;
-						int Bpp = Vid?.BitsPerPixel ?? Dpt?.BitsPerPixel ?? 0;
-						int Stride = Vid?.Stride ?? Dpt?.Stride ?? 0;
+						VideoFrame Video = null;
+						DepthFrame Depth = null;
 
-						if (Vid != null)
-							Video = Vid;
-						if (Dpt != null)
-							Depth = Dpt;
+						//Parallel.For(0, FrameData.Length, (i) => {
+						for (int i = 0; i < FrameData.Length; i++) {
+							VideoFrame Vid = AllFrames[i] as VideoFrame;
+							DepthFrame Dpt = AllFrames[i] as DepthFrame;
+							int W = Vid?.Width ?? Dpt?.Width ?? 0;
+							int H = Vid?.Height ?? Dpt?.Height ?? 0;
+							int Bpp = Vid?.BitsPerPixel ?? Dpt?.BitsPerPixel ?? 0;
+							int Stride = Vid?.Stride ?? Dpt?.Stride ?? 0;
 
-						FrameData[i] = new FrameData() {
-							Idx = AllFrames[i].Profile.Index,
-							BitsPerPixel = Bpp,
-							Data = AllFrames[i].Data,
-							Width = W,
-							Height = H,
-							Stride = Stride,
-							Type = (FrameType)AllFrames[i].Profile.Stream
-						};
-					}
+							if (Vid != null)
+								Video = Vid;
+							if (Dpt != null)
+								Depth = Dpt;
 
-					if (OnPointCloud != null) {
-						if (PointCloud == null)
-							PointCloud = new PointCloud();
-
-						Vertex3[] Verts;
-						int VertCount = 0;
-
-						using (Points Pts = PointCloud.Calculate(Depth)) {
-							PointCloud.MapTexture(Video);
-							Verts = OnPointCloud(VertCount = Pts.Count, null, null);
-
-							if (PointVerts.Length < VertCount) {
-								PointVerts = new Points.Vertex[VertCount];
-								PointUVs = new Points.TextureCoordinate[VertCount];
-							}
-
-							Pts.CopyTo(PointVerts);
-							Pts.CopyTo(PointUVs);
+							FrameData[i] = new FrameData() {
+								Idx = AllFrames[i].Profile.Index,
+								BitsPerPixel = Bpp,
+								Data = AllFrames[i].Data,
+								Width = W,
+								Height = H,
+								Stride = Stride,
+								Type = (FrameType)AllFrames[i].Profile.Stream
+							};
+							//});
 						}
 
-						fixed (Points.Vertex* PointVertsPtr = PointVerts)
-						fixed (Points.TextureCoordinate* PointUVsPtr = PointUVs)
-							for (int i = 0; i < VertCount; i++)
-								Verts[i] = new Vertex3(*(Vector3*)&PointVertsPtr[i], *(Vector2*)&PointUVsPtr[i]);
+						if (OnPointCloud != null) {
+							if (PointCloud == null)
+								PointCloud = new PointCloud();
 
-						OnPointCloud(VertCount, Verts, FrameData);
+							Vertex3[] Verts;
+							int VertCount = 0;
+
+							using (Points Pts = PointCloud.Calculate(Depth)) {
+								PointCloud.MapTexture(Video);
+								Verts = OnPointCloud(VertCount = Pts.Count, null, null);
+
+								if (PointVerts.Length < VertCount) {
+									PointVerts = new Points.Vertex[VertCount];
+									PointUVs = new Points.TextureCoordinate[VertCount];
+								}
+
+								Pts.CopyTo(PointVerts);
+								Pts.CopyTo(PointUVs);
+							}
+
+							fixed (Points.Vertex* PointVertsPtr = PointVerts)
+							fixed (Points.TextureCoordinate* PointUVsPtr = PointUVs) {
+								IntPtr PointVertsIntPtr = (IntPtr)PointVertsPtr;
+								IntPtr PointUVsIntPtr = (IntPtr)PointUVsPtr;
+
+								Parallel.For(0, VertCount, (i) => {
+									Verts[i] = new Vertex3(*(Vector3*)(PointVertsIntPtr + sizeof(Points.Vertex) * i),
+										*(Vector2*)(PointUVsIntPtr + sizeof(Points.TextureCoordinate) * i));
+								});
+							}
+
+							OnPointCloud(VertCount, Verts, FrameData);
+						}
+
+						OnFrames?.Invoke(FrameData);
+
+						for (int i = 0; i < AllFrames.Length; i++)
+							AllFrames[i].Dispose();
 					}
 
-					OnFrames(FrameData);
-
-					for (int i = 0; i < AllFrames.Length; i++)
-						AllFrames[i].Dispose();
+					return true;
 				}
 
-				return true;
+				return false;
 			}
-
-			return false;
 		}
 	}
 }

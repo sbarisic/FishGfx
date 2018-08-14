@@ -111,6 +111,35 @@ namespace FishGfx.Graphics {
 			PerformClamps();
 		}
 
+		public Vector3 WorldToScreen(Vector3 World, Matrix4x4 ModelMatrix) {
+			Vector4 Pt = Vector4.Transform(new Vector4(World, 1.0f), Projection * View * ModelMatrix);
+			return Pt.XYZ() / Pt.W;
+		}
+
+		public Vector3 WorldToScreen(Vector3 World) {
+			return WorldToScreen(World, Matrix4x4.Identity);
+		}
+
+		public Vector3 ScreenToWorld(Vector2 Screen, Matrix4x4 ModelMatrix) {
+			Matrix4x4 ProjView = Projection * View * ModelMatrix;
+			Matrix4x4.Invert(ProjView, out Matrix4x4 InvProjView);
+
+			Vector4 Pt = new Vector4((Screen / (ViewportSize / 2)) - Vector2.One, 0, 1);
+			Pt = Vector4.Transform(Pt, InvProjView);
+			Pt /= Pt.W;
+			Pt.Z = 0;
+
+			return Pt.XYZ();
+		}
+
+		public Vector3 ScreenToWorldDirection(Vector2 Screen, Matrix4x4 ModelMatrix) {
+			return Vector3.Normalize(ScreenToWorld(Screen, ModelMatrix) - Position);
+		}
+
+		public Vector3 ScreenToWorldDirection(Vector2 Screen) {
+			return ScreenToWorldDirection(Screen, Matrix4x4.Identity);
+		}
+
 		void Refresh() {
 			if (!Dirty)
 				return;
