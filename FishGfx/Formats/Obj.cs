@@ -53,7 +53,10 @@ namespace FishGfx.Formats {
 			List<Vector2> UVs = new List<Vector2>();
 
 			for (int j = 0; j < Lines.Length; j++) {
-				string Line = Lines[j].Trim();
+				string Line = Lines[j].Trim().Replace('\t', ' ');
+
+				while (Line.Contains("  "))
+					Line = Line.Replace("  ", " ");
 
 				if (Line.StartsWith("#"))
 					continue;
