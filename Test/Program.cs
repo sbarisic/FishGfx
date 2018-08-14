@@ -19,8 +19,12 @@ namespace Test {
 			Run();
 		}
 
+		static RenderWindow RWind;
+		static Camera Cam;
+		static Vector3 MoveVec = Vector3.Zero;
+
 		static void Run() {
-			RenderWindow RWind = new RenderWindow(800, 600, "FishGfx Test");
+			RWind = new RenderWindow(1366, 768, "FishGfx Test");
 
 #if DEBUG
 			Console.WriteLine("Running {0}", RenderAPI.Version);
@@ -28,44 +32,79 @@ namespace Test {
 			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
 
+			RWind.CaptureCursor = true;
+			RWind.OnMouseMoveDelta += (Wnd, X, Y) => {
+				Cam.Update(-new Vector2(X, Y));
+			};
+
+			RWind.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
+				if (Key == Key.Space)
+					MoveVec.Y = Pressed ? 1 : 0;
+				else if (Key == Key.C)
+					MoveVec.Y = Pressed ? -1 : 0;
+				else if (Key == Key.W)
+					MoveVec.Z = Pressed ? -1 : 0;
+				else if (Key == Key.A)
+					MoveVec.X = Pressed ? -1 : 0;
+				else if (Key == Key.S)
+					MoveVec.Z = Pressed ? 1 : 0;
+				else if (Key == Key.D)
+					MoveVec.X = Pressed ? 1 : 0;
+			};
+
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
 
-			GenericMesh GMsh = Smd.Load("data/models/smd/oildrum001_explosive/oildrum001_explosive_reference.smd")[0];
-			GMsh.SwapYZ();
-			Mesh3D Msh = new Mesh3D(GMsh);
+			GenericMesh HolodeckMesh = new GenericMesh(Obj.Load("data/models/holodeck/holodeck.obj"));
+			HolodeckMesh.SwapWindingOrder();
+			Mesh3D Holodeck = new Mesh3D(HolodeckMesh);
 
-			Texture Tex1 = Texture.FromFile("data/" + GMsh.MaterialName + ".png");
-			Tex1.SetFilterSmooth();
+			Texture Tex = Texture.FromFile("data/models/holodeck/wall.png");
+			Tex.SetWrap(TextureWrap.Repeat);
+			Tex.SetFilter(TextureFilter.Linear);
 
-			GMsh.CalculateBoundingSphere(out Vector3 Pos, out float Rad);
-			SetupCamera(Pos, Rad);
+			SetupCamera();
 
 			Stopwatch SWatch = Stopwatch.StartNew();
+			float Dt = 0;
+
 			while (!RWind.ShouldClose) {
+				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
+					;
+
+				Dt = SWatch.ElapsedMilliseconds / 1000.0f;
+				SWatch.Restart();
+
 				Gfx.Clear();
-				ShaderUniforms.Model = Matrix4x4.CreateRotationY((float)SWatch.ElapsedMilliseconds / 1000);
 
 				Default.Bind();
-				Tex1.BindTextureUnit();
-
-				Msh.Draw();
-
-				Tex1.UnbindTextureUnit();
+				{
+					Tex.BindTextureUnit();
+					Holodeck.Draw();
+					Tex.UnbindTextureUnit();
+				}
 				Default.Unbind();
 
+				Update(Dt);
 				RWind.SwapBuffers();
 				Events.Poll();
 			}
 		}
 
-		static void SetupCamera(Vector3 Target, float Radius) {
-			// Cam.SetOrthogonal(0, 0, 800, 600, -10, 10);
-			Camera Cam = ShaderUniforms.Camera;
+		static void Update(float Dt) {
+			const float MoveSpeed = 100;
 
-			Cam.SetPerspective(800, 600);
-			Cam.Position = new Vector3(10, 30, 50) * 100;
-			Cam.LookAtFitToScreen(Target, Radius + (Radius * (50.0f / 100)));
+			if (!(MoveVec.X == 0 && MoveVec.Y == 0 && MoveVec.Z == 0))
+				Cam.Position += Cam.ToWorldNormal(Vector3.Normalize(MoveVec)) * MoveSpeed * Dt;
+		}
+
+		static void SetupCamera() {
+			Cam = ShaderUniforms.Camera;
+			Cam.MouseMovement = true;
+
+			Cam.SetPerspective(RWind.WindowSize.X, RWind.WindowSize.Y);
+			Cam.Position = new Vector3(0, 50, 0);
+			Cam.LookAt(new Vector3(100, 0, 20));
 		}
 	}
 }
