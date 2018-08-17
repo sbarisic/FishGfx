@@ -17,8 +17,7 @@
             "debugOutputMute": true,
             "delayForDebugger": 0,
             "hookIntoChildren": false,
-            "refAllResources": true,
-            "saveAllInitials": true,
+            "refAllResources": false,
             "verifyMapWrites": false
         },
         "workingDir": ""
