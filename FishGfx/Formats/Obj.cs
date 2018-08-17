@@ -45,7 +45,7 @@ namespace FishGfx.Formats {
 			}
 		}
 
-		public static GenericMesh[] Load(string FileName) {
+		public static GenericMesh[] Load(string FileName, bool SwapWindingOrder = true) {
 			List<GenericMesh> Meshes = new List<GenericMesh>();
 			GenericMesh CurMesh = null;
 
@@ -88,13 +88,13 @@ namespace FishGfx.Formats {
 
 						for (int i = 2; i < Tokens.Length - 1; i++) {
 							string[] V = Tokens[1].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], UVs[V[1].ParseInt(1) - 1]));
 
 							V = Tokens[i].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], UVs[V[1].ParseInt(1) - 1]));
 
 							V = Tokens[i + 1].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt() - 1], UVs[V[1].ParseInt() - 1]));
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], UVs[V[1].ParseInt(1) - 1]));
 						}
 
 						break;
@@ -111,6 +111,10 @@ namespace FishGfx.Formats {
 						break;
 				}
 			}
+
+			if (SwapWindingOrder)
+				foreach (var Msh in Meshes)
+					Msh.SwapWindingOrder();
 
 			return Meshes.ToArray();
 		}

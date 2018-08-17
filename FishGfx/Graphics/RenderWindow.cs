@@ -393,5 +393,11 @@ namespace FishGfx.Graphics {
 
 			Glfw.SetWindowPos(Wnd, X, Y);
 		}
+
+		public static Vector2 GetDesktopResolution() {
+			Internal_OpenGL.InitGLFW();
+			Glfw.VideoMode VMode = Glfw.GetVideoMode(Glfw.GetPrimaryMonitor());
+			return new Vector2(VMode.Width, VMode.Height);
+		}
 	}
 }

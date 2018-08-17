@@ -54,6 +54,14 @@ namespace FishGfx.Formats {
 			}
 		}
 
+		public void ForEachPosition(Func<Vector3, Vector3> OnVec) {
+			for (int i = 0; i < Vertices.Count; i++) {
+				Vertex3 V = Vertices[i];
+				V.Position = OnVec(V.Position);
+				Vertices[i] = V;
+			}
+		}
+
 		public override string ToString() {
 			return string.Format("{0} ({1} verts)", MaterialName, Vertices?.Count ?? 0);
 		}

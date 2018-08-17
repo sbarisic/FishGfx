@@ -7,12 +7,6 @@ using System.Numerics;
 using OpenGL;
 
 namespace FishGfx.Graphics.Drawables {
-	public enum PolygonMode {
-		Point = 6912,
-		Line = 6913,
-		Fill = 6914
-	}
-
 	public class Mesh2D : IDrawable {
 		internal const int VERTEX_ATTRIB = 0;
 		internal const int COLOR_ATTRIB = 1;

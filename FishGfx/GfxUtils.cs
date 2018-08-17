@@ -120,12 +120,20 @@ namespace FishGfx {
 			return Math.Min(Math.Min(V.X, V.Y), V.Z);
 		}
 
+		public static Vector3 XYZ(this Vector4 V) {
+			return new Vector3(V.X, V.Y, V.Z);
+		}
+
+		public static Vector2 XY(this Vector4 V) {
+			return new Vector2(V.X, V.Y);
+		}
+
 		public static Vector3 XZY(this Vector3 Vec) {
 			return new Vector3(Vec.X, Vec.Z, Vec.Y);
 		}
 
-		public static Vector3 XYZ(this Vector4 V) {
-			return new Vector3(V.X, V.Y, V.Z);
+		public static Vector3 ZYX(this Vector3 V) {
+			return new Vector3(V.Z, V.Y, V.X);
 		}
 
 		public static Vector2 XY(this Vector3 V) {
@@ -136,8 +144,8 @@ namespace FishGfx {
 			return new Vector2(V.X, V.Z);
 		}
 
-		public static Vector2 XY(this Vector4 V) {
-			return new Vector2(V.X, V.Y);
+		public static Vector3 YZX(this Vector3 V) {
+			return new Vector3(V.Y, V.Z, V.X);
 		}
 
 		public static float[] Multiply(this float[] FloatArr, float Val) {
@@ -161,9 +169,9 @@ namespace FishGfx {
 			double SqZ = Quat.Z * Quat.Z;
 			double Test = Quat.X * Quat.Y + Quat.Z * Quat.W;
 
-			if (Test > 0.49999)  // singularity at north pole
+			if (Test > 0.49999)  // Singularity at north pole
 				Yaw = (float)(2 * Math.Atan2(Quat.X, Quat.W));
-			else if (Test < -0.49999)  // singularity at south pole
+			else if (Test < -0.49999)  // Singularity at south pole
 				Yaw = (float)(-2 * Math.Atan2(Quat.X, Quat.W));
 			else
 				Yaw = (float)Math.Atan2(2 * Quat.Y * Quat.W - 2 * Quat.X * Quat.Z, SqX - SqY - SqZ + SqW);
@@ -202,8 +210,22 @@ namespace FishGfx {
 			Z = Q.Z;
 		}
 
+		public static float ParseFloat(this string Str, float Default) {
+			if (string.IsNullOrWhiteSpace(Str))
+				return Default;
+
+			return Str.ParseFloat();
+		}
+
 		public static float ParseFloat(this string Str) {
 			return float.Parse(Str, CultureInfo.InvariantCulture);
+		}
+
+		public static int ParseInt(this string Str, int Default) {
+			if (string.IsNullOrWhiteSpace(Str))
+				return Default;
+
+			return Str.ParseInt();
 		}
 
 		public static int ParseInt(this string Str) {
@@ -234,6 +256,24 @@ namespace FishGfx {
 
 			Handle.Free();
 			return Val;
+		}
+
+		public static Matrix4x4 ToRotation(this Vector3 Normal) {
+			Vector3 UpVector = Vector3.UnitY;
+			Vector3 H = Vector3.Normalize(UpVector + Normal);
+
+			Quaternion Q = Quaternion.Identity;
+			Q.W = Vector3.Dot(UpVector, H);
+			Q.X = UpVector.Y * H.Z - UpVector.Z * H.Y;
+			Q.Y = UpVector.Z * H.X - UpVector.X * H.Z;
+			Q.Z = UpVector.X * H.Y - UpVector.Y * H.X;
+
+			return Matrix4x4.CreateFromQuaternion(Q);
+		}
+
+		public static void NormalToPitchYaw(this Vector3 Normal, out float Pitch, out float Yaw) {
+			Pitch = (float)Math.Asin(-Normal.Y);
+			Yaw = (float)Math.Atan2(Normal.X, Normal.Z);
 		}
 	}
 }

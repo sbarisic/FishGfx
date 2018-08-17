@@ -22,12 +22,12 @@ namespace FishGfx.Graphics.Drawables {
 
 		SubMesh[] Meshes;
 
-		public RenderModel(IEnumerable<GenericMesh> Meshes) {
+		public RenderModel(IEnumerable<GenericMesh> Meshes, bool HasUVs = true, bool HasColors = true) {
 			GenericMesh[] GenericMeshes = Meshes.ToArray();
 			this.Meshes = new SubMesh[GenericMeshes.Length];
 
 			for (int i = 0; i < GenericMeshes.Length; i++)
-				this.Meshes[i] = new SubMesh(GenericMeshes[i].MaterialName, null, new Mesh3D(GenericMeshes[i]));
+				this.Meshes[i] = new SubMesh(GenericMeshes[i].MaterialName, null, new Mesh3D(GenericMeshes[i], HasUVs, HasColors));
 		}
 
 		public void SetMaterialTexture(string MaterialName, Texture Tex) {
