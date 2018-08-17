@@ -14,118 +14,155 @@ using System.Numerics;
 using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
+using FishGfx.Formats;
 
 namespace RealSenseTest {
 	class Program {
-		static int W;
-		static int H;
-
-		static Texture ClrTex;
-		static Texture DptTex;
-		static Mesh3D Points;
-
 		static void Main(string[] args) {
+			Run();
+		}
+
+		static RenderWindow RWind;
+		static Camera Cam;
+		static Vector3 MoveVec = Vector3.Zero;
+
+		static void Run() {
+			Vector2 Size = RenderWindow.GetDesktopResolution() * 0.9f;
+			RWind = new RenderWindow((int)Size.X, (int)Size.Y, "RealSense Test");
+
+#if DEBUG
+			Console.WriteLine("Running {0}", RenderAPI.Version);
+			Console.WriteLine(RenderAPI.Renderer);
+			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
+#endif
+
+			RWind.CaptureCursor = true;
+			RWind.OnMouseMoveDelta += (Wnd, X, Y) => {
+				Cam.Update(-new Vector2(X, Y));
+			};
+
+			RWind.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
+				if (Key == Key.Space)
+					MoveVec.Y = Pressed ? 1 : 0;
+				else if (Key == Key.C)
+					MoveVec.Y = Pressed ? -1 : 0;
+				else if (Key == Key.W)
+					MoveVec.Z = Pressed ? -1 : 0;
+				else if (Key == Key.A)
+					MoveVec.X = Pressed ? -1 : 0;
+				else if (Key == Key.S)
+					MoveVec.Z = Pressed ? 1 : 0;
+				else if (Key == Key.D)
+					MoveVec.X = Pressed ? 1 : 0;
+
+				if (Pressed && Key == Key.Escape)
+					Environment.Exit(0);
+			};
+
+			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
+				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
+
+			RenderModel WorldSurface = LoadWorldSurface();
+			RenderModel Pin = LoadPin();
+
 			SetupCamera();
-			RenderWindow RWind = new RenderWindow(W, H, "RealSense Test");
+			Stopwatch SWatch = Stopwatch.StartNew();
+			float Dt = 0;
 
-			ClrTex = Texture.Empty(W, H);
-			DptTex = Texture.Empty(W, H);
-
-			Camera OrthoCam = new Camera();
-			OrthoCam.SetOrthogonal(0, 0, 800, 600, -10, 10);
-
-			Camera PerspCam = new Camera();
-			PerspCam.SetPerspective(W, H, (float)(91.2 * Math.PI / 180));
-			PerspCam.Rotation = Quaternion.CreateFromAxisAngle(new Vector3(1, 0, 0), (float)Math.PI);
-
-			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "data/realsense.frag"));
-			Default.Uniform1("ColorTexture", 0);
-			Default.Uniform1("DepthTexture", 1);
-
-			ShaderProgram Default3D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "data/realsense.frag"));
-			Default3D.Uniform1("ColorTexture", 0);
-			Default3D.Uniform1("DepthTexture", 1);
-
-
-			Mesh2D Quad = new Mesh2D();
-			Quad.SetUVs(new Vector2[] { new Vector2(1, 1), new Vector2(1, 0), new Vector2(0, 1), new Vector2(1, 0), new Vector2(0, 0), new Vector2(0, 1) });
-			Quad.SetVertices(new Vector2[] { new Vector2(0, 0), new Vector2(0, 600), new Vector2(800, 600), new Vector2(0, 0), new Vector2(800, 600), new Vector2(800, 0) }
-				.Reverse().ToArray());
-
-			Points = new Mesh3D(BufferUsage.DynamicDraw);
+			Mesh3D Points = new Mesh3D(BufferUsage.StreamDraw);
 			Points.PrimitiveType = PrimitiveType.Points;
+			Points.SetVertices(new Vertex3[] { }, 0, false, false);
+
+			CameraClient.Init();
+			RealSense.Init();
 
 			while (!RWind.ShouldClose) {
+				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
+					;
+
+				Dt = SWatch.ElapsedMilliseconds / 1000.0f;
+				SWatch.Restart();
+
 				Gfx.Clear();
-
-				RealSenseCamera.PollForFrames(OnFrameData, OnPointCloud);
-
-				//Default.Bind();
-				ShaderUniforms.Camera = PerspCam;
-				Default3D.Bind();
 				{
+					RealSense.GetVerts(out Vertex3[] Verts, out int Count);
+					if (Count != 0)
+						Points.SetVertices(Verts, Count, false, false);
 
-					ClrTex.BindTextureUnit();
-					DptTex.BindTextureUnit(1);
+					const float ScaleX = 1500;
+					const float ScaleY = 1000;
+					ShaderUniforms.Model = Matrix4x4.CreateTranslation(new Vector3(0.5f, -0.5f, 0)) * Matrix4x4.CreateScale(new Vector3(ScaleX, 10, ScaleY));
+					ShaderUniforms.Model *= Matrix4x4.CreateTranslation(-200, 0, 200);
+					Default.Bind();
+					WorldSurface.Draw();
+					Default.Unbind();
 
-					//Quad.Draw();
+					Matrix4x4 TransRot = CameraClient.GetRotation() * CameraClient.GetTranslation();
+					ShaderUniforms.Model = Matrix4x4.CreateScale(10) * TransRot;
+					Default.Bind();
+					Pin.Draw();
+					Default.Unbind();
+
+					//ShaderUniforms.Model = TransRot;
+					ShaderUniforms.Model = Matrix4x4.Identity;
+					Default.Bind();
 					Points.Draw();
-
-					DptTex.UnbindTextureUnit(1);
-					ClrTex.UnbindTextureUnit();
-
+					Default.Unbind();
 				}
-				Default3D.Unbind();
-				//Default.Unbind();
-
+				Update(Dt);
 				RWind.SwapBuffers();
 				Events.Poll();
 			}
 		}
 
+		static void Update(float Dt) {
+			const float MoveSpeed = 500;
+
+			if (!(MoveVec.X == 0 && MoveVec.Y == 0 && MoveVec.Z == 0))
+				Cam.Position += Cam.ToWorldNormal(Vector3.Normalize(MoveVec)) * MoveSpeed * Dt;
+		}
+
 		static void SetupCamera() {
-			IEnumerable<FrameData> Resolutions = RealSenseCamera.QueryResolutions().OrderBy((Data) => Data.Width).Reverse();
-			IEnumerable<FrameData> DepthResolutions = Resolutions.Where((Data) => Data.Type == FrameType.Depth);
+			Cam = ShaderUniforms.Camera;
+			Cam.MouseMovement = true;
 
-			FrameData DepthRes = DepthResolutions.First();
-			//FrameData DepthRes = DepthResolutions.Last();
-
-			FrameData ColorRes = Resolutions.Where((Data) => Data.Width == DepthRes.Width && Data.Height == DepthRes.Height && Data.Format == FrameFormat.Rgb8).First();
-
-			W = ColorRes.Width;
-			H = ColorRes.Height;
-			RealSenseCamera.SetOption(DepthRes, 12, 4);
-
-			RealSenseCamera.DisableAllStreams();
-			RealSenseCamera.EnableStream(DepthRes, ColorRes);
-			RealSenseCamera.Start();
+			Cam.SetPerspective(RWind.WindowSize.X, RWind.WindowSize.Y);
+			Cam.Position = new Vector3(0, 50, 0);
+			Cam.LookAt(new Vector3(100, 0, 20));
 		}
 
-		static void OnFrameData(FrameData[] Frames) {
-			FrameData DepthFrame = Frames[0];
-			FrameData ClrFrame = Frames[1];
+		static RenderModel LoadWorldSurface() {
+			RenderModel Cube = new RenderModel(Obj.Load("data/models/cube/cube.obj"));
 
-			ClrTex.SetPixels2D_RGB8(ClrFrame.Data, ClrFrame.Width, ClrFrame.Height);
-			DptTex.SetPixels2D_R16(DepthFrame.Data, DepthFrame.Width, DepthFrame.Height);
+			Texture Tex = Texture.FromFile("data/textures/grid.png");
+			Cube.SetMaterialTexture("cube", Tex);
+
+			return Cube;
 		}
 
-		static Vertex3[] VertsArr = new Vertex3[0];
+		static RenderModel LoadPin() {
+			/*RenderModel Pin = new RenderModel(Obj.Load("data/models/pin/pin.obj"));
 
-		static Vertex3[] OnPointCloud(int Count, Vertex3[] Verts, FrameData[] Frames) {
-			if (Verts == null) {
-				if (VertsArr.Length < Count)
-					VertsArr = new Vertex3[Count];
+			Texture Tex = Texture.FromFile("data/models/pin/pin_mat.png");
+			Pin.SetMaterialTexture("pin_mat", Tex);*/
 
-				return VertsArr;
+			GenericMesh[] Meshes = Obj.Load("data/models/biplane/biplane.obj");
+
+
+			//Matrix4x4 RotMat = Matrix4x4.CreateFromYawPitchRoll(-(float)Math.PI / 2, (float)Math.PI / 2, 0);
+			Matrix4x4 RotMat = Matrix4x4.CreateFromYawPitchRoll(-(float)Math.PI, 0, 0);
+			for (int i = 0; i < Meshes.Length; i++)
+				Meshes[i].ForEachPosition((In) => Vector3.Transform(In, RotMat));//*/
+
+			RenderModel Pin = new RenderModel(Meshes, false, false);
+
+			Texture WhiteTex = Texture.FromFile("data/textures/colors/white.png");
+			for (int i = 0; i < Meshes.Length; i++) {
+				Pin.SetMaterialTexture(Meshes[i].MaterialName, WhiteTex);
+				Pin.GetMaterialMesh(Meshes[i].MaterialName).DefaultColor = GfxUtils.RandomColor();
 			}
 
-			/*Verts = Verts.Where(V => V.Position != Vector3.Zero && V.UV.X > 0 && V.UV.X < 1 && V.UV.Y > 0 && V.UV.Y < 1).ToArray();
-			Count = Verts.Length;*/
-
-			Points.SetVertices(Verts, Count);
-			return null;
+			return Pin;
 		}
 	}
 }

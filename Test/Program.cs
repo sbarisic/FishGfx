@@ -24,7 +24,8 @@ namespace Test {
 		static Vector3 MoveVec = Vector3.Zero;
 
 		static void Run() {
-			RWind = new RenderWindow(1366, 768, "FishGfx Test");
+			Vector2 Size = RenderWindow.GetDesktopResolution() * 0.9f;
+			RWind = new RenderWindow((int)Size.X, (int)Size.Y, "FishGfx Test");
 
 #if DEBUG
 			Console.WriteLine("Running {0}", RenderAPI.Version);
@@ -55,12 +56,13 @@ namespace Test {
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
 
-			RenderModel Holodeck = LoadHolodeck();
-			SetupCamera();
+			RenderModel WorldSurface = LoadWorldSurface();
+			RenderModel Pin = LoadPin();
 
+			SetupCamera();
 			Stopwatch SWatch = Stopwatch.StartNew();
 			float Dt = 0;
-
+			
 			while (!RWind.ShouldClose) {
 				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
 					;
@@ -69,11 +71,23 @@ namespace Test {
 				SWatch.Restart();
 
 				Gfx.Clear();
+				{
+					const float ScaleX = 1500;
+					const float ScaleY = 1000;
+					ShaderUniforms.Model = Matrix4x4.CreateTranslation(new Vector3(0.5f, -0.5f, 0.5f)) * Matrix4x4.CreateScale(new Vector3(ScaleX, 10, ScaleY));
+					//ShaderUniforms.Model *= Matrix4x4.CreateTranslation(new Vector3(-83, 0, -215));
+					Default.Bind();
+					WorldSurface.Draw();
+					Default.Unbind();
 
-				Default.Bind();
-				Holodeck.Draw();
-				Default.Unbind();
+					/*ShaderUniforms.Model = CameraClient.GetRotation() * Matrix4x4.CreateScale(25) * Matrix4x4.CreateTranslation(CameraClient.GetPos());
+					//ShaderUniforms.Model = Matrix4x4.CreateTranslation(Vector3.Zero);
 
+					Default.Bind();
+					Pin.Draw();
+					Default.Unbind();*/
+
+				}
 				Update(Dt);
 				RWind.SwapBuffers();
 				Events.Poll();
@@ -81,7 +95,7 @@ namespace Test {
 		}
 
 		static void Update(float Dt) {
-			const float MoveSpeed = 250;
+			const float MoveSpeed = 500;
 
 			if (!(MoveVec.X == 0 && MoveVec.Y == 0 && MoveVec.Z == 0))
 				Cam.Position += Cam.ToWorldNormal(Vector3.Normalize(MoveVec)) * MoveSpeed * Dt;
@@ -96,8 +110,8 @@ namespace Test {
 			Cam.LookAt(new Vector3(100, 0, 20));
 		}
 
-		static RenderModel LoadHolodeck() {
-			RenderModel Holodeck = new RenderModel(Obj.Load("data/models/holodeck/holodeck.obj").Select((M) => { M.SwapWindingOrder(); return M; }));
+		static RenderModel LoadWorldSurface() {
+			/*RenderModel Holodeck = new RenderModel(Obj.Load("data/models/holodeck/holodeck.obj"));
 
 			Texture Tex = Texture.FromFile("data/textures/colors/white.png");
 			foreach (var Mat in Holodeck.GetMaterialNames())
@@ -119,7 +133,23 @@ namespace Test {
 			Tex.SetFilter(TextureFilter.Linear);
 			Holodeck.SetMaterialTexture("screens", Tex);
 
-			return Holodeck;
+			return Holodeck;*/
+
+			RenderModel Cube = new RenderModel(Obj.Load("data/models/cube/cube.obj"));
+
+			Texture Tex = Texture.FromFile("data/textures/grid.png");
+			Cube.SetMaterialTexture("cube", Tex);
+
+			return Cube;
+		}
+
+		static RenderModel LoadPin() {
+			RenderModel Pin = new RenderModel(Obj.Load("data/models/pin/pin.obj"));
+
+			Texture Tex = Texture.FromFile("data/models/pin/pin_mat.png");
+			Pin.SetMaterialTexture("pin_mat", Tex);
+
+			return Pin;
 		}
 	}
 }
