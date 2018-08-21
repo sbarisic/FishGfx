@@ -103,6 +103,9 @@ namespace RealSenseTest {
 					Pin.Draw();
 					Default.Unbind();
 
+					if (Count != Points.VertBuffer.ElementCount)
+						Console.WriteLine("Warning!");
+
 					//ShaderUniforms.Model = TransRot;
 					ShaderUniforms.Model = Matrix4x4.Identity;
 					Default.Bind();
@@ -148,8 +151,6 @@ namespace RealSenseTest {
 
 			GenericMesh[] Meshes = Obj.Load("data/models/biplane/biplane.obj");
 
-
-			//Matrix4x4 RotMat = Matrix4x4.CreateFromYawPitchRoll(-(float)Math.PI / 2, (float)Math.PI / 2, 0);
 			Matrix4x4 RotMat = Matrix4x4.CreateFromYawPitchRoll(-(float)Math.PI, 0, 0);
 			for (int i = 0; i < Meshes.Length; i++)
 				Meshes[i].ForEachPosition((In) => Vector3.Transform(In, RotMat));//*/

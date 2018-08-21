@@ -32,7 +32,10 @@ namespace RealSenseTest {
 
 					W = ColorRes.Width;
 					H = ColorRes.Height;
-					RealSenseCamera.SetOption(DepthRes, 12, 4);
+					RealSenseCamera.SetOption(DepthRes, RealSenseOption.VisualPreset, 4);
+					RealSenseCamera.SetOption(DepthRes, RealSenseOption.EmitterEnabled, 0);
+					RealSenseCamera.SetOption(DepthRes, RealSenseOption.EnableAutoExposure, 1);
+					//RealSenseCamera.SetOption(DepthRes, RealSenseOption.LaserPower, 30);
 
 					RealSenseCamera.DisableAllStreams();
 					RealSenseCamera.EnableStream(DepthRes, ColorRes);

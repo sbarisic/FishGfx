@@ -22,8 +22,8 @@ namespace FishGfx.Graphics.Drawables {
 		public Color DefaultColor = Color.White;
 		public PolygonMode PolygonMode = PolygonMode.Fill;
 
-		VertexArray VAO;
-		BufferObject VertBuffer, ColorBuffer, UVBuffer, ElementBuffer;
+		public VertexArray VAO;
+		public BufferObject VertBuffer, ColorBuffer, UVBuffer, ElementBuffer;
 		BufferUsage Usage;
 
 		public PrimitiveType PrimitiveType {
