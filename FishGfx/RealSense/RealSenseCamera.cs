@@ -96,6 +96,7 @@ namespace FishGfx.RealSense {
 		public int Height;
 		public FrameType Type;
 		public FrameFormat Format;
+		public int Framerate;
 
 		public int Stride;
 		public int BitsPerPixel;
@@ -173,7 +174,7 @@ namespace FishGfx.RealSense {
 		}
 
 		public override string ToString() {
-			return string.Format("({0}) {1}x{2} {3} {4}", Idx, Width, Height, Type, Format);
+			return string.Format("({0}) {1}x{2} {3} {4} @{5}", Idx, Width, Height, Type, Format, Framerate);
 		}
 	}
 
@@ -198,12 +199,12 @@ namespace FishGfx.RealSense {
 			Cfg.EnableStream((Stream)Stream);
 		}
 
-		public static void EnableStream(FrameType Stream, int Width, int Height, FrameFormat Format) {
-			Cfg.EnableStream((Stream)Stream, Width, Height, (Format)Format);
+		public static void EnableStream(FrameType Stream, int Width, int Height, FrameFormat Format, int Framerate = 0) {
+			Cfg.EnableStream((Stream)Stream, Width, Height, (Format)Format, Framerate);
 		}
 
 		public static void EnableStream(FrameData Data) {
-			EnableStream(Data.Type, Data.Width, Data.Height, Data.Format);
+			EnableStream(Data.Type, Data.Width, Data.Height, Data.Format, Data.Framerate);
 		}
 
 		public static void EnableStream(params FrameData[] Data) {
@@ -250,7 +251,8 @@ namespace FishGfx.RealSense {
 								Height = P.Height,
 								Type = (FrameType)P.Stream,
 								Idx = P.Index,
-								DataSensor = Sensor
+								DataSensor = Sensor,
+								Framerate = P.Framerate,
 							};
 						}
 					}

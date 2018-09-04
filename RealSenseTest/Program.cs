@@ -62,6 +62,9 @@ namespace RealSenseTest {
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/default.frag"));
 
+			ShaderProgram DefaultPoints = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
+				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
+
 			RenderModel WorldSurface = LoadWorldSurface();
 			RenderModel Pin = LoadPin();
 
@@ -73,8 +76,9 @@ namespace RealSenseTest {
 			Points.PrimitiveType = PrimitiveType.Points;
 			Points.SetVertices(new Vertex3[] { }, 0, false, false);
 
-			CameraClient.Init();
+			PositionClient.Init();
 			RealSense.Init();
+			Gfx.PointSize(3);
 
 			while (!RWind.ShouldClose) {
 				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
@@ -85,9 +89,7 @@ namespace RealSenseTest {
 
 				Gfx.Clear();
 				{
-					RealSense.GetVerts(out Vertex3[] Verts, out int Count);
-					if (Count != 0)
-						Points.SetVertices(Verts, Count, false, false);
+					RealSense.GetVerts(ref Points);
 
 					const float ScaleX = 1500;
 					const float ScaleY = 1000;
@@ -97,20 +99,17 @@ namespace RealSenseTest {
 					WorldSurface.Draw();
 					Default.Unbind();
 
-					Matrix4x4 TransRot = CameraClient.GetRotation() * CameraClient.GetTranslation();
+					Matrix4x4 TransRot = PositionClient.GetRotation() * PositionClient.GetTranslation();
 					ShaderUniforms.Model = Matrix4x4.CreateScale(10) * TransRot;
 					Default.Bind();
 					Pin.Draw();
 					Default.Unbind();
 
-					if (Count != Points.VertBuffer.ElementCount)
-						Console.WriteLine("Warning!");
-
 					//ShaderUniforms.Model = TransRot;
 					ShaderUniforms.Model = Matrix4x4.Identity;
-					Default.Bind();
+					DefaultPoints.Bind();
 					Points.Draw();
-					Default.Unbind();
+					DefaultPoints.Unbind();
 				}
 				Update(Dt);
 				RWind.SwapBuffers();

@@ -4,12 +4,15 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Numerics;
+using System.Threading;
+using System.Runtime.InteropServices;
 using FishGfx.RealSense;
 using FishGfx;
-using System.Threading;
+using System.Diagnostics;
+using FishGfx.Graphics.Drawables;
 
 namespace RealSenseTest {
-	public static class RealSense {
+	public static unsafe class RealSense {
 		static int W;
 		static int H;
 
@@ -18,7 +21,7 @@ namespace RealSenseTest {
 		public static void Init() {
 			Thread PollThread = new Thread(() => {
 				if (!Debug.FakePoints) {
-					IEnumerable<FrameData> Resolutions = RealSenseCamera.QueryResolutions().OrderBy((Data) => Data.Width).Reverse();
+					IEnumerable<FrameData> Resolutions = RealSenseCamera.QueryResolutions().OrderBy((Data) => -Data.Framerate);
 					IEnumerable<FrameData> DepthResolutions = Resolutions.Where((Data) => Data.Type == FrameType.Depth);
 
 					int ReqW = 640;
@@ -32,9 +35,10 @@ namespace RealSenseTest {
 
 					W = ColorRes.Width;
 					H = ColorRes.Height;
-					RealSenseCamera.SetOption(DepthRes, RealSenseOption.VisualPreset, 4);
+					RealSenseCamera.SetOption(DepthRes, RealSenseOption.VisualPreset, 1);//4
 					RealSenseCamera.SetOption(DepthRes, RealSenseOption.EmitterEnabled, 0);
 					RealSenseCamera.SetOption(DepthRes, RealSenseOption.EnableAutoExposure, 1);
+
 					//RealSenseCamera.SetOption(DepthRes, RealSenseOption.LaserPower, 30);
 
 					RealSenseCamera.DisableAllStreams();
@@ -69,6 +73,7 @@ namespace RealSenseTest {
 				Thread.Sleep(10);
 		}
 
+		static object Lck = new object();
 		static int PointCount;
 		static Vertex3[] Points;
 
@@ -77,27 +82,35 @@ namespace RealSenseTest {
 			if (Verts == null) {
 				if (VertsArr == null || VertsArr.Length < Count) {
 					VertsArr = new Vertex3[Count];
-					Points = new Vertex3[Count];
+
+					lock (Lck)
+						Points = new Vertex3[Count];
 				}
 
 				return VertsArr;
 			}
 
-			CameraClient.GetRotationAngles(out float Yaw, out float Pitch, out float Roll);
-			Matrix4x4 TransMat = Matrix4x4.CreateFromYawPitchRoll(Yaw, Pitch + (float)Math.PI, -Roll) * CameraClient.GetTranslation();
+			FrameData Clr = Frames[1];
 
-			lock (Points) {
+			PositionClient.GetRotationAngles(out float Yaw, out float Pitch, out float Roll);
+			Matrix4x4 TransMat = Matrix4x4.CreateFromYawPitchRoll(Yaw, Pitch + (float)Math.PI, -Roll) * PositionClient.GetTranslation();
+
+			lock (Lck) {
 				PointCount = 0;
+
+				fixed (Vertex3* PointsPtr = Points)
+					Util.MemSet(new IntPtr(PointsPtr), 0, Points.Length * sizeof(Vertex3));
+
 				for (int i = 0, j = 0; i < Count; i++, j++) {
 					if (Verts[i].Position == Vector3.Zero)
 						continue;
 
-					if (Verts[i].Position.Z > 2)
-						continue;
-
 					Points[j] = Verts[i];
-					Points[j].Color = GfxUtils.RandomColor();
-					Points[j].Position = Vector3.Transform(Points[j].Position * 1000, TransMat);
+					Points[j].Color = Clr.GetPixel(Verts[i].UV, false);
+
+					Points[j].Position = Vector3.Transform((Points[j].Position * 1000), TransMat);
+						//- Vector3.Transform(new Vector3(0, 25.0f, 0), Matrix4x4.CreateFromYawPitchRoll(0, 0, -Roll));
+
 					PointCount++;
 				}
 			}
@@ -105,10 +118,10 @@ namespace RealSenseTest {
 			return null;
 		}
 
-		public static void GetVerts(out Vertex3[] Verts, out int Count) {
-			lock (Points) {
-				Verts = Points;
-				Count = PointCount;
+		public static void GetVerts(ref Mesh3D Mesh) {
+			lock (Lck) {
+				if (PointCount != 0)
+					Mesh.SetVertices(Points, PointCount, false, true);
 			}
 		}
 	}

@@ -12,7 +12,39 @@ using FishGfx;
 using System.Diagnostics;
 
 namespace RealSenseTest {
-	public static unsafe class CameraClient {
+	class CircularVecBuffer {
+		const int Len = 10;
+
+		Vector3[] Vectors;
+		int CurIdx;
+
+		public CircularVecBuffer() {
+			Vectors = new Vector3[Len];
+			CurIdx = 0;
+		}
+
+		public void Push(Vector3 V) {
+			Vectors[CurIdx++] = V;
+			if (CurIdx >= Len)
+				CurIdx = 0;
+		}
+
+		public Vector3 GetAverage() {
+			Vector3 Ret = Vector3.Zero;
+
+			for (int i = 0; i < Len; i++)
+				Ret += Vectors[i];
+
+			return Ret / Len;
+		}
+
+		public Vector3 PushGetAverage(Vector3 V) {
+			Push(V);
+			return GetAverage();
+		}
+	}
+
+	public static unsafe class PositionClient {
 		static UdpClient UDP;
 		static int Port = 40023;
 
@@ -95,6 +127,7 @@ namespace RealSenseTest {
 		}
 
 		static Stopwatch SWatch;
+		static CircularVecBuffer ABuffer = new CircularVecBuffer(), BBuffer = new CircularVecBuffer(), CBuffer = new CircularVecBuffer();
 
 		public static void ReceiveVectors() {
 			if (Debug.FakePosition) {
@@ -116,9 +149,9 @@ namespace RealSenseTest {
 			Vector3* Vectors = stackalloc Vector3[3];
 			Marshal.Copy(Bytes, 0, new IntPtr(Vectors), 3 * 3 * sizeof(float));
 
-			Vector3 A = Vectors[0];
-			Vector3 B = Vectors[1];
-			Vector3 C = Vectors[2];
+			Vector3 A = ABuffer.PushGetAverage(Vectors[0]);
+			Vector3 B = BBuffer.PushGetAverage(Vectors[1]);
+			Vector3 C = CBuffer.PushGetAverage(Vectors[2]);
 
 			if (IsVisible(A))
 				MarkerA = A.YZX();
