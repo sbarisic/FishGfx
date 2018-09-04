@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Numerics;
 using FishGfx.Graphics;
 using FishGfx.Formats;
 
@@ -22,7 +23,11 @@ namespace FishGfx.Graphics.Drawables {
 
 		SubMesh[] Meshes;
 
+		public Matrix4x4 Matrix;
+
 		public RenderModel(IEnumerable<GenericMesh> Meshes, bool HasUVs = true, bool HasColors = true) {
+			Matrix = Matrix4x4.Identity;
+
 			GenericMesh[] GenericMeshes = Meshes.ToArray();
 			this.Meshes = new SubMesh[GenericMeshes.Length];
 
@@ -63,6 +68,13 @@ namespace FishGfx.Graphics.Drawables {
 				if (M.Texture != null)
 					M.Texture.UnbindTextureUnit();
 			}
+		}
+
+		public void Draw(ShaderProgram Shader) {
+			ShaderUniforms.Model = Matrix;
+			Shader.Bind();
+			Draw();
+			Shader.Unbind();
 		}
 	}
 }
