@@ -142,7 +142,7 @@ namespace FishGfx.Graphics.Drawables {
 				VertexArray.VertexAttrib(COLOR_ATTRIB, DefaultColor);
 
 			if (!VAO.HasElementBuffer)
-				VAO.Draw(0, VertBuffer.ElementCount);
+				VAO.Draw(0, VertBuffer?.ElementCount ?? 0);
 			else
 				VAO.DrawElements(ElementType: DrawElementsType.UnsignedInt);
 		}

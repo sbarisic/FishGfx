@@ -57,6 +57,9 @@ namespace FishGfx.Graphics {
 		}
 
 		public void Draw(int First, int Count) {
+			if (Count == 0)
+				return;
+
 			Bind();
 			Gl.DrawArrays((OpenGL.PrimitiveType)PrimitiveType, First, Count);
 			Unbind();
