@@ -148,6 +148,10 @@ namespace FishGfx {
 			return new Vector3(V.Y, V.Z, V.X);
 		}
 
+		public static Vector3 ZXY(this Vector3 V) {
+			return new Vector3(V.Z, V.X, V.Y);
+		}
+
 		public static float[] Multiply(this float[] FloatArr, float Val) {
 			for (int i = 0; i < FloatArr.Length; i++)
 				FloatArr[i] *= Val;
