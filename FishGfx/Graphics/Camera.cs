@@ -107,7 +107,9 @@ namespace FishGfx.Graphics {
 			Position = WorldTranslation;
 			Rotation = WorldRotation;
 
-			(Pitch, Yaw, _) = Rotation;
+			//(Pitch, Yaw, _) = Rotation;
+			Rotation.Deconstruct(out Pitch, out Yaw, out float _);
+
 			PerformClamps();
 		}
 
