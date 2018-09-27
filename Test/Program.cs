@@ -19,13 +19,13 @@ namespace Test {
 			Run();
 		}
 
-		static RenderWindow RWind;
+		static RenderWindow Window;
 		static Camera Cam;
 		static Vector3 MoveVec = Vector3.Zero;
 
 		static void Run() {
 			Vector2 Size = RenderWindow.GetDesktopResolution() * 0.9f;
-			RWind = new RenderWindow((int)Size.X, (int)Size.Y, "FishGfx Test");
+			Window = new RenderWindow((int)Size.X, (int)Size.Y, "FishGfx Test");
 
 #if DEBUG
 			Console.WriteLine("Running {0}", RenderAPI.Version);
@@ -33,12 +33,15 @@ namespace Test {
 			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
 
-			RWind.CaptureCursor = true;
-			RWind.OnMouseMoveDelta += (Wnd, X, Y) => {
+			Window.CaptureCursor = true;
+			Window.OnMouseMoveDelta += (Wnd, X, Y) => {
 				Cam.Update(-new Vector2(X, Y));
 			};
 
-			RWind.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
+			Window.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
+				if (Key == Key.Escape && Pressed)
+					Environment.Exit(0);
+
 				if (Key == Key.Space)
 					MoveVec.Y = Pressed ? 1 : 0;
 				else if (Key == Key.C)
@@ -62,8 +65,8 @@ namespace Test {
 			SetupCamera();
 			Stopwatch SWatch = Stopwatch.StartNew();
 			float Dt = 0;
-			
-			while (!RWind.ShouldClose) {
+
+			while (!Window.ShouldClose) {
 				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
 					;
 
@@ -74,9 +77,9 @@ namespace Test {
 				{
 					const float ScaleX = 1500;
 					const float ScaleY = 1000;
-					ShaderUniforms.Model = Matrix4x4.CreateTranslation(new Vector3(0.5f, -0.5f, 0.5f)) * Matrix4x4.CreateScale(new Vector3(ScaleX, 10, ScaleY));
+					ShaderUniforms.Default.Model = Matrix4x4.CreateTranslation(new Vector3(0.5f, -0.5f, 0.5f)) * Matrix4x4.CreateScale(new Vector3(ScaleX, 10, ScaleY));
 					//ShaderUniforms.Model *= Matrix4x4.CreateTranslation(new Vector3(-83, 0, -215));
-					Default.Bind();
+					Default.Bind(ShaderUniforms.Default);
 					WorldSurface.Draw();
 					Default.Unbind();
 
@@ -89,7 +92,7 @@ namespace Test {
 
 				}
 				Update(Dt);
-				RWind.SwapBuffers();
+				Window.SwapBuffers();
 				Events.Poll();
 			}
 		}
@@ -102,39 +105,15 @@ namespace Test {
 		}
 
 		static void SetupCamera() {
-			Cam = ShaderUniforms.Camera;
+			Cam = ShaderUniforms.Default.Camera;
 			Cam.MouseMovement = true;
 
-			Cam.SetPerspective(RWind.WindowSize.X, RWind.WindowSize.Y);
+			Cam.SetPerspective(Window.WindowSize.X, Window.WindowSize.Y);
 			Cam.Position = new Vector3(0, 50, 0);
 			Cam.LookAt(new Vector3(100, 0, 20));
 		}
 
 		static RenderModel LoadWorldSurface() {
-			/*RenderModel Holodeck = new RenderModel(Obj.Load("data/models/holodeck/holodeck.obj"));
-
-			Texture Tex = Texture.FromFile("data/textures/colors/white.png");
-			foreach (var Mat in Holodeck.GetMaterialNames())
-				Holodeck.SetMaterialTexture(Mat, Tex);
-
-			Holodeck.GetMaterialMesh("door").DefaultColor = new Color(1.0000, 0.0941, 0.0000);
-			Holodeck.GetMaterialMesh("doorframe").DefaultColor = new Color(0.5647, 0.3059, 0.0941);
-			Holodeck.GetMaterialMesh("doorinset").DefaultColor = new Color(0.9137, 0.9137, 0.9137);
-			Holodeck.GetMaterialMesh("light").DefaultColor = new Color(0.8314, 0.8471, 0.5608);
-			Holodeck.GetMaterialMesh("holdeck_material").DefaultColor = new Color(0.5880, 0.5880, 0.5880);
-
-			Tex = Texture.FromFile("data/textures/holodeck/wall.png");
-			Tex.SetWrap(TextureWrap.Repeat);
-			Tex.SetFilter(TextureFilter.Linear);
-			Holodeck.SetMaterialTexture("holodeckwirefrane", Tex);
-			//Holodeck.GetMaterialMesh("holodeckwirefrane").DefaultColor = new Color(0.1, 0.1, 0.1);
-
-			Tex = Texture.FromFile("data/textures/holodeck/screen.png");
-			Tex.SetFilter(TextureFilter.Linear);
-			Holodeck.SetMaterialTexture("screens", Tex);
-
-			return Holodeck;*/
-
 			RenderModel Cube = new RenderModel(Obj.Load("data/models/cube/cube.obj"));
 
 			Texture Tex = Texture.FromFile("data/textures/grid.png");

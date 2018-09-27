@@ -18,70 +18,24 @@ namespace FishGfx.Graphics {
 		ComputeShader = 37305
 	}
 
-	public static class ShaderUniforms {
-		public static Camera Camera;
+	public struct ShaderUniforms {
+		public Camera Camera;
+		public Matrix4 Model;
 
-		public static Matrix4 Model;
+		public static ShaderUniforms Default = CreateDefault();
 
-		/*public static ShaderUniforms CreateIdentity() {
-			ShaderUniforms U = new ShaderUniforms();
+		static ShaderUniforms CreateDefault() {
+			ShaderUniforms Uniforms = new ShaderUniforms();
 
-			U.Camera = new Camera();
-			U.Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
+			Uniforms.Camera = new Camera();
+			Uniforms.Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
+			Uniforms.Model = Matrix4.Identity;
 
-			return U;
-		}*/
-
-		static ShaderUniforms() {
-			Camera = new Camera();
-			Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
-
-			Model = Matrix4.Identity;
+			return Uniforms;
 		}
 	}
 
 	public unsafe class ShaderProgram : GraphicsObject {
-		/*// TODO: Lazyload
-		public static ShaderProgram Default { get; private set; }
-		public static ShaderProgram DefaultFullbright { get; private set; }
-		public static ShaderProgram Post { get; private set; }
-		public static ShaderProgram PostMultisample { get; private set; }
-		public static ShaderProgram Skybox { get; private set; }
-		public static ShaderProgram DefaultNoTex { get; private set; }
-		public static ShaderProgram Point { get; private set; }
-		public static ShaderProgram Line { get; private set; }
-		public static ShaderProgram GUI { get; private set; }
-
-		internal static void LoadDefaultShaders() {
-			Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/default.frag"));
-
-			DefaultFullbright = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/default_fullbright.frag"));
-
-			Post = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/post.frag"));
-
-			PostMultisample = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/post_multisample.frag"));
-
-			Skybox = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/skybox.frag"));
-
-			DefaultNoTex = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/default.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/default_notex.frag"));
-
-			Point = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/point.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/point.frag"));
-
-			Line = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/line.vert"),
-				new ShaderStage(ShaderType.GeometryShader, "content/shaders/line.geom"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/line.frag"));
-
-			GUI = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "content/shaders/gui.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "content/shaders/gui.frag"));
-		}*/
-
 		List<ShaderStage> ShaderStages;
 		Dictionary<string, int> UniformLocations;
 
@@ -139,46 +93,16 @@ namespace FishGfx.Graphics {
 				throw new Exception("Failed to link program\n" + ErrorString);
 		}
 
-		/*void UpdateCamera(Camera C) {
-			UniformMatrix4f("View", C.View);
-			UniformMatrix4f("Project", C.Projection);
-		}*/
+		public virtual void Bind(ShaderUniforms Uniforms) {
+			Uniform2f("Viewport", Uniforms.Camera.ViewportSize);
+			UniformMatrix4f("View", Uniforms.Camera.View);
+			UniformMatrix4f("Project", Uniforms.Camera.Projection);
+			UniformMatrix4f("Model", Uniforms.Model);
+
+			Bind();
+		}
 
 		public override void Bind() {
-			/*if (Camera.ActiveCamera == null)
-				throw new Exception("No active camera");*/
-
-			bool Dirty = false;
-			bool Errors = false;
-
-			/*foreach (var SS in ShaderStages) {
-				if (SS.WatchHandle) {
-					SS.WatchHandle.Reset();
-					Dirty = true;
-
-					if (!SS.Compile(out string Err)) {
-						Errors = true;
-						//GConsole.WriteLine(Err);
-					}
-				}
-			}*/
-
-			if (Dirty && !Errors)
-				Link();
-			
-			/*Uniform2f("Viewport", Camera.ActiveCamera.ViewportSize);
-			UniformMatrix4f("View", Camera.ActiveCamera.View);
-			UniformMatrix4f("Project", Camera.ActiveCamera.Projection);*/
-
-			/*Uniform2f("Viewport", Uniforms.Viewport);
-			UniformMatrix4f("View", Uniforms.View);
-			UniformMatrix4f("Project", Uniforms.Project);*/
-
-			Uniform2f("Viewport", ShaderUniforms.Camera.ViewportSize);
-			UniformMatrix4f("View", ShaderUniforms.Camera.View);
-			UniformMatrix4f("Project", ShaderUniforms.Camera.Projection);
-			UniformMatrix4f("Model", ShaderUniforms.Model);
-
 			Gl.UseProgram(ID);
 		}
 
@@ -218,7 +142,7 @@ namespace FishGfx.Graphics {
 			int Loc = GetUniformLocation(Uniform);
 			if (Loc == -1)
 				return false;
-			
+
 			Gl.ProgramUniform1f(ID, Loc, 1, Val);
 			return true;
 		}

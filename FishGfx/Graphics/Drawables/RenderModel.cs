@@ -22,12 +22,8 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		SubMesh[] Meshes;
-
-		public Matrix4x4 Matrix;
-
+		
 		public RenderModel(IEnumerable<GenericMesh> Meshes, bool HasUVs = true, bool HasColors = true) {
-			Matrix = Matrix4x4.Identity;
-
 			GenericMesh[] GenericMeshes = Meshes.ToArray();
 			this.Meshes = new SubMesh[GenericMeshes.Length];
 
@@ -70,9 +66,8 @@ namespace FishGfx.Graphics.Drawables {
 			}
 		}
 
-		public void Draw(ShaderProgram Shader) {
-			ShaderUniforms.Model = Matrix;
-			Shader.Bind();
+		public void Draw(ShaderProgram Shader, ShaderUniforms Uniforms) {
+			Shader.Bind(Uniforms);
 			Draw();
 			Shader.Unbind();
 		}
