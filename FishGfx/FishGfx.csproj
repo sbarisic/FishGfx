@@ -145,6 +145,7 @@
     <Compile Include="Graphics\Drawables\Mesh2D.cs" />
     <Compile Include="Graphics\Drawables\Terrain.cs" />
     <Compile Include="Graphics\Internal_OpenGL.cs" />
+    <Compile Include="Graphics\RenderState.cs" />
     <Compile Include="Graphics\RenderTexture.cs" />
     <Compile Include="Graphics\Texture.cs" />
     <Compile Include="Graphics\Gfx.cs" />

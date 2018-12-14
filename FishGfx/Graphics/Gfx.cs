@@ -1,39 +1,86 @@
-﻿using System;
+﻿using FishGfx.Graphics;
+using FishGfx.Graphics.Drawables;
+using OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Numerics;
-using OpenGL;
-using FishGfx.Graphics;
-using FishGfx.Graphics.Drawables;
 
 namespace FishGfx.Graphics {
 	public static class Gfx {
 		static List<AABB> Scissors = new List<AABB>();
+		static Stack<RenderState> RenderStates = new Stack<RenderState>();
 
-		public static void Clear() {
-			Gl.ClearColor(69 / 255.0f, 112 / 255.0f, 56 / 255.0f, 1.0f);
-			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+		public static RenderState CreateDefaultRenderState() {
+			RenderState State = new RenderState();
+			State.CullFace = CullFace.Back;
+			State.DepthFunc = DepthFunc.Less;
+			State.FrontFace = FrontFace.Clockwise;
+
+			State.BlendFunc_Src = BlendFactor.SrcAlpha;
+			State.BlendFunc_Dst = BlendFactor.OneMinusSrcAlpha;
+
+			State.EnableCullFace = true;
+			State.EnableDepthTest = true;
+			State.EnableScissorTest = false;
+			State.EnableBlend = true;
+
+			State.PointSize = 1;
+
+			return State;
 		}
 
-		public static void Clear(Color ClearColor) {
-			Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
-			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+		public static int GetRenderStateCount() {
+			return RenderStates.Count;
 		}
 
-		public static void CullFront() {
-			Internal_OpenGL.CullFront();
+		public static void PushRenderState(RenderState State) {
+			RenderStates.Push(State);
+			SetRenderState(State);
 		}
 
-		public static void CullBack() {
-			Internal_OpenGL.CullBack();
+		public static RenderState PeekRenderState() {
+			return RenderStates.Peek();
 		}
 
-		public static void FrontFace(bool Clockwise = false) {
-			Internal_OpenGL.FrontFace(Clockwise);
+		public static RenderState PopRenderState() {
+			RenderState State = RenderStates.Pop();
+
+			if (GetRenderStateCount() > 0)
+				SetRenderState(RenderStates.Peek());
+
+			return State;
 		}
 
+		static void SetRenderState(RenderState State) {
+			if (GlEnable(EnableCap.CullFace, State.EnableCullFace))
+				Gl.CullFace((CullFaceMode)State.CullFace);
+
+			if (GlEnable(EnableCap.DepthTest, State.EnableDepthTest))
+				Gl.DepthFunc((DepthFunction)State.DepthFunc);
+
+			Gl.FrontFace((FrontFaceDirection)State.FrontFace);
+
+			GlEnable(EnableCap.ScissorTest, State.EnableScissorTest);
+
+			if (GlEnable(EnableCap.Blend, State.EnableBlend))
+				Gl.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
+
+			Gl.PointSize(State.PointSize);
+		}
+
+		static bool GlEnable(EnableCap Cap, bool Enable) {
+			if (Enable)
+				Gl.Enable(Cap);
+			else
+				Gl.Disable(Cap);
+
+			return Enable;
+		}
+
+		// TODO: Convert the scissors to use the new render state
 		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
 			Internal_OpenGL.Scissor(X, Y, W, H, Enable);
 		}
@@ -66,17 +113,25 @@ namespace FishGfx.Graphics {
 				Scissor(0, 0, 0, 0, false);
 		}
 
-		public static void EnableCullFace(bool Enable) {
-			Internal_OpenGL.EnableCullFace(Enable);
+
+
+
+
+
+
+
+
+		public static void Clear() {
+			Gl.ClearColor(69 / 255.0f, 112 / 255.0f, 56 / 255.0f, 1.0f);
+			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 		}
 
-		public static void EnableDepthDest(bool Enable) {
-			Internal_OpenGL.EnableDepthTest(Enable);
+		public static void Clear(Color ClearColor) {
+			Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
+			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 		}
 
-		public static void PointSize(float Size) {
-			Gl.PointSize(Size);
-		}
+
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//////////////////////////////////////////////////// 3D  3D  3D ////////////////////////////////////////////////////////////
@@ -167,12 +222,23 @@ namespace FishGfx.Graphics {
 			Mesh2D.PrimitiveType = Primitive;
 		}
 
+		static void Start2D() {
+			RenderState State = PeekRenderState();
+			State.FrontFace = FrontFace.CounterClockwise;
+			PushRenderState(State);
+		}
+
+
+		static void End2D() {
+			PopRenderState();
+		}
+
 		public static void Point(Vertex2[] Positions, float Thickness) {
 			Init2D(PrimitiveType.Points);
 			Mesh2D.SetVertices(Positions);
 
 			Point2D.Uniform1f("Thickness", Thickness);
-			Point2D.Bind();
+			Point2D.Bind(ShaderUniforms.Default);
 			Mesh2D.Draw();
 			Point2D.Unbind();
 		}
@@ -185,9 +251,11 @@ namespace FishGfx.Graphics {
 			Init2D(PrimitiveType.Points);
 			Mesh2D.SetVertices(Positions);
 
-			Default2D.Bind();
+			Start2D();
+			Default2D.Bind(ShaderUniforms.Default);
 			Mesh2D.Draw();
 			Default2D.Unbind();
+			End2D();
 		}
 
 		public static void Point(Vertex2 Position) {
@@ -198,10 +266,12 @@ namespace FishGfx.Graphics {
 			Init2D(PrimitiveType.Lines);
 			Mesh2D.SetVertices(Start, End);
 
+			Start2D();
 			Line2D.Uniform1f("Thickness", Thickness);
-			Line2D.Bind();
+			Line2D.Bind(ShaderUniforms.Default);
 			Mesh2D.Draw();
 			Line2D.Unbind();
+			End2D();
 		}
 
 		public static void LineStrip(Vertex2[] Points) {

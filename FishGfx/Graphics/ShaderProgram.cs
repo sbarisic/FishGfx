@@ -1,12 +1,12 @@
-﻿using System;
+﻿using OpenGL;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using OpenGL;
-using System.IO;
-using Vector2 = System.Numerics.Vector2;
 using Matrix4 = System.Numerics.Matrix4x4;
+using Vector2 = System.Numerics.Vector2;
 
 namespace FishGfx.Graphics {
 	public enum ShaderType {
@@ -19,9 +19,6 @@ namespace FishGfx.Graphics {
 	}
 
 	public struct ShaderUniforms {
-		public Camera Camera;
-		public Matrix4 Model;
-
 		public static ShaderUniforms Default = CreateDefault();
 
 		static ShaderUniforms CreateDefault() {
@@ -32,6 +29,16 @@ namespace FishGfx.Graphics {
 			Uniforms.Model = Matrix4.Identity;
 
 			return Uniforms;
+		}
+
+		public Camera Camera;
+		public Matrix4 Model;
+
+		public void Bind(ShaderProgram Shader) {
+			Shader.Uniform2f("Viewport", Camera.ViewportSize);
+			Shader.UniformMatrix4f("View", Camera.View);
+			Shader.UniformMatrix4f("Project", Camera.Projection);
+			Shader.UniformMatrix4f("Model", Model);
 		}
 	}
 
@@ -94,12 +101,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public virtual void Bind(ShaderUniforms Uniforms) {
-			Uniform2f("Viewport", Uniforms.Camera.ViewportSize);
-			UniformMatrix4f("View", Uniforms.Camera.View);
-			UniformMatrix4f("Project", Uniforms.Camera.Projection);
-			UniformMatrix4f("Model", Uniforms.Model);
-
-			//Bind();
+			Uniforms.Bind(this);
 			Gl.UseProgram(ID);
 		}
 

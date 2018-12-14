@@ -19,6 +19,8 @@ namespace FishGfx.Graphics {
 		static bool GLFWInitialized = false;
 		static bool OpenGLInitialized = false;
 
+		static bool LastFrontFace;
+
 		public static string[] Extensions { get; private set; }
 		public static string Version { get; private set; }
 
@@ -129,41 +131,10 @@ namespace FishGfx.Graphics {
 
 			Khronos.KhronosApi.LogEnabled = true;
 #endif
-		}
 
-		public static void CullFront() {
-			Gl.CullFace(CullFaceMode.Front);
+			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 		}
-
-		public static void CullBack() {
-			Gl.CullFace(CullFaceMode.Back);
-		}
-
-		public static void EnableCullFace(bool Enable) {
-			if (Enable)
-				Gl.Enable(EnableCap.CullFace);
-			else
-				Gl.Disable(EnableCap.CullFace);
-		}
-
-		public static void SetDepth(DepthFunction Func) {
-			Gl.DepthFunc(Func);
-		}
-
-		public static void EnableDepthTest(bool Enable) {
-			if (Enable)
-				Gl.Enable(EnableCap.DepthTest);
-			else
-				Gl.Disable(EnableCap.DepthTest);
-		}
-
-		public static void FrontFace(bool Clockwise = false) {
-			if (Clockwise)
-				Gl.FrontFace(FrontFaceDirection.Cw);
-			else
-				Gl.FrontFace(FrontFaceDirection.Ccw);
-		}
-
+		
 		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
 			Gl.Scissor(X, Y, W, H);
 
@@ -171,24 +142,6 @@ namespace FishGfx.Graphics {
 				Gl.Enable(EnableCap.ScissorTest);
 			else
 				Gl.Disable(EnableCap.ScissorTest);
-		}
-
-		public static void ResetGLState() {
-			SetDepth(DepthFunction.Lequal);
-			EnableDepthTest(true);
-
-			FrontFace(true);
-			CullBack();
-			EnableCullFace(true);
-			//Gl.Disable(EnableCap.CullFace);
-
-			//Gl.BlendEquationSeparate(BlendEquationMode.FuncAdd, BlendEquationMode.FuncAdd);
-			//Gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-
-			Gl.BlendEquation(BlendEquationMode.FuncAdd);
-			Gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-			Gl.Enable(EnableCap.Blend);
-			//Gl.Disable(EnableCap.Blend);
 		}
 	}
 }

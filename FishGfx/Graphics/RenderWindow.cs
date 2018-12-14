@@ -339,7 +339,13 @@ namespace FishGfx.Graphics {
 			Internal_OpenGL.InitOpenGL();
 			Glfw.MakeContextCurrent(Wnd);
 			Internal_OpenGL.SetupOpenGL();
-			Internal_OpenGL.ResetGLState();
+
+			Gfx.PopRenderState();
+
+			if (Gfx.GetRenderStateCount() != 0)
+				throw new Exception("Render state count is not 0, did you forget to call Gfx.PopRenderState() somewhere?");
+
+			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 		}
 
 		public void SwapBuffers() {
