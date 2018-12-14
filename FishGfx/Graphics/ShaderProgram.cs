@@ -99,12 +99,13 @@ namespace FishGfx.Graphics {
 			UniformMatrix4f("Project", Uniforms.Camera.Projection);
 			UniformMatrix4f("Model", Uniforms.Model);
 
-			Bind();
-		}
-
-		public override void Bind() {
+			//Bind();
 			Gl.UseProgram(ID);
 		}
+
+		/*public override void Bind() {
+			Gl.UseProgram(ID);
+		}*/
 
 		public override void Unbind() {
 			Gl.UseProgram(0);
