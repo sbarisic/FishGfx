@@ -5,7 +5,7 @@
         "commandLine": "",
         "environment": [
         ],
-        "executable": "E:\\Projects2018\\FishGfx\\bin\\RealSenseTest.exe",
+        "executable": ".\\bin\\Test_Nuklear.exe",
         "inject": false,
         "options": {
             "allowFullscreen": true,

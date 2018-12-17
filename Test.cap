@@ -5,7 +5,7 @@
         "commandLine": "",
         "environment": [
         ],
-        "executable": "E:\\Projects2018\\FishGfx\\bin\\Test.exe",
+        "executable": ".\\bin\\Test.exe",
         "inject": false,
         "options": {
             "allowFullscreen": true,
