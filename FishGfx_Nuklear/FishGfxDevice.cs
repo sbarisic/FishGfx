@@ -48,7 +48,7 @@ namespace FishGfx_Nuklear {
 		}
 
 		public override void Render(NkHandle Userdata, Texture Texture, NkRect ClipRect, uint Offset, uint Count) {
-			Gfx.Rectangle(ClipRect.X, WindowSize.Y - ClipRect.Y - ClipRect.H, ClipRect.W, ClipRect.H);
+			//Gfx.Rectangle(ClipRect.X, WindowSize.Y - ClipRect.Y - ClipRect.H, ClipRect.W, ClipRect.H);
 			Gfx.Scissor((int)ClipRect.X, (int)(WindowSize.Y - ClipRect.Y - ClipRect.H), (int)ClipRect.W, (int)ClipRect.H, true);
 
 			GUIShader.Bind(ShaderUniforms.Default);
