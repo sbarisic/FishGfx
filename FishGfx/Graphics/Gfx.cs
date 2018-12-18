@@ -200,21 +200,27 @@ namespace FishGfx.Graphics {
 		//////////////////////////////////////////////////// 2D  2D  2D ////////////////////////////////////////////////////////////
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		public static ShaderProgram Line2D;
-		public static ShaderProgram Point2D;
-		public static ShaderProgram Default2D;
+		static ShaderProgram Line2D;
+		static ShaderProgram Point2D;
+		static ShaderProgram Default2D;
 
 		static Mesh2D Mesh2D;
 
 		static void Init2D(PrimitiveType Primitive) {
-			if (Line2D == null)
-				throw new Exception(nameof(Line2D) + " shader not assigned");
+			if (Line2D == null) {
+				Line2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/line2d.vert"),
+					new ShaderStage(ShaderType.GeometryShader, "data/shaders/line.geom"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/line.frag"));
+			}
 
-			if (Point2D == null)
-				throw new Exception(nameof(Point2D) + " shader not assigned");
+			if (Point2D == null) {
+				Point2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/point2d.vert"),
+					new ShaderStage(ShaderType.GeometryShader, "data/shaders/point.geom"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/point.frag"));
+			}
 
-			if (Default2D == null)
-				throw new Exception(nameof(Default2D) + " shader not assigned");
+			if (Default2D == null) {
+				Default2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/default2d.vert"),
+					new ShaderStage(ShaderType.FragmentShader, "data/shaders/default_tex_clr.frag"));
+			}
 
 			if (Mesh2D == null)
 				Mesh2D = new Mesh2D(BufferUsage.DynamicDraw);
@@ -262,7 +268,7 @@ namespace FishGfx.Graphics {
 			Point(new Vertex2[] { Position });
 		}
 
-		public static void Line(Vertex2 Start, Vertex2 End, float Thickness) {
+		public static void Line(Vertex2 Start, Vertex2 End, float Thickness = 1) {
 			Init2D(PrimitiveType.Lines);
 			Mesh2D.SetVertices(Start, End);
 
@@ -274,10 +280,20 @@ namespace FishGfx.Graphics {
 			End2D();
 		}
 
-		public static void LineStrip(Vertex2[] Points) {
+		public static void LineStrip(Vertex2[] Points, float Thickness = 1) {
 			Init2D(PrimitiveType.LineStrip);
+			Mesh2D.SetVertices(Points);
 
-			// TODO
+			Start2D();
+			Line2D.Uniform1f("Thickness", Thickness);
+			Line2D.Bind(ShaderUniforms.Default);
+			Mesh2D.Draw();
+			Line2D.Unbind();
+			End2D();
+		}
+
+		public static void Rectangle(float X, float Y, float W, float H, float Thickness = 1) {
+			LineStrip(new[] { new Vertex2(X, Y), new Vertex2(X + W, Y), new Vertex2(X + W, Y + H), new Vertex2(X, Y + H), new Vertex2(X, Y) }, Thickness);
 		}
 
 		public static void Bezier(Vector2 Start, Vector2 End) {

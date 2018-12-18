@@ -19,7 +19,7 @@ namespace FishGfx.Graphics {
 		static bool GLFWInitialized = false;
 		static bool OpenGLInitialized = false;
 
-		static bool LastFrontFace;
+		//static bool LastFrontFace;
 
 		public static string[] Extensions { get; private set; }
 		public static string Version { get; private set; }

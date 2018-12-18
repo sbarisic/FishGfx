@@ -1,17 +1,16 @@
-﻿using System;
+﻿using OpenGL;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using OpenGL;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Linq;
 using System.Numerics;
-
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
 using GLPixelFormat = OpenGL.PixelFormat;
 using IPixFormat = System.Drawing.Imaging.PixelFormat;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
 
 namespace FishGfx.Graphics {
 	public enum TextureWrap : int {
@@ -28,6 +27,15 @@ namespace FishGfx.Graphics {
 		LinearMipmapNearest = Gl.LINEAR_MIPMAP_NEAREST,
 		NearestMipmapLinear = Gl.NEAREST_MIPMAP_LINEAR,
 		LinearMipmapLinear = Gl.LINEAR_MIPMAP_LINEAR
+	}
+
+	public enum PixelFmt {
+		Rgb = GLPixelFormat.Rgb,
+		Rgba = GLPixelFormat.Rgba,
+
+		Abgr = GLPixelFormat.AbgrExt,
+		Bgr = GLPixelFormat.Bgr,
+		Bgra = GLPixelFormat.Bgra
 	}
 
 	public unsafe partial class Texture : GraphicsObject {
@@ -331,9 +339,9 @@ namespace FishGfx.Graphics {
 				return FromImage(Img);
 		}
 
-		public static Texture FromPixels(int Width, int Height, IntPtr Data) {
+		public static Texture FromPixels(int Width, int Height, IntPtr Data, PixelFmt Fmt = PixelFmt.Bgra) {
 			Texture Tex = new Texture(Width, Height);
-			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Bgra);
+			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, (GLPixelFormat)Fmt);
 			return Tex;
 		}
 	}

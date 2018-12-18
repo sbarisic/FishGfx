@@ -1,10 +1,10 @@
-﻿using System;
+﻿using OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Numerics;
-using OpenGL;
 
 namespace FishGfx.Graphics.Drawables {
 	public class Mesh2D : IDrawable {
@@ -82,6 +82,7 @@ namespace FishGfx.Graphics.Drawables {
 			SetColors(Verts.Select((V) => V.Color).ToArray());
 		}
 
+		/*[Obsolete]
 		public void Draw(int First, int Count) {
 			if (VAO.HasElementBuffer)
 				throw new Exception("Use DrawElements when you supply element buffer");
@@ -89,24 +90,42 @@ namespace FishGfx.Graphics.Drawables {
 			VAO.Draw(First, Count);
 		}
 
+		[Obsolete]
 		public void DrawElements(int Offset, int Count) {
 			if (!VAO.HasElementBuffer)
 				throw new Exception("Use Draw when you don't supply element buffer");
 
 			VAO.DrawElements(Offset, Count, ElementType: DrawElementsType.UnsignedInt);
-		}
+		}*/
 
-		public void Draw() {
+		public void DrawEx(int First, int Count) {
 			Gl.PolygonMode(MaterialFace.FrontAndBack, (OpenGL.PolygonMode)PolygonMode);
 			//Gl.LineWidth(10);
 
 			if (ColorBuffer == null)
 				VertexArray.VertexAttrib(COLOR_ATTRIB, DefaultColor);
 
-			if (!VAO.HasElementBuffer)
-				Draw(0, VertBuffer.ElementCount);
-			else
-				DrawElements(0, -1);
+			if (First == -1 && Count == -1) {
+				if (!VAO.HasElementBuffer) {
+					First = 0;
+					Count = VertBuffer.ElementCount;
+				} else {
+					First = 0;
+					Count = -1;
+				}
+			}
+
+			if (!VAO.HasElementBuffer) {
+				VAO.Draw(First, Count);
+				// Draw(First, Count);
+			} else {
+				VAO.DrawElements(First, Count, ElementType: DrawElementsType.UnsignedInt);
+				//DrawElements(First, Count);
+			}
+		}
+
+		public void Draw() {
+			DrawEx(-1, -1);
 		}
 	}
 }

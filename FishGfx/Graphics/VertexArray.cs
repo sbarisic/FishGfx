@@ -1,10 +1,10 @@
-﻿using System;
+﻿using OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using OpenGL;
-using System.Numerics;
 
 namespace FishGfx.Graphics {
 	public enum PrimitiveType {
@@ -72,8 +72,24 @@ namespace FishGfx.Graphics {
 			if (Count == -1)
 				Count = ElementBuffer.ElementCount;
 
+			int ElementSize = 1;
+
+			switch (ElementType) {
+				case DrawElementsType.UnsignedByte:
+					ElementSize = sizeof(byte);
+					break;
+				case DrawElementsType.UnsignedShort:
+					ElementSize = sizeof(ushort);
+					break;
+				case DrawElementsType.UnsignedInt:
+					ElementSize = sizeof(uint);
+					break;
+				default:
+					throw new Exception("Unknown DrawElementsType " + ElementType);
+			}
+
 			Bind();
-			Gl.DrawElements((OpenGL.PrimitiveType)PrimitiveType, Count, ElementType, (IntPtr)Offset);
+			Gl.DrawElements((OpenGL.PrimitiveType)PrimitiveType, Count, ElementType, (IntPtr)(Offset * ElementSize));
 			Unbind();
 		}
 

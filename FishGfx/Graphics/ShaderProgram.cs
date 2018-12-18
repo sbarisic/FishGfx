@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Matrix4 = System.Numerics.Matrix4x4;
 using Vector2 = System.Numerics.Vector2;
@@ -210,12 +211,18 @@ namespace FishGfx.Graphics {
 			// TODO: Find something better
 			if (SrcFile != null) {
 				bool Succeeded = false;
+				int TryCount = 0;
 
 				while (!Succeeded) {
 					try {
 						Source = File.ReadAllText(SrcFile);
 						Succeeded = true;
 					} catch (Exception) {
+						Thread.Sleep(50);
+						TryCount++;
+
+						if (TryCount >= 10)
+							throw;
 					}
 				}
 			}
