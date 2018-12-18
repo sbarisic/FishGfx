@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics {
 	public static class Gfx {
-		static List<AABB> Scissors = new List<AABB>();
 		static Stack<RenderState> RenderStates = new Stack<RenderState>();
 
 		public static RenderState CreateDefaultRenderState() {
@@ -95,6 +94,9 @@ namespace FishGfx.Graphics {
 			Scissor((int)Rect.Position.X, (int)Rect.Position.Y, (int)Rect.Size.X, (int)Rect.Size.Y, Enable);
 		}
 
+		static List<AABB> Scissors = new List<AABB>();
+
+		[Obsolete]
 		public static void PushScissor(AABB Rect) {
 			AABB Parent = new AABB(Vector2.Zero, new Vector2(float.PositiveInfinity));
 
@@ -105,6 +107,7 @@ namespace FishGfx.Graphics {
 			Scissor(Scissors.Last(), true);
 		}
 
+		[Obsolete]
 		public static void PopScissor() {
 			Scissors.RemoveAt(Scissors.Count - 1);
 
