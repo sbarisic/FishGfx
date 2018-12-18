@@ -3,6 +3,7 @@ using FishGfx.Graphics.Drawables;
 using OpenGL;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -206,20 +207,22 @@ namespace FishGfx.Graphics {
 
 		static Mesh2D Mesh2D;
 
+		public static string ShadersDirectory = "data/shaders";
+
 		static void Init2D(PrimitiveType Primitive) {
 			if (Line2D == null) {
-				Line2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/line2d.vert"),
-					new ShaderStage(ShaderType.GeometryShader, "data/shaders/line.geom"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/line.frag"));
+				Line2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, Path.Combine(ShadersDirectory, "line2d.vert")),
+					new ShaderStage(ShaderType.GeometryShader, Path.Combine(ShadersDirectory, "line.geom")), new ShaderStage(ShaderType.FragmentShader, Path.Combine(ShadersDirectory, "line.frag")));
 			}
 
 			if (Point2D == null) {
-				Point2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/point2d.vert"),
-					new ShaderStage(ShaderType.GeometryShader, "data/shaders/point.geom"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/point.frag"));
+				Point2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, Path.Combine(ShadersDirectory, "point2d.vert")),
+					new ShaderStage(ShaderType.GeometryShader, Path.Combine(ShadersDirectory, "point.geom")), new ShaderStage(ShaderType.FragmentShader, Path.Combine(ShadersDirectory, "point.frag")));
 			}
 
 			if (Default2D == null) {
-				Default2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/default2d.vert"),
-					new ShaderStage(ShaderType.FragmentShader, "data/shaders/default_tex_clr.frag"));
+				Default2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, Path.Combine(ShadersDirectory, "default2d.vert")),
+					new ShaderStage(ShaderType.FragmentShader, Path.Combine(ShadersDirectory, "default_tex_clr.frag")));
 			}
 
 			if (Mesh2D == null)
