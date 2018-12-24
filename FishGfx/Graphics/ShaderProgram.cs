@@ -47,14 +47,12 @@ namespace FishGfx.Graphics {
 		List<ShaderStage> ShaderStages;
 		Dictionary<string, int> UniformLocations;
 
-		public ShaderProgram() {
+		public ShaderProgram(params ShaderStage[] Stages) {
 			ID = Gl.CreateProgram();
 
 			ShaderStages = new List<ShaderStage>();
 			UniformLocations = new Dictionary<string, int>();
-		}
 
-		public ShaderProgram(params ShaderStage[] Stages) : this() {
 			foreach (var S in Stages)
 				AttachShader(S);
 			Link();
@@ -178,13 +176,10 @@ namespace FishGfx.Graphics {
 		string SrcFile;
 		ShaderType ShaderType;
 
-
-		public ShaderStage(ShaderType T) {
+		public ShaderStage(ShaderType T, string SourceFile) {
 			ID = Gl.CreateShader((OpenGL.ShaderType)T);
 			ShaderType = T;
-		}
 
-		public ShaderStage(ShaderType T, string SourceFile) : this(T) {
 			SetSourceFile(SourceFile);
 			Compile();
 		}

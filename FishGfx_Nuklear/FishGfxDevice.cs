@@ -13,12 +13,15 @@ namespace FishGfx_Nuklear {
 	public class FishGfxDevice : NuklearDeviceTex<Texture> {
 		Mesh2D Msh;
 		ShaderProgram GUIShader;
-		Vector2 WindowSize;
+
+		public Vector2 WindowSize;
+		public bool EventsEnabled;
 
 		public FishGfxDevice(Vector2 WindowSize, ShaderProgram GUIShader) {
 			this.GUIShader = GUIShader;
 			this.WindowSize = WindowSize;
 
+			EventsEnabled = true;
 			Msh = new Mesh2D(BufferUsage.DynamicDraw);
 			Msh.PrimitiveType = PrimitiveType.Triangles;
 		}
@@ -70,16 +73,29 @@ namespace FishGfx_Nuklear {
 			int MouseX = 0;
 			int MouseY = 0;
 
-			RWind.OnMouseMove += (Wnd, X, Y) => OnMouseMove(MouseX = (int)X, MouseY = (int)Y);
+			RWind.OnMouseMove += (Wnd, X, Y) => {
+				if (!EventsEnabled)
+					return;
+
+				OnMouseMove(MouseX = (int)X, MouseY = (int)Y);
+			};
 
 			RWind.OnKey += (Wnd, Key, Scancode, Pressed, Repeat, Mods) => {
+				if (!EventsEnabled)
+					return;
+
 				if (TryConvertMouseButton(Key, out NuklearEvent.MouseButton B))
 					OnMouseButton(B, MouseX, MouseY, Pressed);
 				else if (TryConvertOnKey(Key, Pressed, Repeat, Mods, out NkKeys K))
 					OnKey(K, Pressed);
 			};
 
-			RWind.OnChar += (Wnd, Char, Unicode) => OnText(Char.ToString());
+			RWind.OnChar += (Wnd, Char, Unicode) => {
+				if (!EventsEnabled)
+					return;
+
+				OnText(Char.ToString());
+			};
 		}
 
 		static bool TryConvertMouseButton(Key K, out NuklearEvent.MouseButton B) {
