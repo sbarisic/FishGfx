@@ -1,15 +1,15 @@
-﻿using System;
+﻿using FishGfx.System;
+using Glfw3;
+using OpenGL;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Numerics;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using System.IO;
-using OpenGL;
-using Glfw3;
-using System.Reflection;
-using System.Diagnostics;
-using FishGfx.System;
-using System.Numerics;
 
 namespace FishGfx.Graphics {
 	[Flags]
@@ -398,6 +398,10 @@ namespace FishGfx.Graphics {
 			int Y = H / 2 - WH / 2;
 
 			Glfw.SetWindowPos(Wnd, X, Y);
+		}
+
+		public void SetTitle(string Title) {
+			Glfw.SetWindowTitle(Wnd, Title);
 		}
 
 		public static Vector2 GetDesktopResolution() {

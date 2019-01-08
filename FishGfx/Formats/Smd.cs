@@ -1,11 +1,11 @@
-﻿using System;
+﻿using FishGfx;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using FishGfx;
 
 namespace FishGfx.Formats {
 	enum SMDSegment {
@@ -115,7 +115,8 @@ namespace FishGfx.Formats {
 		void AddTriangle(SmdTriangle Tri) {
 			foreach (var Mesh in Meshes) {
 				if (Mesh.MaterialName == Tri.Material) {
-					for (int i = 0; i < 3; i++)
+					for (int i = 3 - 1; i >= 0; i--)
+						//for (int i = 0; i < 3; i++)
 						Mesh.Vertices.Add(new Vertex3(Tri.Position[i], Tri.UV[i]));
 
 					return;
