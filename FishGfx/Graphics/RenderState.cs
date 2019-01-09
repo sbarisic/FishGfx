@@ -62,6 +62,7 @@ namespace FishGfx.Graphics {
 		public bool EnableDepthTest;
 		public bool EnableScissorTest;
 		public bool EnableBlend;
+		//public bool EnableTexture2d;
 
 		public float PointSize;
 	}

@@ -33,7 +33,7 @@ namespace Test_Nuklear {
 			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
 
-			Cam = ShaderUniforms.Default.Camera;
+			Cam = ShaderUniforms.Current.Camera;
 			Cam.SetOrthogonal(0, 0, Size.X, Size.Y);
 
 			Stopwatch SWatch = Stopwatch.StartNew();

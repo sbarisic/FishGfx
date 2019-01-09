@@ -19,10 +19,24 @@ namespace FishGfx.Graphics {
 		ComputeShader = 37305
 	}
 
-	public struct ShaderUniforms {
-		public static ShaderUniforms Default = CreateDefault();
+	public class ShaderUniforms {
+		static Stack<ShaderUniforms> Uniforms;
 
-		static ShaderUniforms CreateDefault() {
+		public static ShaderUniforms Current {
+			get {
+				if (Uniforms.Count < 1)
+					throw new Exception("No shader uniforms assigned");
+
+				return Uniforms.Peek();
+			}
+		}
+
+		static ShaderUniforms() {
+			Uniforms = new Stack<ShaderUniforms>();
+			Push(CreateDefault());
+		}
+
+		public static ShaderUniforms CreateDefault() {
 			ShaderUniforms Uniforms = new ShaderUniforms();
 
 			Uniforms.Camera = new Camera();
@@ -30,6 +44,14 @@ namespace FishGfx.Graphics {
 			Uniforms.Model = Matrix4.Identity;
 
 			return Uniforms;
+		}
+
+		public static void Push(ShaderUniforms U) {
+			Uniforms.Push(U);
+		}
+
+		public static ShaderUniforms Pop() {
+			return Uniforms.Pop();
 		}
 
 		public Camera Camera;

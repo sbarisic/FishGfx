@@ -11,7 +11,7 @@ namespace FishGfx.Gweny.Skin.Texturing {
 	/// 3x3 texture grid.
 	/// </summary>
 	public struct Bordered {
-		private Texture m_Texture;
+		private GwenyTexture m_Texture;
 
 		private readonly SubRect[] m_Rects;
 
@@ -20,7 +20,7 @@ namespace FishGfx.Gweny.Skin.Texturing {
 		private float m_Width;
 		private float m_Height;
 
-		public Bordered(Texture texture, float x, float y, float w, float h, Margin inMargin, float drawMarginScale = 1.0f)
+		public Bordered(GwenyTexture texture, float x, float y, float w, float h, Margin inMargin, float drawMarginScale = 1.0f)
 			: this() {
 			m_Rects = new SubRect[9];
 			for (int i = 0; i < m_Rects.Length; i++) {
@@ -53,7 +53,7 @@ namespace FishGfx.Gweny.Skin.Texturing {
 			//	rects[num].uv[1] += 1.0f / m_Texture->width;
 		}
 
-		private void Init(Texture texture, float x, float y, float w, float h, Margin inMargin, float drawMarginScale = 1.0f) {
+		private void Init(GwenyTexture texture, float x, float y, float w, float h, Margin inMargin, float drawMarginScale = 1.0f) {
 			m_Texture = texture;
 
 			m_Margin = inMargin;

@@ -119,11 +119,20 @@ namespace FishGfx.Graphics {
 
 
 
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////// Generic ///////////////////////////////////////////////////////////////
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+		static Texture WhiteTex;
 
-
-
-
+		static void InitGeneric() {
+			if (WhiteTex == null) {
+				using (System.Drawing.Bitmap Bmp = new System.Drawing.Bitmap(1, 1)) {
+					Bmp.SetPixel(0, 0, Color.White);
+					WhiteTex = Texture.FromImage(Bmp);
+				}
+			}
+		}
 
 		public static void Clear() {
 			Gl.ClearColor(69 / 255.0f, 112 / 255.0f, 56 / 255.0f, 1.0f);
@@ -148,6 +157,8 @@ namespace FishGfx.Graphics {
 		static Mesh3D Mesh3D;
 
 		static void Init3D(PrimitiveType Primitive) {
+			InitGeneric();
+
 			if (Line3D == null)
 				throw new Exception(nameof(Line3D) + " shader not assigned");
 
@@ -213,6 +224,8 @@ namespace FishGfx.Graphics {
 		public static string ShadersDirectory = "data/shaders";
 
 		static void Init2D(PrimitiveType Primitive) {
+			InitGeneric();
+
 			if (Line2D == null) {
 				Line2D = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, Path.Combine(ShadersDirectory, "line2d.vert")),
 					new ShaderStage(ShaderType.GeometryShader, Path.Combine(ShadersDirectory, "line.geom")), new ShaderStage(ShaderType.FragmentShader, Path.Combine(ShadersDirectory, "line.frag")));
@@ -250,7 +263,7 @@ namespace FishGfx.Graphics {
 			Mesh2D.SetVertices(Positions);
 
 			Point2D.Uniform1f("Thickness", Thickness);
-			Point2D.Bind(ShaderUniforms.Default);
+			Point2D.Bind(ShaderUniforms.Current);
 			Mesh2D.Draw();
 			Point2D.Unbind();
 		}
@@ -264,7 +277,7 @@ namespace FishGfx.Graphics {
 			Mesh2D.SetVertices(Positions);
 
 			Start2D();
-			Default2D.Bind(ShaderUniforms.Default);
+			Default2D.Bind(ShaderUniforms.Current);
 			Mesh2D.Draw();
 			Default2D.Unbind();
 			End2D();
@@ -280,7 +293,7 @@ namespace FishGfx.Graphics {
 
 			Start2D();
 			Line2D.Uniform1f("Thickness", Thickness);
-			Line2D.Bind(ShaderUniforms.Default);
+			Line2D.Bind(ShaderUniforms.Current);
 			Mesh2D.Draw();
 			Line2D.Unbind();
 			End2D();
@@ -292,14 +305,48 @@ namespace FishGfx.Graphics {
 
 			Start2D();
 			Line2D.Uniform1f("Thickness", Thickness);
-			Line2D.Bind(ShaderUniforms.Default);
+			Line2D.Bind(ShaderUniforms.Current);
 			Mesh2D.Draw();
 			Line2D.Unbind();
 			End2D();
 		}
 
-		public static void Rectangle(float X, float Y, float W, float H, float Thickness = 1) {
-			LineStrip(new[] { new Vertex2(X, Y), new Vertex2(X + W, Y), new Vertex2(X + W, Y + H), new Vertex2(X, Y + H), new Vertex2(X, Y) }, Thickness);
+		public static void Rectangle(float X, float Y, float W, float H, float Thickness = 1, Color? Clr = null) {
+			Color C = Clr ?? Color.White;
+
+			LineStrip(new[] {
+				new Vertex2(new Vector2(X, Y), C),
+				new Vertex2(new Vector2(X + W, Y), C),
+				new Vertex2(new Vector2(X + W, Y + H), C),
+				new Vertex2(new Vector2(X, Y + H), C),
+				new Vertex2(new Vector2(X, Y), C)
+			}, Thickness);
+		}
+
+		public static void TexturedRectangle(float X, float Y, float W, float H, float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, Texture Texture = null) {
+			Init2D(PrimitiveType.Triangles);
+			Color C = Color ?? FishGfx.Color.White;
+
+			Mesh2D.SetVertices(new[] {
+				new Vertex2(new Vector2(X, Y), new Vector2(U0, V0), C),
+				new Vertex2(new Vector2(X + W, Y + H), new Vector2(U1, V1), C),
+				new Vertex2(new Vector2(X, Y + H),  new Vector2(U0, V1),C),
+				new Vertex2(new Vector2(X, Y),  new Vector2(U0, V0), C),
+				new Vertex2(new Vector2(X + W, Y),  new Vector2(U1, V0), C),
+				new Vertex2(new Vector2(X + W, Y + H), new Vector2(U1, V1), C)
+			});
+
+			Start2D();
+			Texture?.BindTextureUnit();
+			Default2D.Bind(ShaderUniforms.Current);
+			Mesh2D.Draw();
+			Default2D.Unbind();
+			Texture?.UnbindTextureUnit();
+			End2D();
+		}
+
+		public static void FilledRectangle(float X, float Y, float W, float H, Color? Clr = null) {
+			TexturedRectangle(X, Y, W, H, 0, 0, 1, 1, Clr, WhiteTex);
 		}
 
 		public static void Bezier(Vector2 Start, Vector2 End) {

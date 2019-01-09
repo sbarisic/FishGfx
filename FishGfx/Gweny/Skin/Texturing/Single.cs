@@ -8,12 +8,12 @@ namespace FishGfx.Gweny.Skin.Texturing {
 	/// Single textured element.
 	/// </summary>
 	public struct Single {
-		private readonly Texture m_Texture;
+		private readonly GwenyTexture m_Texture;
 		private readonly float[] m_uv;
 		private readonly int m_Width;
 		private readonly int m_Height;
 
-		public Single(Texture texture, float x, float y, float w, float h) {
+		public Single(GwenyTexture texture, float x, float y, float w, float h) {
 			m_Texture = texture;
 
 			float texw = m_Texture.Width;

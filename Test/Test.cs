@@ -1,16 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.IO;
-using System.Numerics;
-
-using FishGfx;
+﻿using FishGfx;
 using FishGfx.Formats;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
+using FishGfx.Gweny.Control;
+using FishGfx.Gweny.Renderer;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace Test {
 	class Program {
@@ -22,6 +23,11 @@ namespace Test {
 		static Camera Cam;
 		static Vector3 MoveVec = Vector3.Zero;
 
+		static FishGfxRenderer Renderer;
+		static FishGfx.Gweny.Skin.TexturedBase Skin;
+		static Canvas Canvas;
+		static FishGfx.Gweny.UnitTest.UnitTest TestTest;
+
 		static void Run() {
 			Vector2 Size = RenderWindow.GetDesktopResolution() * 0.9f;
 			Window = new RenderWindow((int)Size.X, (int)Size.Y, "FishGfx Test");
@@ -32,9 +38,9 @@ namespace Test {
 			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
 #endif
 
-			Window.CaptureCursor = true;
+			Window.CaptureCursor = false;
 			Window.OnMouseMoveDelta += (Wnd, X, Y) => {
-				Cam.Update(-new Vector2(X, Y));
+				//Cam.Update(-new Vector2(X, Y));
 			};
 
 			Window.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
@@ -58,12 +64,30 @@ namespace Test {
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
 
-			RenderModel WorldSurface = LoadWorldSurface();
-			RenderModel Pin = LoadPin();
+			{
+				Renderer = new FishGfxRenderer(new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"), new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag")), Window);
+				Skin = new FishGfx.Gweny.Skin.TexturedBase(Renderer, "data/textures/gwen_skin.png");
+				Skin.DefaultFont = new FishGfx.Gweny.Font(Renderer, "Arial");
+				Canvas = new Canvas(Skin);
+				Canvas.SetSize((int)Size.X, (int)Size.Y);
+				Canvas.ShouldCacheToTexture = false;
+				Canvas.ShouldDrawBackground = true;
+				Canvas.DrawDebugOutlines = true;
+				Canvas.BackgroundColor = new Color(150, 170, 170);
+				TestTest = new FishGfx.Gweny.UnitTest.UnitTest(Canvas);
+			}
 
-			SetupCamera();
 			Stopwatch SWatch = Stopwatch.StartNew();
 			float Dt = 0;
+
+			RenderState RS = Gfx.CreateDefaultRenderState();
+			RS.EnableDepthTest = false;
+			Gfx.PushRenderState(RS);
+
+			ShaderUniforms U = ShaderUniforms.Current;
+			U.Camera.SetOrthogonal(0, 0, Window.WindowWidth, Window.WindowHeight);
+
+			Texture Test = Texture.FromFile("data/textures/test16.png");
 
 			while (!Window.ShouldClose) {
 				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
@@ -73,23 +97,15 @@ namespace Test {
 				SWatch.Restart();
 
 				Gfx.Clear();
-				{
-					const float ScaleX = 1500;
-					const float ScaleY = 1000;
-					ShaderUniforms.Default.Model = Matrix4x4.CreateTranslation(new Vector3(0.5f, -0.5f, 0.5f)) * Matrix4x4.CreateScale(new Vector3(ScaleX, 10, ScaleY));
-					//ShaderUniforms.Model *= Matrix4x4.CreateTranslation(new Vector3(-83, 0, -215));
-					Default.Bind(ShaderUniforms.Default);
-					WorldSurface.Draw();
-					Default.Unbind();
+				Canvas.RenderCanvas();
 
-					/*ShaderUniforms.Model = CameraClient.GetRotation() * Matrix4x4.CreateScale(25) * Matrix4x4.CreateTranslation(CameraClient.GetPos());
-					//ShaderUniforms.Model = Matrix4x4.CreateTranslation(Vector3.Zero);
+				/*Gfx.Line(new Vertex2(25, 10), new Vertex2(25, 100));
+				Gfx.Rectangle(50, 10, 100, 100);
+				Gfx.FilledRectangle(200, 10, 100, 100);
 
-					Default.Bind();
-					Pin.Draw();
-					Default.Unbind();*/
+				Gfx.TexturedRectangle(350, 10, 100, 100, Texture: Test);
+				Gfx.Rectangle(350, 10, 100, 100, Clr: Color.Red);*/
 
-				}
 				Update(Dt);
 				Window.SwapBuffers();
 				Events.Poll();
@@ -99,35 +115,12 @@ namespace Test {
 		static void Update(float Dt) {
 			const float MoveSpeed = 500;
 
+			/*
 			if (!(MoveVec.X == 0 && MoveVec.Y == 0 && MoveVec.Z == 0))
 				Cam.Position += Cam.ToWorldNormal(Vector3.Normalize(MoveVec)) * MoveSpeed * Dt;
-		}
+			*/
 
-		static void SetupCamera() {
-			Cam = ShaderUniforms.Default.Camera;
-			Cam.MouseMovement = true;
-
-			Cam.SetPerspective(Window.WindowSize.X, Window.WindowSize.Y);
-			Cam.Position = new Vector3(0, 50, 0);
-			Cam.LookAt(new Vector3(100, 0, 20));
-		}
-
-		static RenderModel LoadWorldSurface() {
-			RenderModel Cube = new RenderModel(Obj.Load("data/models/cube/cube.obj"));
-
-			Texture Tex = Texture.FromFile("data/textures/grid.png");
-			Cube.SetMaterialTexture("cube", Tex);
-
-			return Cube;
-		}
-
-		static RenderModel LoadPin() {
-			RenderModel Pin = new RenderModel(Obj.Load("data/models/pin/pin.obj"));
-
-			Texture Tex = Texture.FromFile("data/models/pin/pin_mat.png");
-			Pin.SetMaterialTexture("pin_mat", Tex);
-
-			return Pin;
+			Renderer.Update(Dt);
 		}
 	}
 }

@@ -242,7 +242,7 @@ namespace FishGfx.Gweny.Skin {
 	public class TexturedBase : Skin.Base {
 		protected SkinTextures Textures;
 
-		private readonly Texture m_Texture;
+		private readonly GwenyTexture m_Texture;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="TexturedBase"/> class.
@@ -251,7 +251,7 @@ namespace FishGfx.Gweny.Skin {
 		/// <param name="textureName">Name of the skin texture map.</param>
 		public TexturedBase(Renderer.Base renderer, string textureName)
 			: base(renderer) {
-			m_Texture = new Texture(Renderer);
+			m_Texture = new GwenyTexture(Renderer);
 			m_Texture.Load(textureName);
 
 			InitializeColors();
@@ -260,7 +260,7 @@ namespace FishGfx.Gweny.Skin {
 
 		public TexturedBase(Renderer.Base renderer, Stream textureData)
 			: base(renderer) {
-			m_Texture = new Texture(Renderer);
+			m_Texture = new GwenyTexture(Renderer);
 			m_Texture.LoadStream(textureData);
 
 			InitializeColors();

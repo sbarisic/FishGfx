@@ -11,7 +11,7 @@ namespace FishGfx.Gweny.Control {
 	public class ColorSlider : Base {
 		private int m_SelectedDist;
 		private bool m_Depressed;
-		private Texture m_Texture;
+		private GwenyTexture m_Texture;
 
 		/// <summary>
 		/// Invoked when the selected color has been changed.
@@ -58,7 +58,7 @@ namespace FishGfx.Gweny.Control {
 					}
 				}
 
-				m_Texture = new Texture(skin.Renderer);
+				m_Texture = new GwenyTexture(skin.Renderer);
 				m_Texture.Width = Width;
 				m_Texture.Height = Height;
 				m_Texture.LoadRaw(Width, Height, pixelData);

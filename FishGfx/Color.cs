@@ -83,5 +83,13 @@ namespace FishGfx {
 		public static bool operator !=(Color A, Color B) {
 			return !(A == B);
 		}
+
+		public static implicit operator System.Drawing.Color(Color Clr) {
+			return System.Drawing.Color.FromArgb(Clr.A, Clr.R, Clr.G, Clr.B);
+		}
+
+		public static implicit operator Color(System.Drawing.Color Clr) {
+			return new Color(Clr.R, Clr.G, Clr.B, Clr.A);
+		}
 	}
 }

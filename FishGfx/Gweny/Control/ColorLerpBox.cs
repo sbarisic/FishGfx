@@ -11,7 +11,7 @@ namespace FishGfx.Gweny.Control {
 		private Point m_CursorPos;
 		private bool m_Depressed;
 		private float m_Hue;
-		private Texture m_Texture;
+		private GwenyTexture m_Texture;
 
 		/// <summary>
 		/// Invoked when the selected color has been changed.
@@ -162,7 +162,7 @@ namespace FishGfx.Gweny.Control {
 					}
 				}
 
-				m_Texture = new Texture(skin.Renderer);
+				m_Texture = new GwenyTexture(skin.Renderer);
 				m_Texture.Width = Width;
 				m_Texture.Height = Height;
 				m_Texture.LoadRaw(Width, Height, pixelData);

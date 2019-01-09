@@ -115,27 +115,27 @@ namespace FishGfx.Gweny.Renderer {
 		/// Loads the specified texture.
 		/// </summary>
 		/// <param name="t"></param>
-		public virtual void LoadTexture(Texture t) { }
+		public virtual void LoadTexture(GwenyTexture t) { }
 
 		/// <summary>
 		/// Initializes texture from raw pixel data.
 		/// </summary>
 		/// <param name="t">Texture to initialize. Dimensions need to be set.</param>
 		/// <param name="pixelData">Pixel data in RGBA format.</param>
-		public virtual void LoadTextureRaw(Texture t, byte[] pixelData) { }
+		public virtual void LoadTextureRaw(GwenyTexture t, byte[] pixelData) { }
 
 		/// <summary>
 		/// Initializes texture from image file data.
 		/// </summary>
 		/// <param name="t">Texture to initialize.</param>
 		/// <param name="data">Image file as stream.</param>
-		public virtual void LoadTextureStream(Texture t, Stream data) { }
+		public virtual void LoadTextureStream(GwenyTexture t, Stream data) { }
 
 		/// <summary>
 		/// Frees the specified texture.
 		/// </summary>
 		/// <param name="t">Texture to free.</param>
-		public virtual void FreeTexture(Texture t) { }
+		public virtual void FreeTexture(GwenyTexture t) { }
 
 		/// <summary>
 		/// Draws textured rectangle.
@@ -146,7 +146,7 @@ namespace FishGfx.Gweny.Renderer {
 		/// <param name="v1">Texture coordinate v1.</param>
 		/// <param name="u2">Texture coordinate u2.</param>
 		/// <param name="v2">Texture coordinate v2.</param>
-		public virtual void DrawTexturedRect(Texture t, Rectangle targetRect, float u1 = 0, float v1 = 0, float u2 = 1, float v2 = 1) { }
+		public virtual void DrawTexturedRect(GwenyTexture t, Rectangle targetRect, float u1 = 0, float v1 = 0, float u2 = 1, float v2 = 1) { }
 
 		/// <summary>
 		/// Draws "missing image" default texture.
@@ -297,7 +297,7 @@ namespace FishGfx.Gweny.Renderer {
 		/// <param name="x">X.</param>
 		/// <param name="y">Y.</param>
 		/// <returns>Pixel color.</returns>
-		public virtual Color PixelColor(Texture texture, uint x, uint y) {
+		public virtual Color PixelColor(GwenyTexture texture, uint x, uint y) {
 			return PixelColor(texture, x, y, Color.White);
 		}
 
@@ -309,7 +309,7 @@ namespace FishGfx.Gweny.Renderer {
 		/// <param name="y">Y.</param>
 		/// <param name="defaultColor">Color to return on failure.</param>
 		/// <returns>Pixel color.</returns>
-		public virtual Color PixelColor(Texture texture, uint x, uint y, Color defaultColor) {
+		public virtual Color PixelColor(GwenyTexture texture, uint x, uint y, Color defaultColor) {
 			return defaultColor;
 		}
 

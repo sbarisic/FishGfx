@@ -8,7 +8,7 @@ namespace FishGfx.Gweny.Control {
 	/// Image container.
 	/// </summary>
 	public class ImagePanel : Base {
-		private readonly Texture m_Texture;
+		private readonly GwenyTexture m_Texture;
 		private readonly float[] m_uv;
 		private Color m_DrawColor;
 
@@ -19,7 +19,7 @@ namespace FishGfx.Gweny.Control {
 		public ImagePanel(Base parent)
 			: base(parent) {
 			m_uv = new float[4];
-			m_Texture = new Texture(Skin.Renderer);
+			m_Texture = new GwenyTexture(Skin.Renderer);
 			SetUV(0, 0, 1, 1);
 			MouseInputEnabled = true;
 			m_DrawColor = Color.White;

@@ -5,7 +5,7 @@ namespace FishGfx.Gweny {
 	/// <summary>
 	/// Represents a texture.
 	/// </summary>
-	public class Texture : IDisposable {
+	public class GwenyTexture : IDisposable {
 		/// <summary>
 		/// Texture name. Usually file name, but exact meaning depends on renderer.
 		/// </summary>
@@ -34,10 +34,10 @@ namespace FishGfx.Gweny {
 		private readonly Renderer.Base m_Renderer;
 
 		/// <summary>
-		/// Initializes a new instance of the <see cref="Texture"/> class.
+		/// Initializes a new instance of the <see cref="GwenyTexture"/> class.
 		/// </summary>
 		/// <param name="renderer">Renderer to use.</param>
-		public Texture(Renderer.Base renderer) {
+		public GwenyTexture(Renderer.Base renderer) {
 			m_Renderer = renderer;
 			Width = 4;
 			Height = 4;
@@ -78,7 +78,7 @@ namespace FishGfx.Gweny {
 		}
 
 #if DEBUG
-		~Texture() {
+		~GwenyTexture() {
 			throw new InvalidOperationException(String.Format("IDisposable object finalized: {0}", GetType()));
 			//Debug.Print(String.Format("IDisposable object finalized: {0}", GetType()));
 		}

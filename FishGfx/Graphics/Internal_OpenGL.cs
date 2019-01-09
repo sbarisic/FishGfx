@@ -78,11 +78,15 @@ namespace FishGfx.Graphics {
 				if (Src == DebugSource.DebugSourceApi && DbgType == DebugType.DebugTypeOther && ID == 131185)
 					return;
 
-				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
-				Console.WriteLine(Encoding.ASCII.GetString((byte*)Buffer, Len));
+				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
 
-				if ((/*Severity == Gl.DebugSeverity.Medium ||*/ Severity == DebugSeverity.DebugSeverityHigh) && Debugger.IsAttached)
-					Debugger.Break();
+				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
+				Console.WriteLine(Msg);
+
+				if ((Severity == DebugSeverity.DebugSeverityHigh) && Debugger.IsAttached) {
+					if (!Msg.Contains("GL_INVALID_OPERATION in BindTextureUnit"))
+						Debugger.Break();
+				}
 
 			}, IntPtr.Zero);
 

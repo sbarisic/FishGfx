@@ -54,7 +54,7 @@ namespace FishGfx_Nuklear {
 			//Gfx.Rectangle(ClipRect.X, WindowSize.Y - ClipRect.Y - ClipRect.H, ClipRect.W, ClipRect.H);
 			Gfx.Scissor((int)ClipRect.X, (int)(WindowSize.Y - ClipRect.Y - ClipRect.H), (int)ClipRect.W, (int)ClipRect.H, true);
 
-			GUIShader.Bind(ShaderUniforms.Default);
+			GUIShader.Bind(ShaderUniforms.Current);
 			Texture.BindTextureUnit();
 			Msh.DrawEx((int)Offset, (int)Count);
 			Texture.UnbindTextureUnit();
