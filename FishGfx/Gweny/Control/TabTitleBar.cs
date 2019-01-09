@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.DragDrop;
+using FishGfx.Gweny.DragDrop;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Titlebar for DockedTabControl.

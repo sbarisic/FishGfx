@@ -10,7 +10,6 @@ using FishGfx;
 using FishGfx.Formats;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
-using FishGfx.System;
 using System.Diagnostics;
 
 namespace Test {

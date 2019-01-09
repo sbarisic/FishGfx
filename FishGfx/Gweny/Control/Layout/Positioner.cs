@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Control.Layout
+namespace FishGfx.Gweny.Control.Layout
 {
     /// <summary>
     /// Helper control that positions its children in a specific way.

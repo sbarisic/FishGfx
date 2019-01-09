@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.Input;
+using FishGfx.Gweny.Input;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Tab header.

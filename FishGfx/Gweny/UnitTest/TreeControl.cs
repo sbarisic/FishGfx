@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.UnitTest
+namespace FishGfx.Gweny.UnitTest
 {
     public class TreeControl : GUnit
     {

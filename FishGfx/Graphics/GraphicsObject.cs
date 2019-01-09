@@ -1,10 +1,10 @@
-﻿using System;
+﻿using FishGfx;
+using OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using OpenGL;
-using FishGfx.System;
 
 namespace FishGfx.Graphics {
 	public abstract class GraphicsObject : IDisposable {
@@ -28,7 +28,7 @@ namespace FishGfx.Graphics {
 			Gl.ObjectLabel(ObjID, ID, Lbl.Length, Lbl);
 #endif
 		}
-		
+
 		public void Dispose() {
 			if (Collected)
 				return;

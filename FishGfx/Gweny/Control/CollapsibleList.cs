@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// CollapsibleList control. Groups CollapsibleCategory controls.

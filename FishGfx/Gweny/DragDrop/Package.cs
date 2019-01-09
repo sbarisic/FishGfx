@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.DragDrop
+namespace FishGfx.Gweny.DragDrop
 {
     public class Package
     {

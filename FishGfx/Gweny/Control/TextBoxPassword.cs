@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Text box with masked text.

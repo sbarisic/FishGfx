@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Text.RegularExpressions;
-using Gweny.Control.Layout;
+using FishGfx.Gweny.Control.Layout;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// ListBox control.

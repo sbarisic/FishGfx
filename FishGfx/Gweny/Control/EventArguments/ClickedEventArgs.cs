@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Gweny.Control {
+namespace FishGfx.Gweny.Control {
 	public class ClickedEventArgs : EventArgs {
 		public int X { get; private set; }
 		public int Y { get; private set; }

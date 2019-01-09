@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Numeric text box - accepts only float numbers.

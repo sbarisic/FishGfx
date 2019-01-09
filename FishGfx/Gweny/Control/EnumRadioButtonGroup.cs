@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     public class EnumRadioButtonGroup<T> : RadioButtonGroup where T : struct, IConvertible
     {

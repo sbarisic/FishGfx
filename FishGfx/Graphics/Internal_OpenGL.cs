@@ -1,4 +1,7 @@
-﻿using System;
+﻿using FishGfx;
+using Glfw3;
+using OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -6,9 +9,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Glfw3;
-using OpenGL;
-using FishGfx.System;
 
 namespace FishGfx.Graphics {
 	internal static class OpenGL_BODGES {
@@ -134,7 +134,7 @@ namespace FishGfx.Graphics {
 
 			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 		}
-		
+
 		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
 			Gl.Scissor(X, Y, W, H);
 

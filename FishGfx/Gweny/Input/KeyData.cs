@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.Input
+namespace FishGfx.Gweny.Input
 {
     /// <summary>
     /// Keyboard state.

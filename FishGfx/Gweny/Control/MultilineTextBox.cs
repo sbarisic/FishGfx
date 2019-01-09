@@ -1,14 +1,14 @@
+using FishGfx.Gweny.Input;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Text;
-using System.Drawing;
-using Gweny.Input;
 
-namespace Gweny.Control
-{
-    public class MultilineTextBox : Label
-    {
+namespace FishGfx.Gweny.Control {
+	using Color = System.Drawing.Color;
+
+	public class MultilineTextBox : Label {
 		private readonly ScrollControl m_ScrollControl;
 
 		private bool m_SelectAll;
@@ -84,7 +84,7 @@ namespace Gweny.Control
 		/// </summary>
 		public Point CursorEnd {
 			get {
-				if (m_TextLines == null || m_TextLines.Count() == 0) 
+				if (m_TextLines == null || m_TextLines.Count() == 0)
 					return new Point(0, 0);
 
 				int Y = m_CursorEnd.Y;
@@ -112,13 +112,11 @@ namespace Gweny.Control
 		/// <summary>
 		/// Returns the number of lines that are in the Multiline Text Box.
 		/// </summary>
-        public int TotalLines
-        {
-            get
-            {
+		public int TotalLines {
+			get {
 				return m_TextLines.Count;
-            }
-        }
+			}
+		}
 
 		/// <summary>
 		/// Gets and sets the text to display to the user. Each line is seperated by
@@ -127,7 +125,7 @@ namespace Gweny.Control
 		public override string Text {
 			get {
 				string ret = "";
-				for (int i = 0; i < TotalLines; i++){
+				for (int i = 0; i < TotalLines; i++) {
 					ret += m_TextLines[i];
 					if (i != TotalLines - 1) {
 						ret += Environment.NewLine;
@@ -143,14 +141,13 @@ namespace Gweny.Control
 			}
 		}
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="TextBox"/> class.
-        /// </summary>
-        /// <param name="parent">Parent control.</param>
-        public MultilineTextBox(Base parent) : base(parent)
-        {
-            AutoSizeToContents = false;
-            SetSize(200, 20);
+		/// <summary>
+		/// Initializes a new instance of the <see cref="TextBox"/> class.
+		/// </summary>
+		/// <param name="parent">Parent control.</param>
+		public MultilineTextBox(Base parent) : base(parent) {
+			AutoSizeToContents = false;
+			SetSize(200, 20);
 
 			MouseInputEnabled = true;
 			KeyboardInputEnabled = true;
@@ -167,27 +164,27 @@ namespace Gweny.Control
 			IsTabable = false;
 			AcceptTabs = true;
 
-            m_ScrollControl = new ScrollControl(this);
-            m_ScrollControl.Dock = Pos.Fill;
-            m_ScrollControl.EnableScroll(true, true);
-            m_ScrollControl.AutoHideBars = true;
-            m_ScrollControl.Margin = Margin.One;
-            m_InnerPanel = m_ScrollControl;
-            m_Text.Parent = m_InnerPanel;
-            m_ScrollControl.InnerPanel.BoundsChanged += new GwenEventHandler<EventArgs>(ScrollChanged);
+			m_ScrollControl = new ScrollControl(this);
+			m_ScrollControl.Dock = Pos.Fill;
+			m_ScrollControl.EnableScroll(true, true);
+			m_ScrollControl.AutoHideBars = true;
+			m_ScrollControl.Margin = Margin.One;
+			m_InnerPanel = m_ScrollControl;
+			m_Text.Parent = m_InnerPanel;
+			m_ScrollControl.InnerPanel.BoundsChanged += new GwenEventHandler<EventArgs>(ScrollChanged);
 
 
 			m_TextLines.Add(String.Empty);
 
 			// [halfofastaple] TODO Figure out where these numbers come from. See if we can remove the magic numbers.
 			//	This should be as simple as 'm_ScrollControl.AutoSizeToContents = true' or 'm_ScrollControl.NoBounds()'
-            m_ScrollControl.SetInnerSize(1000, 1000);
+			m_ScrollControl.SetInnerSize(1000, 1000);
 
 			AddAccelerator("Ctrl + C", OnCopy);
 			AddAccelerator("Ctrl + X", OnCut);
 			AddAccelerator("Ctrl + V", OnPaste);
 			AddAccelerator("Ctrl + A", OnSelectAll);
-        }
+		}
 
 		public string GetTextLine(int index) {
 			return m_TextLines[index];
@@ -201,10 +198,9 @@ namespace Gweny.Control
 		/// Refreshes the cursor location and selected area when the inner panel scrolls
 		/// </summary>
 		/// <param name="control">The inner panel the text is embedded in</param>
-        private void ScrollChanged(Base control, EventArgs args)
-        {
-            RefreshCursorBounds();
-        }
+		private void ScrollChanged(Base control, EventArgs args) {
+			RefreshCursorBounds();
+		}
 
 		/// <summary>
 		/// Handler for text changed event.
@@ -264,8 +260,8 @@ namespace Gweny.Control
 
 			if (!HasFocus) return;
 
-			int VerticalOffset = (int)(-Font.Size*0.20f - m_ScrollControl.VerticalScroll);
-			int VerticalSize = (int)(Font.Size*1.45f);
+			int VerticalOffset = (int)(-Font.Size * 0.20f - m_ScrollControl.VerticalScroll);
+			int VerticalSize = (int)(Font.Size * 1.45f);
 
 			// Draw selection.. if selected..
 			if (m_CursorPos != m_CursorEnd) {
@@ -295,18 +291,18 @@ namespace Gweny.Control
 					skin.Renderer.DrawColor = Color.FromArgb(200, 50, 170, 255);
 					skin.Renderer.DrawFilledRect(SelectionBounds);
 
-				    int oldY = SelectionBounds.Y;
+					int oldY = SelectionBounds.Y;
 
 					/* Middle */
 					for (int i = 1; i < EndPoint.Y - StartPoint.Y; i++) {
 						pA = GetCharacterPosition(new Point(0, StartPoint.Y + i));
 						pB = GetCharacterPosition(new Point(m_TextLines[StartPoint.Y + i].Length, StartPoint.Y + i));
 
-					    oldY += VerticalSize;
+						oldY += VerticalSize;
 
 						SelectionBounds = new Rectangle();
 						SelectionBounds.X = Math.Min(pA.X, pB.X);
-					    SelectionBounds.Y = oldY;
+						SelectionBounds.Y = oldY;
 						SelectionBounds.Width = Math.Max(pA.X, pB.X) - SelectionBounds.X;
 						SelectionBounds.Height = VerticalSize;
 
@@ -332,17 +328,14 @@ namespace Gweny.Control
 			// Draw caret
 			float time = Platform.Neutral.GetTimeInSeconds() - m_LastInputTime;
 
-		    var t = time % 2.0f;
-			if (t > 1f)
-			{
-			    skin.Renderer.DrawColor = Color.FromArgb((int)(255 / (1 + Math.Exp(-15.8135f * (t-1) / 2 + 3))), Color.Black);
+			var t = time % 2.0f;
+			if (t > 1f) {
+				skin.Renderer.DrawColor = Color.FromArgb((int)(255 / (1 + Math.Exp(-15.8135f * (t - 1) / 2 + 3))), Color.Black);
+				skin.Renderer.DrawFilledRect(m_CaretBounds);
+			} else if (t < 1f) {
+				skin.Renderer.DrawColor = Color.FromArgb((int)(255 / (1 + Math.Exp(-(-15.8135f * (t) / 2 + 3)))), Color.Black);
 				skin.Renderer.DrawFilledRect(m_CaretBounds);
 			}
-            else if (t < 1f)
-            {
-                skin.Renderer.DrawColor = Color.FromArgb((int)(255 / (1 + Math.Exp(-(-15.8135f * (t) / 2 + 3)))), Color.Black);
-                skin.Renderer.DrawFilledRect(m_CaretBounds); 
-            }
 		}
 
 		protected void RefreshCursorBounds() {
@@ -361,10 +354,10 @@ namespace Gweny.Control
 			m_CaretBounds.X = pA.X;
 			m_CaretBounds.Y = (pA.Y + 2);
 
-            m_CaretBounds.Y += m_ScrollControl.VerticalScroll;
+			m_CaretBounds.Y += m_ScrollControl.VerticalScroll;
 
 			m_CaretBounds.Width = 1;
-			m_CaretBounds.Height = (int)(Font.Size*1.5f);
+			m_CaretBounds.Height = (int)(Font.Size * 1.5f);
 
 			Redraw();
 		}
@@ -746,7 +739,7 @@ namespace Gweny.Control
 		//        m_CursorEnd = m_CursorPos;
 		//    /* Multiline Delete */
 		//    } else {
-				
+
 		//    }
 		//}
 
@@ -762,7 +755,7 @@ namespace Gweny.Control
 			} else {
 				/* Remove Start */
 				if (StartPoint.X < m_TextLines[StartPoint.Y].Length) {
-					m_TextLines[StartPoint.Y] = m_TextLines[StartPoint.Y].Remove(StartPoint.X); 
+					m_TextLines[StartPoint.Y] = m_TextLines[StartPoint.Y].Remove(StartPoint.X);
 				}
 
 				/* Remove Middle */
@@ -832,16 +825,16 @@ namespace Gweny.Control
 			Point Best = new Point(0, 0);
 			string sub = String.Empty;
 
-		    p.X -= m_ScrollControl.HorizontalScroll;
-		    p.Y -= m_ScrollControl.VerticalScroll;
+			p.X -= m_ScrollControl.HorizontalScroll;
+			p.Y -= m_ScrollControl.VerticalScroll;
 
 			/* Find the appropriate Y row (always pick whichever y the mouse currently is on) */
 			for (int y = 0; y < m_TextLines.Count(); y++) {
 				sub += m_TextLines[y];
 				Point cp = Skin.Renderer.MeasureText(Font, sub);
-                //cp.X -= m_ScrollControl.HorizontalScroll;
-                //cp.Y += m_ScrollControl.VerticalScroll;
-			    sub += Environment.NewLine;
+				//cp.X -= m_ScrollControl.HorizontalScroll;
+				//cp.Y += m_ScrollControl.VerticalScroll;
+				sub += Environment.NewLine;
 
 				double YDist = Math.Abs(cp.Y - p.Y);
 				if (YDist < distance) {
@@ -850,7 +843,7 @@ namespace Gweny.Control
 				}
 			}
 
-		    Best.Y = Best.Y;
+			Best.Y = Best.Y;
 
 			/* Find the best X row, closest char */
 			sub = String.Empty;
@@ -863,12 +856,12 @@ namespace Gweny.Control
 				}
 
 				Point cp = Skin.Renderer.MeasureText(Font, sub);
-                //cp.X -= m_ScrollControl.HorizontalScroll;
-                //cp.Y += m_ScrollControl.VerticalScroll;
+				//cp.X -= m_ScrollControl.HorizontalScroll;
+				//cp.Y += m_ScrollControl.VerticalScroll;
 
-				double XDiff = Math.Abs(cp.X - p.X); 
+				double XDiff = Math.Abs(cp.X - p.X);
 
-				if (XDiff < distance){
+				if (XDiff < distance) {
 					distance = XDiff;
 					Best.X = x;
 				}
@@ -921,18 +914,16 @@ namespace Gweny.Control
 		}
 
 
-        /// <summary>
-        /// Handler invoked when control children's bounds change.
-        /// </summary>
-        /// <param name="oldChildBounds"></param>
-        /// <param name="child"></param>
-        protected override void OnChildBoundsChanged(System.Drawing.Rectangle oldChildBounds, Base child)
-        {
-            if (m_ScrollControl != null)
-            {
-                m_ScrollControl.UpdateScrollBars();
-            }
-        }
+		/// <summary>
+		/// Handler invoked when control children's bounds change.
+		/// </summary>
+		/// <param name="oldChildBounds"></param>
+		/// <param name="child"></param>
+		protected override void OnChildBoundsChanged(System.Drawing.Rectangle oldChildBounds, Base child) {
+			if (m_ScrollControl != null) {
+				m_ScrollControl.UpdateScrollBars();
+			}
+		}
 
 		/// <summary>
 		/// Sets the label text.
@@ -979,7 +970,7 @@ namespace Gweny.Control
 			}
 
 			Point p = new Point(Skin.Renderer.MeasureText(Font, CurrLine).X, Skin.Renderer.MeasureText(Font, sub).Y);
-		    p.Y = p.Y - p.Y / (CursorPosition.Y + 1);
+			p.Y = p.Y - p.Y / (CursorPosition.Y + 1);
 
 			return new Point(p.X + m_Text.X, p.Y + m_Text.Y + TextPadding.Top);
 		}
@@ -987,5 +978,5 @@ namespace Gweny.Control
 		protected override bool OnMouseWheeled(int delta) {
 			return m_ScrollControl.InputMouseWheeled(delta);
 		}
-    }
+	}
 }

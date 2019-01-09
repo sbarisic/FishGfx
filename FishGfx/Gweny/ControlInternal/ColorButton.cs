@@ -1,39 +1,37 @@
-﻿using System;
+﻿using FishGfx.Gweny.Control;
+using System;
 using System.Drawing;
-using Gweny.Control;
 
-namespace Gweny.ControlInternal
-{
-    /// <summary>
-    /// Property button.
-    /// </summary>
-    public class ColorButton : Button
-    {
-        private Color m_Color;
+namespace FishGfx.Gweny.ControlInternal {
+	using Color = System.Drawing.Color;
 
-        /// <summary>
-        /// Current color value.
-        /// </summary>
-        public Color Color { get { return m_Color; } set { m_Color = value; } }
+	/// <summary>
+	/// Property button.
+	/// </summary>
+	public class ColorButton : Button {
+		private Color m_Color;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ColorButton"/> class.
-        /// </summary>
-        /// <param name="parent">Parent control.</param>
-        public ColorButton(Base parent) : base(parent)
-        {
-            m_Color = Color.Black;
-            Text = String.Empty;
-        }
+		/// <summary>
+		/// Current color value.
+		/// </summary>
+		public Color Color { get { return m_Color; } set { m_Color = value; } }
 
-        /// <summary>
-        /// Renders the control using specified skin.
-        /// </summary>
-        /// <param name="skin">Skin to use.</param>
-        protected override void Render(Skin.Base skin)
-        {
-            skin.Renderer.DrawColor = m_Color;
-            skin.Renderer.DrawFilledRect(RenderBounds);
-        }
-    }
+		/// <summary>
+		/// Initializes a new instance of the <see cref="ColorButton"/> class.
+		/// </summary>
+		/// <param name="parent">Parent control.</param>
+		public ColorButton(Base parent) : base(parent) {
+			m_Color = Color.Black;
+			Text = String.Empty;
+		}
+
+		/// <summary>
+		/// Renders the control using specified skin.
+		/// </summary>
+		/// <param name="skin">Skin to use.</param>
+		protected override void Render(Skin.Base skin) {
+			skin.Renderer.DrawColor = m_Color;
+			skin.Renderer.DrawFilledRect(RenderBounds);
+		}
+	}
 }

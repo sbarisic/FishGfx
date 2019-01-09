@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Control.Layout
+namespace FishGfx.Gweny.Control.Layout
 {
     /// <summary>
     /// Base splitter class.

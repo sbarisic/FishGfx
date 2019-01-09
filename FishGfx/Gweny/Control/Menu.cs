@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Drawing;
 using System.Linq;
-using Gweny.ControlInternal;
+using FishGfx.Gweny.ControlInternal;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Popup menu.

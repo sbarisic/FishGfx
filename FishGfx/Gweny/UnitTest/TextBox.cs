@@ -1,17 +1,17 @@
-﻿using System;
+﻿using FishGfx.Gweny.Control;
+using System;
 using System.Drawing;
-using Gweny.Control;
 
-namespace Gweny.UnitTest
-{
-    public class TextBox : GUnit
-    {
-        private readonly Font m_Font1;
-        private readonly Font m_Font2;
-        private readonly Font m_Font3;
+namespace FishGfx.Gweny.UnitTest {
+	using Color = System.Drawing.Color;
 
-        public TextBox(Base parent)
-            : base(parent) {
+	public class TextBox : GUnit {
+		private readonly Font m_Font1;
+		private readonly Font m_Font2;
+		private readonly Font m_Font3;
+
+		public TextBox(Base parent)
+			: base(parent) {
 			int row = 0;
 
 			m_Font1 = new Font(Skin.Renderer, "Consolas", 14); // fixed width font!
@@ -169,24 +169,21 @@ namespace Gweny.UnitTest
 			}
 		}
 
-        public override void Dispose()
-        {
-            m_Font1.Dispose();
-            m_Font2.Dispose();
-            m_Font3.Dispose();
-            base.Dispose();
-        }
+		public override void Dispose() {
+			m_Font1.Dispose();
+			m_Font2.Dispose();
+			m_Font3.Dispose();
+			base.Dispose();
+		}
 
-		void OnEdit(Base control, EventArgs args)
-        {
-            Control.TextBox box = control as Control.TextBox;
-            UnitPrint(String.Format("TextBox: OnEdit: {0}", box.Text));
-        }
+		void OnEdit(Base control, EventArgs args) {
+			Control.TextBox box = control as Control.TextBox;
+			UnitPrint(String.Format("TextBox: OnEdit: {0}", box.Text));
+		}
 
-		void OnSubmit(Base control, EventArgs args)
-        {
-            Control.TextBox box = control as Control.TextBox;
-            UnitPrint(String.Format("TextBox: OnSubmit: {0}", box.Text));
-        }
-    }
+		void OnSubmit(Base control, EventArgs args) {
+			Control.TextBox box = control as Control.TextBox;
+			UnitPrint(String.Format("TextBox: OnSubmit: {0}", box.Text));
+		}
+	}
 }

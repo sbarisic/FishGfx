@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.Control.Layout;
+using FishGfx.Gweny.Control.Layout;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// List box row (selectable).

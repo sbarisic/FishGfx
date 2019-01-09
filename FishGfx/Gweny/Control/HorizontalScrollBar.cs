@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.Input;
+using FishGfx.Gweny.Input;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Horizontal scrollbar.

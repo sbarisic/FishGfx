@@ -2,7 +2,6 @@
 using FishGfx.Formats;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
-using FishGfx.System;
 using FishGfx_Nuklear;
 using NuklearDotNet;
 using System;

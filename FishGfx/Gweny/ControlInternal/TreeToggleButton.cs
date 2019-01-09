@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.ControlInternal
+namespace FishGfx.Gweny.ControlInternal
 {
     /// <summary>
     /// Tree node toggle button (the little plus sign).

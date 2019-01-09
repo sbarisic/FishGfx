@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Radio button group.

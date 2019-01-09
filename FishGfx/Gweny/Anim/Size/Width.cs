@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Anim.Size
+namespace FishGfx.Gweny.Anim.Size
 {
     class Width : TimedAnimation
     {

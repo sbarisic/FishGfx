@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.ControlInternal
+namespace FishGfx.Gweny.ControlInternal
 {
     /// <summary>
     /// Numeric down arrow.

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
 
-namespace Gweny.Control.Layout
+namespace FishGfx.Gweny.Control.Layout
 {
     /// <summary>
     /// Base class for multi-column tables.

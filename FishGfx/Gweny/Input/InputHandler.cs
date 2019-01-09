@@ -2,10 +2,10 @@
 using System.Drawing;
 using System.Linq;
 using System.Text;
-using Gweny.Control;
-using Gweny.DragDrop;
+using FishGfx.Gweny.Control;
+using FishGfx.Gweny.DragDrop;
 
-namespace Gweny.Input
+namespace FishGfx.Gweny.Input
 {
     /// <summary>
     /// Input handling.

@@ -1,8 +1,8 @@
 ﻿using System;
-using Gweny.ControlInternal;
+using FishGfx.Gweny.ControlInternal;
 using System.Windows.Forms;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Splitter control.

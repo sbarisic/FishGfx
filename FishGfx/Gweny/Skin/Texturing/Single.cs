@@ -1,66 +1,61 @@
 ﻿using System;
 using System.Drawing;
 
-namespace Gweny.Skin.Texturing
-{
-    /// <summary>
-    /// Single textured element.
-    /// </summary>
-    public struct Single
-    {
-        private readonly Texture m_Texture;
-        private readonly float[] m_uv;
-        private readonly int m_Width;
-        private readonly int m_Height;
+namespace FishGfx.Gweny.Skin.Texturing {
+	using Color = System.Drawing.Color;
 
-        public Single(Texture texture, float x, float y, float w, float h )
-        {
-            m_Texture = texture;
+	/// <summary>
+	/// Single textured element.
+	/// </summary>
+	public struct Single {
+		private readonly Texture m_Texture;
+		private readonly float[] m_uv;
+		private readonly int m_Width;
+		private readonly int m_Height;
 
-            float texw = m_Texture.Width;
-            float texh = m_Texture.Height;
+		public Single(Texture texture, float x, float y, float w, float h) {
+			m_Texture = texture;
 
-            m_uv = new float[4];
-            m_uv[0] = x / texw;
-            m_uv[1] = y / texh;
-            m_uv[2] = (x + w) / texw;
-            m_uv[3] = (y + h) / texh;
+			float texw = m_Texture.Width;
+			float texh = m_Texture.Height;
 
-            m_Width = (int) w;
-            m_Height = (int) h;
-        }
+			m_uv = new float[4];
+			m_uv[0] = x / texw;
+			m_uv[1] = y / texh;
+			m_uv[2] = (x + w) / texw;
+			m_uv[3] = (y + h) / texh;
 
-        // can't have this as default param
-        public void Draw(Renderer.Base render, Rectangle r)
-        {
-            Draw(render, r, Color.White);
-        }
+			m_Width = (int)w;
+			m_Height = (int)h;
+		}
 
-        public void Draw(Renderer.Base render, Rectangle r, Color col)
-        {
-            if (m_Texture == null)
-                return;
+		// can't have this as default param
+		public void Draw(Renderer.Base render, Rectangle r) {
+			Draw(render, r, Color.White);
+		}
 
-            render.DrawColor = col;
-            render.DrawTexturedRect(m_Texture, r, m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
-        }
+		public void Draw(Renderer.Base render, Rectangle r, Color col) {
+			if (m_Texture == null)
+				return;
 
-        public void DrawCenter(Renderer.Base render, Rectangle r)
-        {
-            if (m_Texture == null)
-                return;
+			render.DrawColor = col;
+			render.DrawTexturedRect(m_Texture, r, m_uv[0], m_uv[1], m_uv[2], m_uv[3]);
+		}
 
-            DrawCenter(render, r, Color.White);
-        }
+		public void DrawCenter(Renderer.Base render, Rectangle r) {
+			if (m_Texture == null)
+				return;
 
-        public void DrawCenter(Renderer.Base render, Rectangle r, Color col)
-        {
-            r.X += (int)((r.Width - m_Width) * 0.5);
-            r.Y += (int)((r.Height - m_Height) * 0.5);
-            r.Width = m_Width;
-            r.Height = m_Height;
+			DrawCenter(render, r, Color.White);
+		}
 
-            Draw(render, r, col);
-        }
-    }
+		public void DrawCenter(Renderer.Base render, Rectangle r, Color col) {
+			r.X += (int)((r.Width - m_Width) * 0.5);
+			r.Y += (int)((r.Height - m_Height) * 0.5);
+			r.Width = m_Width;
+			r.Height = m_Height;
+
+			Draw(render, r, col);
+		}
+	}
 }

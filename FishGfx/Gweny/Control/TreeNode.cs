@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Linq;
-using Gweny.ControlInternal;
+using FishGfx.Gweny.ControlInternal;
 using System.Collections.Generic;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Tree control node.

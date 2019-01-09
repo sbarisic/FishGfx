@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.Control;
-using Gweny.Input;
+using FishGfx.Gweny.Control;
+using FishGfx.Gweny.Input;
 using System.Windows.Forms;
 
-namespace Gweny.DragDrop
+namespace FishGfx.Gweny.DragDrop
 {
     /// <summary>
     /// Drag and drop handling.

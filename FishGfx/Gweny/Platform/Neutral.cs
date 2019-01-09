@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Gweny.Platform
+namespace FishGfx.Gweny.Platform
 {
     /// <summary>
     /// Platform-agnostic utility functions.

@@ -1,8 +1,8 @@
 ﻿using System;
-using Gweny.Control.Layout;
-using Gweny.ControlInternal;
+using FishGfx.Gweny.Control.Layout;
+using FishGfx.Gweny.ControlInternal;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Numeric up/down.

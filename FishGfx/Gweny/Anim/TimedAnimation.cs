@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Anim
+namespace FishGfx.Gweny.Anim
 {
     // Timed animation. Provides a useful base for animations.
     public class TimedAnimation : Animation

@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Linq;
-using Gweny.Control;
-using Gweny.Control.Layout;
+using FishGfx.Gweny.Control;
+using FishGfx.Gweny.Control.Layout;
 
-namespace Gweny.UnitTest
+namespace FishGfx.Gweny.UnitTest
 {
     public class ListBox : GUnit
     {

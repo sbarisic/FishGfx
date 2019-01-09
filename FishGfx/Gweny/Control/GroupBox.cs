@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Drawing;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Group box (container).

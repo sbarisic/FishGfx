@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.ControlInternal;
-using Gweny.DragDrop;
+using FishGfx.Gweny.ControlInternal;
+using FishGfx.Gweny.DragDrop;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Tab strip - groups TabButtons and allows reordering.

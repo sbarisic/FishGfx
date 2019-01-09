@@ -1,5 +1,5 @@
 ﻿
-namespace Gweny.Renderer
+namespace FishGfx.Gweny.Renderer
 {
     public interface ICacheToTexture
     {

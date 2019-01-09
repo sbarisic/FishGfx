@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.Anim
+namespace FishGfx.Gweny.Anim
 {
     public class Animation
     {

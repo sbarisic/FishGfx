@@ -1,4 +1,4 @@
-﻿using FishGfx.System;
+﻿using FishGfx;
 using Glfw3;
 using OpenGL;
 using System;

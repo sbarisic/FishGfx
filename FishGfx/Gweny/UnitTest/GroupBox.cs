@@ -1,7 +1,7 @@
 ﻿using System;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 
-namespace Gweny.UnitTest
+namespace FishGfx.Gweny.UnitTest
 {
     public class GroupBox : GUnit
     {
@@ -95,13 +95,13 @@ namespace Gweny.UnitTest
                 Control.GroupBox gb8 = new Control.GroupBox(gb7);
                 gb8.Text = "Group Box while";
                 gb8.Dock = Pos.Top;
-                gb8.Margin = Gweny.Margin.Five;
+                gb8.Margin = FishGfx.Gweny.Margin.Five;
                 gb8.AutoSizeToContents = true;
 
                 Control.GroupBox gb9 = new Control.GroupBox(gb7);
                 gb9.Text = "u Group Box";
                 gb9.Dock = Pos.Bottom;
-                gb9.Padding = Gweny.Padding.Five;
+                gb9.Padding = FishGfx.Gweny.Padding.Five;
                 gb9.AutoSizeToContents = true;
 
 				

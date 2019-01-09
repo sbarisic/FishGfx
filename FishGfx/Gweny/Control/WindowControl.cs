@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Drawing;
 using System.Linq;
-using Gweny.ControlInternal;
+using FishGfx.Gweny.ControlInternal;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Movable window with title bar.
@@ -60,7 +60,7 @@ namespace Gweny.Control
         {
             m_TitleBar = new Dragger(this);
             m_TitleBar.Height = 24;
-            m_TitleBar.Padding = Gweny.Padding.Zero;
+            m_TitleBar.Padding = FishGfx.Gweny.Padding.Zero;
             m_TitleBar.Margin = new Margin(0, 0, 0, 4);
             m_TitleBar.Target = this;
             m_TitleBar.Dock = Pos.Top;

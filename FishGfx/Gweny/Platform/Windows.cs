@@ -5,7 +5,7 @@ using Microsoft.Win32;
 
 // todo: compile/run only on windows
 
-namespace Gweny.Platform
+namespace FishGfx.Gweny.Platform
 {
     /// <summary>
     /// Windows-specific utility functions.

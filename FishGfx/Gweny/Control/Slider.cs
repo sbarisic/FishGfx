@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.ControlInternal;
-using Gweny.Input;
+using FishGfx.Gweny.ControlInternal;
+using FishGfx.Gweny.Input;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Base slider.

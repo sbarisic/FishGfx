@@ -1,8 +1,8 @@
 ﻿using System;
-using Gweny.Control;
+using FishGfx.Gweny.Control;
 using System.Drawing;
 
-namespace Gweny.UnitTest
+namespace FishGfx.Gweny.UnitTest
 {
     public class Menu : GUnit
     {

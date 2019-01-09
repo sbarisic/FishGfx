@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Drawing;
-using Gweny.ControlInternal;
+using FishGfx.Gweny.ControlInternal;
 
-namespace Gweny.Control
+namespace FishGfx.Gweny.Control
 {
     /// <summary>
     /// Control with multiple tabs that can be reordered and dragged.

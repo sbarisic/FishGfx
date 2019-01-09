@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Gweny.Control.Property
+namespace FishGfx.Gweny.Control.Property
 {
     /// <summary>
     /// Text property.
