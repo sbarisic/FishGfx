@@ -72,7 +72,7 @@ namespace Test {
 				Canvas.SetSize((int)Size.X, (int)Size.Y);
 				Canvas.ShouldCacheToTexture = false;
 				Canvas.ShouldDrawBackground = true;
-				Canvas.DrawDebugOutlines = true;
+				//Canvas.DrawDebugOutlines = true;
 				Canvas.BackgroundColor = new Color(150, 170, 170);
 				TestTest = new FishGfx.Gweny.UnitTest.UnitTest(Canvas);
 			}
