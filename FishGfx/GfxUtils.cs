@@ -249,8 +249,9 @@ namespace FishGfx {
 		}
 
 		public static T ReadStruct<T>(this BinaryReader Reader) where T : struct {
-			T Val = default(T);
-			GCHandle Handle = GCHandle.Alloc(Val, GCHandleType.Pinned);
+			object ValObj = default(T);
+
+			GCHandle Handle = GCHandle.Alloc(ValObj, GCHandleType.Pinned);
 			IntPtr Ptr = Handle.AddrOfPinnedObject();
 			int Len = Marshal.SizeOf<T>();
 
@@ -259,7 +260,7 @@ namespace FishGfx {
 			Marshal.Copy(Bytes, 0, Ptr, Len);
 
 			Handle.Free();
-			return Val;
+			return (T)ValObj;
 		}
 
 		public static Matrix4x4 ToRotation(this Vector3 Normal) {

@@ -73,6 +73,18 @@ namespace FishGfx.Gweny.Renderer {
 			Gfx.Line(new Vertex2(new Vector2(x, y), DrawColor), new Vertex2(new Vector2(a, b), DrawColor));
 		}
 
+		public override Point MeasureText(Font font, string text) {
+			return base.MeasureText(font, text);
+		}
+
+		public override void RenderText(Font font, Point position, TextContainer textContainer) {
+			base.RenderText(font, position, textContainer);
+		}
+		
+		public override bool LoadFont(Font font) {
+			return base.LoadFont(font);
+		}
+		
 		public override void LoadTexture(GwenyTexture t) {
 			string Pth = t.Name.StartsWith("data") ? t.Name : "data/textures/" + t.Name;
 
