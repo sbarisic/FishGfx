@@ -7,9 +7,9 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FishGfx.Formats {
-	public unsafe class BitmapFont {
+	public unsafe class BMFont : GfxFont {
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct Block_Info {
+		public struct InfoBlock {
 			public short FontSize;
 			public byte BitField;
 			public byte CharSet;
@@ -25,7 +25,7 @@ namespace FishGfx.Formats {
 		}
 
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct Block_Common {
+		public struct CommonBlock {
 			public ushort LineHeight;
 			public ushort Base;
 			public ushort ScaleW;
@@ -39,7 +39,7 @@ namespace FishGfx.Formats {
 		}
 
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct Block_Char {
+		public struct CharBlock {
 			public uint ID;
 			public ushort X;
 			public ushort Y;
@@ -52,21 +52,24 @@ namespace FishGfx.Formats {
 			public byte Channel;
 		}
 
-		public Block_Info Info;
-		public string FontName;
-		public Block_Common Common;
+		public InfoBlock Info;
+		public string FntName;
+		public CommonBlock Common;
 		public string[] PageNames;
+		Dictionary<char, CharBlock> Chars;
 
-		Dictionary<char, Block_Char> Chars;
+		public BMFont(string FntFile = null, float FontScale = 32.0f) {
+			this.FontScale = FontScale;
 
-		public BitmapFont(string FntFile) {
-			using (MemoryStream MS = new MemoryStream()) {
-				using (FileStream FS = File.OpenRead(FntFile)) {
-					FS.CopyTo(MS);
+			if (FntFile != null) {
+				using (MemoryStream MS = new MemoryStream()) {
+					using (FileStream FS = File.OpenRead(FntFile)) {
+						FS.CopyTo(MS);
+					}
+
+					MS.Position = 0;
+					Read(MS);
 				}
-
-				MS.Position = 0;
-				Read(MS);
 			}
 		}
 
@@ -86,14 +89,14 @@ namespace FishGfx.Formats {
 
 					switch (BlockType) {
 						case 1: {
-								Info = BR.ReadStruct<Block_Info>();
-								FontName = Encoding.UTF8.GetString(BR.ReadBytes(Len - sizeof(Block_Info) - 1));
+								Info = BR.ReadStruct<InfoBlock>();
+								FntName = Encoding.UTF8.GetString(BR.ReadBytes(Len - sizeof(InfoBlock) - 1));
 								BR.ReadByte();
 								break;
 							}
 
 						case 2: {
-								Common = BR.ReadStruct<Block_Common>();
+								Common = BR.ReadStruct<CommonBlock>();
 								break;
 							}
 
@@ -109,11 +112,11 @@ namespace FishGfx.Formats {
 							}
 
 						case 4: {
-								int CharCount = Len / sizeof(Block_Char);
-								Chars = new Dictionary<char, Block_Char>();
+								int CharCount = Len / sizeof(CharBlock);
+								Chars = new Dictionary<char, CharBlock>();
 
 								for (int i = 0; i < CharCount; i++) {
-									Block_Char CharInfo = BR.ReadStruct<Block_Char>();
+									CharBlock CharInfo = BR.ReadStruct<CharBlock>();
 									Chars.Add((char)CharInfo.ID, CharInfo);
 								}
 
@@ -127,11 +130,47 @@ namespace FishGfx.Formats {
 			}
 		}
 
-		public Block_Char GetChar(char C) {
+		public CharBlock GetChar(char C) {
 			if (Chars.ContainsKey(C))
 				return Chars[C];
 
-			return default(Block_Char);
+			return default(CharBlock);
+		}
+
+		public override string FontName => FntName;
+
+		public override int LineHeight => Common.LineHeight;
+
+		public override int FontSize {
+			get {
+				if (Info.FontSize < 0)
+					return -Info.FontSize;
+
+				return Info.FontSize;
+			}
+		}
+
+		public override int TabSize => Common.LineHeight;
+
+		public override CharOrigin? GetCharInfo(char C) {
+			if (Chars.ContainsKey(C)) {
+				CharBlock CBlock = Chars[C];
+
+				CharOrigin CInfo = new CharOrigin();
+				CInfo.Char = C;
+				CInfo.Owner = this;
+				CInfo.W = CBlock.Width;
+				CInfo.H = CBlock.Height;
+				CInfo.XOffset = CBlock.XOffset;
+				CInfo.YOffset = CBlock.YOffset;
+				CInfo.XAdvance = CBlock.XAdvance;
+				CInfo.X = CBlock.X;
+				CInfo.Y = CBlock.Y;
+
+				return CInfo;
+			}
+
+			return null;
 		}
 	}
 }

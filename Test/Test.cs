@@ -2,8 +2,6 @@
 using FishGfx.Formats;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
-using FishGfx.Gweny.Control;
-using FishGfx.Gweny.Renderer;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -21,40 +19,8 @@ namespace Test {
 		}
 
 		static RenderWindow Window;
-		static Camera Cam;
-		static Vector3 MoveVec = Vector3.Zero;
-
-		static FishGfxRenderer Renderer;
-		static FishGfx.Gweny.Skin.TexturedBase Skin;
-		static Canvas Canvas;
-		static FishGfx.Gweny.UnitTest.UnitTest TestTest;
 
 		static void Run() {
-			BitmapFont Fnt = new BitmapFont("data/fonts/proggy.fnt");
-			Bitmap Bmp = new Bitmap("data/fonts/" + Fnt.PageNames[0]);
-
-			Bitmap Rendered = new Bitmap(200, 100);
-			using (Graphics Gfx = Graphics.FromImage(Rendered)) {
-				Gfx.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-
-				float X = 0;
-				Gfx.Clear(System.Drawing.Color.Black);
-
-				foreach (var C in "Meanwhile") {
-					BitmapFont.Block_Char Chr = Fnt.GetChar(C);
-
-					Gfx.DrawImage(Bmp, new RectangleF(X + Chr.XOffset, Chr.YOffset, Chr.Width, Chr.Height),
-						new RectangleF(Chr.X, Chr.Y, Chr.Width, Chr.Height), GraphicsUnit.Pixel);
-
-					X += Chr.XAdvance;
-				}
-			}
-
-			//Rendered.RotateFlip(RotateFlipType.RotateNoneFlipY);
-			Rendered.Save("out.png");
-			Environment.Exit(0);
-
-
 			Vector2 Size = RenderWindow.GetDesktopResolution() * 0.9f;
 			Window = new RenderWindow((int)Size.X, (int)Size.Y, "FishGfx Test");
 
@@ -66,70 +32,41 @@ namespace Test {
 
 			Window.CaptureCursor = false;
 			Window.OnMouseMoveDelta += (Wnd, X, Y) => {
-				//Cam.Update(-new Vector2(X, Y));
 			};
 
 			Window.OnMouseMove += (Wnd, X, Y) => {
-				Canvas?.Input_MouseMoved((int)X, (int)Y, 0, 0);
 			};
 
 			Window.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
 				if (Key == Key.Escape && Pressed)
 					Environment.Exit(0);
-
-				if (Key == Key.Space)
-					MoveVec.Y = Pressed ? 1 : 0;
-				else if (Key == Key.C)
-					MoveVec.Y = Pressed ? -1 : 0;
-				else if (Key == Key.W)
-					MoveVec.Z = Pressed ? -1 : 0;
-				else if (Key == Key.A)
-					MoveVec.X = Pressed ? -1 : 0;
-				else if (Key == Key.S)
-					MoveVec.Z = Pressed ? 1 : 0;
-				else if (Key == Key.D)
-					MoveVec.X = Pressed ? 1 : 0;
-
-				if (Key == Key.MouseLeft)
-					Canvas?.Input_MouseButton(0, Pressed);
-				else if (Key == Key.MouseRight)
-					Canvas?.Input_MouseButton(1, Pressed);
 			};
 
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
-
-			/*
-			{
-				Renderer = new FishGfxRenderer(new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default.vert"), new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag")), Window);
-				Skin = new FishGfx.Gweny.Skin.TexturedBase(Renderer, "data/textures/gwen_skin.png");
-				Skin.DefaultFont = new FishGfx.Gweny.Font(Renderer, "Arial");
-				Canvas = new Canvas(Skin);
-				Canvas.SetSize((int)Size.X, (int)Size.Y);
-				Canvas.ShouldCacheToTexture = false;
-				//Canvas.ShouldDrawBackground = true;
-				//Canvas.DrawDebugOutlines = true;
-				Canvas.BackgroundColor = new Color(150, 170, 170);
-				TestTest = new FishGfx.Gweny.UnitTest.UnitTest(Canvas);
-			}
-			//*/
-
+			
 			Stopwatch SWatch = Stopwatch.StartNew();
 			float Dt = 0;
 
+			{
 			RenderState RS = Gfx.CreateDefaultRenderState();
 			RS.EnableDepthTest = false;
 			Gfx.PushRenderState(RS);
+			}
 
 			ShaderUniforms U = ShaderUniforms.Current;
 			U.Camera.SetOrthogonal(0, 0, Window.WindowWidth, Window.WindowHeight);
 
 			Texture Test = Texture.FromFile("data/textures/test16.png");
+			
+			GfxFont Fnt = new BMFont("data/fonts/proggy.fnt");
+			Fnt.FlipY = true;
 
-
-
-
-
+			Texture ProggyTex = null;
+			using (Bitmap Bmp = new Bitmap("data/fonts/proggy_0.png")) {
+				Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
+				ProggyTex = Texture.FromImage(Bmp);
+			}
 
 			while (!Window.ShouldClose) {
 				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
@@ -139,7 +76,19 @@ namespace Test {
 				SWatch.Restart();
 
 				Gfx.Clear();
-				Canvas?.RenderCanvas();
+
+				//*
+				{
+
+
+					for (int i = 0; i < 30; i++) {
+						Gfx.DrawText(Fnt, ProggyTex, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
+					}
+
+					Gfx.Rectangle(300, 100, 100, 100);
+
+				}
+				//*/
 
 				/*Gfx.Line(new Vertex2(25, 10), new Vertex2(25, 100));
 				Gfx.Rectangle(50, 10, 100, 100);
@@ -148,21 +97,13 @@ namespace Test {
 				Gfx.TexturedRectangle(350, 10, 100, 100, Texture: Test);
 				Gfx.Rectangle(350, 10, 100, 100, Clr: Color.Red);*/
 
-				Update(Dt);
+				// Update
+				{
+
+				}
 				Window.SwapBuffers();
 				Events.Poll();
 			}
-		}
-
-		static void Update(float Dt) {
-			const float MoveSpeed = 500;
-
-			/*
-			if (!(MoveVec.X == 0 && MoveVec.Y == 0 && MoveVec.Z == 0))
-				Cam.Position += Cam.ToWorldNormal(Vector3.Normalize(MoveVec)) * MoveSpeed * Dt;
-			*/
-
-			Renderer?.Update(Dt);
 		}
 	}
 }

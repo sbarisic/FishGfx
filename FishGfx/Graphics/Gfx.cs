@@ -354,5 +354,19 @@ namespace FishGfx.Graphics {
 
 			// TODO
 		}
+
+		public static void DrawText(GfxFont Font, Texture AtlasTex, Vector2 Pos, string Str, Color Clr) {
+			GfxFont.CharDest[] Chars = Font.LayoutString(Str);
+			Vector2 Sz = Font.MeasureString(Chars);
+
+			foreach (var C in Chars) {
+				float X = C.CharOrigin.X / AtlasTex.Width;
+				float Y = C.CharOrigin.Y / AtlasTex.Height;
+				float W = C.CharOrigin.W / AtlasTex.Width;
+				float H = C.CharOrigin.H / AtlasTex.Height;
+
+				Gfx.TexturedRectangle(Pos.X + C.X, Pos.Y + C.Y + Sz.Y, C.W, C.H, X, Y+H , X + W, Y, Texture: AtlasTex);
+			}
+		}
 	}
 }
