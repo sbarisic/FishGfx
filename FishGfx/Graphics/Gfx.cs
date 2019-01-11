@@ -311,6 +311,19 @@ namespace FishGfx.Graphics {
 			End2D();
 		}
 
+		static Vertex2[] EmitRectangleTris(Vertex2[] Verts, int Offset, float X, float Y, float W, float H, float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null) {
+			Color C = Color ?? FishGfx.Color.White;
+
+			Verts[Offset] = new Vertex2(new Vector2(X, Y), new Vector2(U0, V0), C);
+			Verts[Offset + 1] = new Vertex2(new Vector2(X + W, Y + H), new Vector2(U1, V1), C);
+			Verts[Offset + 2] = new Vertex2(new Vector2(X, Y + H), new Vector2(U0, V1), C);
+			Verts[Offset + 3] = new Vertex2(new Vector2(X, Y), new Vector2(U0, V0), C);
+			Verts[Offset + 4] = new Vertex2(new Vector2(X + W, Y), new Vector2(U1, V0), C);
+			Verts[Offset + 5] = new Vertex2(new Vector2(X + W, Y + H), new Vector2(U1, V1), C);
+
+			return Verts;
+		}
+
 		public static void Rectangle(float X, float Y, float W, float H, float Thickness = 1, Color? Clr = null) {
 			Color C = Clr ?? Color.White;
 
@@ -327,14 +340,7 @@ namespace FishGfx.Graphics {
 			Init2D(PrimitiveType.Triangles);
 			Color C = Color ?? FishGfx.Color.White;
 
-			Mesh2D.SetVertices(new[] {
-				new Vertex2(new Vector2(X, Y), new Vector2(U0, V0), C),
-				new Vertex2(new Vector2(X + W, Y + H), new Vector2(U1, V1), C),
-				new Vertex2(new Vector2(X, Y + H),  new Vector2(U0, V1),C),
-				new Vertex2(new Vector2(X, Y),  new Vector2(U0, V0), C),
-				new Vertex2(new Vector2(X + W, Y),  new Vector2(U1, V0), C),
-				new Vertex2(new Vector2(X + W, Y + H), new Vector2(U1, V1), C)
-			});
+			Mesh2D.SetVertices(EmitRectangleTris(new Vertex2[6], 0, X, Y, W, H, U0, V0, U1, V1, Color));
 
 			Start2D();
 			Texture?.BindTextureUnit();
@@ -355,17 +361,45 @@ namespace FishGfx.Graphics {
 			// TODO
 		}
 
-		public static void DrawText(GfxFont Font, Texture AtlasTex, Vector2 Pos, string Str, Color Clr) {
-			GfxFont.CharDest[] Chars = Font.LayoutString(Str);
-			Vector2 Sz = Font.MeasureString(Chars);
+		public static void DrawText(GfxFont Font, Texture AtlasTex, Vector2 Pos, string Str, Color Clr, bool DebugDraw = false) {
+			if (string.IsNullOrEmpty(Str))
+				return;
 
-			foreach (var C in Chars) {
+			GfxFont.CharDest[] Chars = Font.LayoutString(Str);
+			Init2D(PrimitiveType.Triangles);
+			Vertex2[] TextVertices = new Vertex2[Chars.Length * 6];
+
+			for (int i = 0; i < Chars.Length; i++) {
+				ref GfxFont.CharDest C = ref Chars[i];
+
 				float X = C.CharOrigin.X / AtlasTex.Width;
 				float Y = C.CharOrigin.Y / AtlasTex.Height;
 				float W = C.CharOrigin.W / AtlasTex.Width;
 				float H = C.CharOrigin.H / AtlasTex.Height;
 
-				Gfx.TexturedRectangle(Pos.X + C.X, Pos.Y + C.Y + Sz.Y, C.W, C.H, X, Y+H , X + W, Y, Texture: AtlasTex);
+				//TexturedRectangle(Pos.X + C.X, Pos.Y + C.Y, C.W, C.H, X, 1.0f - Y - H, X + W, 1.0f - Y, Texture: AtlasTex);
+				EmitRectangleTris(TextVertices, i * 6, Pos.X + C.X, Pos.Y + C.Y, C.W, C.H, X, 1.0f - Y - H, X + W, 1.0f - Y);
+			}
+
+			// Draw
+			{
+				Mesh2D.SetVertices(TextVertices);
+
+				Start2D();
+				AtlasTex.BindTextureUnit();
+				Default2D.Bind(ShaderUniforms.Current);
+				Mesh2D.Draw();
+				Default2D.Unbind();
+				AtlasTex.UnbindTextureUnit();
+				End2D();
+			}
+
+			if (DebugDraw) {
+				FilledRectangle(Pos.X + Chars[0].X, Pos.Y + Chars[0].Y, 5, 5, Color.Red);
+				FilledRectangle(Pos.X, Pos.Y, 5, 5, Color.Yellow);
+
+				Vector2 Sz = Font.MeasureString(Chars);
+				Rectangle(Pos.X, Pos.Y, Sz.X, Sz.Y, Clr: Color.Red);
 			}
 		}
 	}

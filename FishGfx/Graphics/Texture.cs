@@ -334,9 +334,13 @@ namespace FishGfx.Graphics {
 			return Tex;
 		}
 
-		public static Texture FromFile(string FileName) {
-			using (Image Img = Image.FromFile(FileName))
-				return FromImage(Img);
+		public static Texture FromFile(string FileName, bool FlipY = false) {
+			using (Bitmap Bmp = new Bitmap(FileName)) {
+				if (FlipY)
+					Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
+
+				return FromImage(Bmp);
+			}
 		}
 
 		public static Texture FromPixels(int Width, int Height, IntPtr Data, PixelFmt Fmt = PixelFmt.Bgra) {

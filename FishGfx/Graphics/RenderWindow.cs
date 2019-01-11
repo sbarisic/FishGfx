@@ -265,6 +265,8 @@ namespace FishGfx.Graphics {
 			Internal_OpenGL.InitGLFW();
 			Glfw.WindowHint(Glfw.Hint.Resizable, Resizable);
 
+			// TODO: Add a force-context convar or something?
+
 			// YOLO
 			if (SupportedMajor != 0 && SupportedMinor != 0 && (Wnd = TryCreateWindow(SupportedMajor, SupportedMinor, Width, Height, Title))) {
 			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 6, Width, Height, Title)) {
