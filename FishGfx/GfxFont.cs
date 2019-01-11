@@ -29,14 +29,12 @@ namespace FishGfx {
 			public float W;
 			public float H;
 
-			public bool Drawable;
 			public CharOrigin CharOrigin;
 		}
 
 		public virtual object Userdata { get; set; }
 
 		public virtual float FontScale { get; set; }
-		public virtual bool FlipY { get; set; }
 
 		public abstract string FontName { get; }
 		public abstract int LineHeight { get; }
@@ -50,6 +48,11 @@ namespace FishGfx {
 		}
 
 		public virtual Vector2 MeasureString(CharDest[] Chars) {
+			MeasureString(Chars, out Vector2 Min, out Vector2 Max);
+			return Max - Min;
+		}
+
+		public virtual void MeasureString(CharDest[] Chars, out Vector2 MinCoord, out Vector2 MaxCoord) {
 			Vector2 Max = new Vector2(Chars[0].X, Chars[0].Y);
 			Vector2 Min = new Vector2(Chars[0].X, Chars[0].Y);
 
@@ -61,16 +64,18 @@ namespace FishGfx {
 				Min.Y = Math.Min(Min.Y, Chars[i].Y);
 			}
 
-			return Max - Min;
+			MinCoord = Min;
+			MaxCoord = Max;
 		}
 
 		// TODO: Padding 'nd shit
 		public virtual CharDest[] LayoutString(string Str) {
-			CharDest[] Chars = new CharDest[Str.Length];
+			List<CharDest> Chars = new List<CharDest>(Str.Length);
 			float Scale = FontScale / FontSize;
 
 			int X = 0;
 			int Y = 0;
+			int LineCount = 1;
 
 			for (int i = 0; i < Str.Length; i++) {
 				char Chr = Str[i];
@@ -82,28 +87,22 @@ namespace FishGfx {
 
 				CharOrigin ChrOrigin = MaybeCharInfo.Value;
 
-				ref CharDest CurChar = ref Chars[i];
+				CharDest CurChar = new CharDest();
 				CurChar.CharOrigin = ChrOrigin;
-				CurChar.Drawable = false;
 				CurChar.X = (X + ChrOrigin.XOffset);
 				CurChar.W = ChrOrigin.W;
 				CurChar.H = ChrOrigin.H;
 
-				if (FlipY)
-					CurChar.Y = (Y - ChrOrigin.YOffset - CurChar.H);
-				else
-					CurChar.Y = (Y + ChrOrigin.YOffset);
+				CurChar.Y = (Y - ChrOrigin.YOffset - CurChar.H);
 
 				if (Chr == '\r')
 					continue;
 
 				if (Chr == '\n') {
 					X = 0;
+					LineCount++;
 
-					if (FlipY)
-						Y -= LineHeight;
-					else
-						Y += LineHeight;
+					Y -= LineHeight;
 					continue;
 				}
 
@@ -118,10 +117,16 @@ namespace FishGfx {
 				CurChar.Y = (CurChar.Y * Scale);
 				CurChar.W = (CurChar.W * Scale);
 				CurChar.H = (CurChar.H * Scale);
-				CurChar.Drawable = true;
+				Chars.Add(CurChar);
 			}
 
-			return Chars;
+			for (int i = 0; i < Chars.Count; i++) {
+				CharDest C = Chars[i];
+				C.Y += LineCount * LineHeight * Scale;
+				Chars[i] = C;
+			}
+
+			return Chars.ToArray();
 		}
 	}
 }
