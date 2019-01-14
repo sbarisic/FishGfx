@@ -291,6 +291,12 @@ namespace FishGfx.Graphics {
 				bool MouseDeltaInitialized = false;
 
 				Glfw.SetCursorPosCallback(Wnd, GlfwOnMouseMove = (W, X, Y) => {
+					if (X < 0 || X >= WindowWidth)
+						return;
+
+					if (Y < 0 || Y >= WindowHeight)
+						return;
+
 					MouseX = (int)X;
 					MouseY = (int)Y;
 					OnMouseMove?.Invoke(this, (float)X, (float)Y);
