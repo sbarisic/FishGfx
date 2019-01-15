@@ -1,4 +1,5 @@
-﻿using FishGfx.Graphics;
+﻿using FishGfx.Formats;
+using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
 using OpenGL;
 using System;
@@ -361,9 +362,22 @@ namespace FishGfx.Graphics {
 			// TODO
 		}
 
-		public static void DrawText(GfxFont Font, Texture AtlasTex, Vector2 Pos, string Str, Color Clr, bool DebugDraw = false) {
+		public static Vector2 DrawText(GfxFont Font, Vector2 Pos, string Str, Color Clr, float FontSize = -1, bool DebugDraw = false) {
 			if (string.IsNullOrEmpty(Str))
-				return;
+				return Vector2.Zero;
+
+			Pos.X = (int)Pos.X;
+			Pos.Y = (int)Pos.Y;
+
+			float OldScale = Font.ScaledFontSize;
+			if (FontSize > 0)
+				Font.ScaledFontSize = FontSize;
+
+			Texture AtlasTex = null;
+			if (Font is BMFont BMFont)
+				AtlasTex = BMFont.PageNames.First().Value;
+			else
+				throw new NotImplementedException("Not implemented for " + Font.GetType().ToString());
 
 			GfxFont.CharDest[] Chars = Font.LayoutString(Str);
 			Init2D(PrimitiveType.Triangles);
@@ -378,7 +392,7 @@ namespace FishGfx.Graphics {
 				float H = C.CharOrigin.H / AtlasTex.Height;
 
 				//TexturedRectangle(Pos.X + C.X, Pos.Y + C.Y, C.W, C.H, X, 1.0f - Y - H, X + W, 1.0f - Y, Texture: AtlasTex);
-				EmitRectangleTris(TextVertices, i * 6, Pos.X + C.X, Pos.Y + C.Y, C.W, C.H, X, 1.0f - Y - H, X + W, 1.0f - Y);
+				EmitRectangleTris(TextVertices, i * 6, Pos.X + C.X, Pos.Y + C.Y, C.W, C.H, X, 1.0f - Y - H, X + W, 1.0f - Y, Clr);
 			}
 
 			// Draw
@@ -401,6 +415,9 @@ namespace FishGfx.Graphics {
 				Vector2 Sz = Font.MeasureString(Chars);
 				Rectangle(Pos.X, Pos.Y, Sz.X, Sz.Y, Clr: Color.Red);
 			}
+
+			Font.ScaledFontSize = OldScale;
+			return Font.MeasureString(Chars);
 		}
 	}
 }

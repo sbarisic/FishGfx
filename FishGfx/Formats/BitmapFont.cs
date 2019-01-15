@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FishGfx.Graphics;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -55,12 +56,10 @@ namespace FishGfx.Formats {
 		public InfoBlock Info;
 		public string FntName;
 		public CommonBlock Common;
-		public string[] PageNames;
+		public Dictionary<string, Texture> PageNames;
 		Dictionary<char, CharBlock> Chars;
 
-		public BMFont(string FntFile = null, float FontScale = 32.0f) {
-			this.FontScale = FontScale;
-
+		public BMFont(string FntFile = null, float FontSize = -1) {
 			if (FntFile != null) {
 				using (MemoryStream MS = new MemoryStream()) {
 					using (FileStream FS = File.OpenRead(FntFile)) {
@@ -70,6 +69,22 @@ namespace FishGfx.Formats {
 					MS.Position = 0;
 					Read(MS);
 				}
+			}
+
+			if (FontSize <= 0)
+				this.ScaledFontSize = this.FontSize;
+			else
+				this.ScaledFontSize = FontSize;
+		}
+
+		public void LoadTextures(string TextureDirectory, TextureFilter Filter = TextureFilter.Nearest) {
+			string[] TextureNames = PageNames.Select(KV => KV.Key).ToArray();
+
+			foreach (var TexName in TextureNames) {
+				Texture T = Texture.FromFile(Path.Combine(TextureDirectory, TexName));
+				T.SetFilter(Filter);
+				PageNames[TexName] = T;
+
 			}
 		}
 
@@ -102,11 +117,11 @@ namespace FishGfx.Formats {
 
 						case 3: {
 								int Pages = Common.Pages;
-								PageNames = new string[Pages];
+								PageNames = new Dictionary<string, Texture>();
 
 								int PageNameLen = Len / Pages;
-								for (int i = 0; i < PageNames.Length; i++)
-									PageNames[i] = Encoding.UTF8.GetString(BR.ReadBytes(PageNameLen)).TrimEnd(new[] { '\0' });
+								for (int i = 0; i < Pages; i++)
+									PageNames.Add(Encoding.UTF8.GetString(BR.ReadBytes(PageNameLen)).TrimEnd(new[] { '\0' }), null);
 
 								break;
 							}
@@ -150,7 +165,7 @@ namespace FishGfx.Formats {
 			}
 		}
 
-		public override int TabSize => Common.LineHeight;
+		public override int TabSize => LineHeight;
 
 		public override CharOrigin? GetCharInfo(char C) {
 			if (Chars.ContainsKey(C)) {

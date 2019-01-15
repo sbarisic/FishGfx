@@ -33,13 +33,24 @@ namespace FishGfx {
 		}
 
 		public virtual object Userdata { get; set; }
-
-		public virtual float FontScale { get; set; }
-
 		public abstract string FontName { get; }
+
 		public abstract int LineHeight { get; }
+		public virtual int ScaledLineHeight {
+			get {
+				return (int)(LineHeight * (ScaledFontSize / FontSize));
+			}
+		}
+
 		public abstract int FontSize { get; }
+		public virtual float ScaledFontSize { get; set; }
+
 		public abstract int TabSize { get; }
+		public virtual int ScaledTabSize {
+			get {
+				return (int)(TabSize * (ScaledFontSize / FontSize));
+			}
+		}
 
 		public abstract CharOrigin? GetCharInfo(char C);
 
@@ -71,7 +82,7 @@ namespace FishGfx {
 		// TODO: Padding 'nd shit
 		public virtual CharDest[] LayoutString(string Str) {
 			List<CharDest> Chars = new List<CharDest>(Str.Length);
-			float Scale = FontScale / FontSize;
+			float Scale = ScaledFontSize / FontSize;
 
 			int X = 0;
 			int Y = 0;
