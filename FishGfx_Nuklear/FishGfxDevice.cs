@@ -52,7 +52,10 @@ namespace FishGfx_Nuklear {
 
 		public override void Render(NkHandle Userdata, Texture Texture, NkRect ClipRect, uint Offset, uint Count) {
 			//Gfx.Rectangle(ClipRect.X, WindowSize.Y - ClipRect.Y - ClipRect.H, ClipRect.W, ClipRect.H);
-			Gfx.Scissor((int)ClipRect.X, (int)(WindowSize.Y - ClipRect.Y - ClipRect.H), (int)ClipRect.W, (int)ClipRect.H, true);
+			RenderState RS = Gfx.PeekRenderState();
+			RS.EnableScissorTest = true;
+			RS.ScissorRegion = new AABB((int)ClipRect.X, (int)(WindowSize.Y - ClipRect.Y - ClipRect.H), (int)ClipRect.W, (int)ClipRect.H);
+			Gfx.PushRenderState(RS);
 
 			GUIShader.Bind(ShaderUniforms.Current);
 			Texture.BindTextureUnit();
@@ -60,7 +63,7 @@ namespace FishGfx_Nuklear {
 			Texture.UnbindTextureUnit();
 			GUIShader.Unbind();
 
-			Gfx.Scissor(0, 0, 0, 0, false);
+			Gfx.PopRenderState();
 		}
 
 		public override void EndRender() {

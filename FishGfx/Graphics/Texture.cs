@@ -38,7 +38,7 @@ namespace FishGfx.Graphics {
 		Bgra = GLPixelFormat.Bgra
 	}
 
-	public unsafe partial class Texture : GraphicsObject {
+	public unsafe class Texture : GraphicsObject {
 		internal const int Multisamples = 4;
 
 		internal const int RIGHT = 0;
@@ -321,9 +321,9 @@ namespace FishGfx.Graphics {
 		public override void GraphicsDispose() {
 			Gl.DeleteTextures(new uint[] { ID });
 		}
-	}
 
-	public unsafe partial class Texture : GraphicsObject {
+		// Static
+
 		public static Texture Empty(int W, int H) {
 			return new Texture(W, H);
 		}
@@ -335,12 +335,14 @@ namespace FishGfx.Graphics {
 		}
 
 		public static Texture FromFile(string FileName, bool FlipY = false) {
-			using (Bitmap Bmp = new Bitmap(FileName)) {
-				if (FlipY)
+			if (FlipY) {
+				using (Bitmap Bmp = new Bitmap(FileName)) {
 					Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
-
-				return FromImage(Bmp);
+					return FromImage(Bmp);
+				}
 			}
+
+			return FromImage(Image.FromFile(FileName));
 		}
 
 		public static Texture FromPixels(int Width, int Height, IntPtr Data, PixelFmt Fmt = PixelFmt.Bgra) {

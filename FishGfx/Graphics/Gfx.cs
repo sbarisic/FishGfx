@@ -29,6 +29,7 @@ namespace FishGfx.Graphics {
 			State.EnableBlend = true;
 
 			State.PointSize = 1;
+			State.ScissorRegion = new AABB(new Vector2(0, 0));
 
 			return State;
 		}
@@ -55,6 +56,7 @@ namespace FishGfx.Graphics {
 			return State;
 		}
 
+		// TODO: Cache state and only do delta-enable
 		static void SetRenderState(RenderState State) {
 			if (GlEnable(EnableCap.CullFace, State.EnableCullFace))
 				Gl.CullFace((CullFaceMode)State.CullFace);
@@ -64,7 +66,10 @@ namespace FishGfx.Graphics {
 
 			Gl.FrontFace((FrontFaceDirection)State.FrontFace);
 
-			GlEnable(EnableCap.ScissorTest, State.EnableScissorTest);
+			if (GlEnable(EnableCap.ScissorTest, State.EnableScissorTest)) {
+				AABB Reg = State.ScissorRegion;
+				Gl.Scissor((int)Reg.Position.X, (int)Reg.Position.Y, (int)Reg.Size.X, (int)Reg.Size.Y);
+			}
 
 			if (GlEnable(EnableCap.Blend, State.EnableBlend))
 				Gl.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
@@ -80,44 +85,6 @@ namespace FishGfx.Graphics {
 
 			return Enable;
 		}
-
-		// TODO: Convert the scissors to use the new render state
-		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
-			Internal_OpenGL.Scissor(X, Y, W, H, Enable);
-		}
-
-		public static void Scissor(AABB Rect, bool Enable) {
-			if (float.IsInfinity(Rect.Size.X) || float.IsInfinity(Rect.Size.Y)) {
-				Scissor(0, 0, 0, 0, false);
-				return;
-			}
-
-			Scissor((int)Rect.Position.X, (int)Rect.Position.Y, (int)Rect.Size.X, (int)Rect.Size.Y, Enable);
-		}
-
-		static List<AABB> Scissors = new List<AABB>();
-
-		[Obsolete]
-		public static void PushScissor(AABB Rect) {
-			AABB Parent = new AABB(Vector2.Zero, new Vector2(float.PositiveInfinity));
-
-			if (Scissors.Count > 0)
-				Parent = Scissors.Last();
-
-			Scissors.Add(Parent.Intersection(Rect));
-			Scissor(Scissors.Last(), true);
-		}
-
-		[Obsolete]
-		public static void PopScissor() {
-			Scissors.RemoveAt(Scissors.Count - 1);
-
-			if (Scissors.Count > 0)
-				Scissor(Scissors.Last(), true);
-			else
-				Scissor(0, 0, 0, 0, false);
-		}
-
 
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -366,8 +333,8 @@ namespace FishGfx.Graphics {
 			if (string.IsNullOrEmpty(Str))
 				return Vector2.Zero;
 
-			Pos.X = (int)Pos.X;
-			Pos.Y = (int)Pos.Y;
+			Pos.X = (int)(Pos.X - 0.5f);
+			Pos.Y = (int)(Pos.Y - 0.5f);
 
 			float OldScale = Font.ScaledFontSize;
 			if (FontSize > 0)

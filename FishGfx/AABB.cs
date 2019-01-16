@@ -32,6 +32,9 @@ namespace FishGfx {
 		public AABB(Vector2 Size) : this(Vector2.Zero, Size) {
 		}
 
+		public AABB(float X, float Y, float W, float H) : this(new Vector2(X,Y), new Vector2(W, H)) {
+		}
+
 		public bool Collide(AABB Other) {
 			foreach (var BoxVert in Other.GetVertices())
 				if (IsInside(BoxVert))

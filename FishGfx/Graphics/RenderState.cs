@@ -65,5 +65,7 @@ namespace FishGfx.Graphics {
 		//public bool EnableTexture2d;
 
 		public float PointSize;
+
+		public AABB ScissorRegion;
 	}
 }
