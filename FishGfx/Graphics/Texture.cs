@@ -328,10 +328,26 @@ namespace FishGfx.Graphics {
 			return new Texture(W, H);
 		}
 
+		public static void UpdateFromImage(Texture T, Image Img) {
+			T.SubImage2D(Img);
+		}
+
 		public static Texture FromImage(Image Img) {
 			Texture Tex = new Texture(Img.Width, Img.Height);
 			Tex.SubImage2D(Img);
 			return Tex;
+		}
+
+		public static void UpdateFromFile(Texture T, string FileName, bool FlipY = false) {
+			if (FlipY) {
+				using (Bitmap Bmp = new Bitmap(FileName)) {
+					Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
+					UpdateFromImage(T, Bmp);
+					return;
+				}
+			}
+
+			UpdateFromImage(T, Image.FromFile(FileName));
 		}
 
 		public static Texture FromFile(string FileName, bool FlipY = false) {
@@ -343,6 +359,15 @@ namespace FishGfx.Graphics {
 			}
 
 			return FromImage(Image.FromFile(FileName));
+		}
+
+		public static void CreateOrUpdateFromFile(ref Texture T, string FileName, bool FlipY = false) {
+			if (T == null) {
+				T = FromFile(FileName, FlipY);
+				return;
+			}
+
+			UpdateFromFile(T, FileName, FlipY);
 		}
 
 		public static Texture FromPixels(int Width, int Height, IntPtr Data, PixelFmt Fmt = PixelFmt.Bgra) {
