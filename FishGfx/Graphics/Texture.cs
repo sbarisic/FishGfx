@@ -108,6 +108,11 @@ namespace FishGfx.Graphics {
 			SetWrap((int)Wrap);
 		}
 
+		public void SetWrap(TextureWrap UWrap, TextureWrap VWrap) {
+			TextureParam(TextureParameterName.TextureWrapS, (int)UWrap);
+			TextureParam(TextureParameterName.TextureWrapT, (int)VWrap);
+		}
+
 		public void SetWrap(int Val = Gl.CLAMP_TO_EDGE) {
 			TextureParam(TextureParameterName.TextureWrapS, Val);
 			TextureParam(TextureParameterName.TextureWrapT, Val);
@@ -230,7 +235,7 @@ namespace FishGfx.Graphics {
 			Color[] Pixels = GetPixels();
 			for (int i = 0; i < Pixels.Length; i++) {
 				int Offset = i * sizeof(Color);
-				Marshal.Copy(BitConverter.GetBytes(Pixels[i].ColorInt), 0, Data.Scan0 + Offset, 4);
+				*(Color*)(Data.Scan0 + Offset) = new Color(Pixels[i].B, Pixels[i].G, Pixels[i].R, Pixels[i].A);
 			}
 
 			Bmp.UnlockBits(Data);
@@ -374,6 +379,11 @@ namespace FishGfx.Graphics {
 			Texture Tex = new Texture(Width, Height);
 			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, (GLPixelFormat)Fmt);
 			return Tex;
+		}
+
+		public static Texture FromPixels(int Width, int Height, byte[] Data, PixelFmt Fmt = PixelFmt.Bgra) {
+			fixed (byte* DataPtr = Data)
+				return FromPixels(Width, Height, (IntPtr)DataPtr, Fmt);
 		}
 	}
 }

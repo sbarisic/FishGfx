@@ -25,6 +25,7 @@ namespace FishGfx.Graphics {
 
 			State.EnableCullFace = true;
 			State.EnableDepthTest = true;
+			State.EnableDepthMask = true;
 			State.EnableScissorTest = false;
 			State.EnableBlend = true;
 
@@ -60,6 +61,8 @@ namespace FishGfx.Graphics {
 		static void SetRenderState(RenderState State) {
 			if (GlEnable(EnableCap.CullFace, State.EnableCullFace))
 				Gl.CullFace((CullFaceMode)State.CullFace);
+
+			Gl.DepthMask(State.EnableDepthMask);
 
 			if (GlEnable(EnableCap.DepthTest, State.EnableDepthTest))
 				Gl.DepthFunc((DepthFunction)State.DepthFunc);

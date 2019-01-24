@@ -22,7 +22,10 @@ namespace FishGfx {
 
 		public static readonly Color Orange = new Color() { R = 230, G = 140, B = 0, A = 255 };
 
-		public byte R, G, B, A;
+		public byte R;
+		public byte G;
+		public byte B;
+		public byte A;
 
 		public int ColorInt {
 			get {

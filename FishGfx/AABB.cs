@@ -18,6 +18,12 @@ namespace FishGfx {
 			}
 		}
 
+		public Vector3 Bounds {
+			get {
+				return Size - Position;
+			}
+		}
+
 		public AABB(Vector3 Position, Vector3 Size) {
 			this.Position = Position;
 			this.Size = Size;
