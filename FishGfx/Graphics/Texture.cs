@@ -137,6 +137,10 @@ namespace FishGfx.Graphics {
 				return;
 
 			Gl.Get(Gl.MAX_TEXTURE_MAX_ANISOTROPY, out float Max);
+			SetAnisotropy(Max);
+		}
+
+		public void SetAnisotropy(float Max) {
 			TextureParam((TextureParameterName)Gl.TEXTURE_MAX_ANISOTROPY, Max);
 		}
 
