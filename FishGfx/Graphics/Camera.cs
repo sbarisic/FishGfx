@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 //using OpenGL;
 using System.Numerics;
+using System.Text;
+using System.Threading.Tasks;
 
 //using Matrix4 = System.Numerics.Matrix4x4;
 
@@ -33,9 +33,10 @@ namespace FishGfx.Graphics {
 		public Vector3 RightNormal { get { return Vector3.UnitX; } }
 		public Vector3 UpNormal { get { return Vector3.UnitY; } }
 
-		public Vector3 WorldForwardNormal { get; private set; }
-		public Vector3 WorldRightNormal { get; private set; }
-		public Vector3 WorldUpNormal { get; private set; }
+		Vector3 _WorldForwardNormal, _WorldRightNormal, _WorldUpNormal;
+		public Vector3 WorldForwardNormal { get { Refresh(); return _WorldForwardNormal; } private set { _WorldForwardNormal = value; } }
+		public Vector3 WorldRightNormal { get { Refresh(); return _WorldRightNormal; } private set { _WorldRightNormal = value; } }
+		public Vector3 WorldUpNormal { get { Refresh(); return _WorldUpNormal; } private set { _WorldUpNormal = value; } }
 
 		public bool MouseMovement;
 		float Yaw, Pitch;
@@ -145,6 +146,7 @@ namespace FishGfx.Graphics {
 		void Refresh() {
 			if (!Dirty)
 				return;
+
 			Dirty = false;
 
 			World = CreateModel(Position, Vector3.One, Rotation);
