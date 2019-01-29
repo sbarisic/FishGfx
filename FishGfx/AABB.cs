@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Numerics;
 
 namespace FishGfx {
 	public struct AABB {
@@ -29,7 +29,7 @@ namespace FishGfx {
 			this.Size = Size;
 		}
 
-		public AABB(Vector3 Size ) : this(Vector3.Zero, Size) {
+		public AABB(Vector3 Size) : this(Vector3.Zero, Size) {
 		}
 
 		public AABB(Vector2 Position, Vector2 Size) : this(new Vector3(Position, 0), new Vector3(Size, 0)) {
@@ -38,7 +38,7 @@ namespace FishGfx {
 		public AABB(Vector2 Size) : this(Vector2.Zero, Size) {
 		}
 
-		public AABB(float X, float Y, float W, float H) : this(new Vector2(X,Y), new Vector2(W, H)) {
+		public AABB(float X, float Y, float W, float H) : this(new Vector2(X, Y), new Vector2(W, H)) {
 		}
 
 		public bool Collide(AABB Other) {
@@ -119,6 +119,23 @@ namespace FishGfx {
 
 		public override string ToString() {
 			return string.Format("{0} .. {2} ({1})", Position, Size, Position + Size);
+		}
+
+		public static AABB CalculateAABB(IEnumerable<Vector3> Verts) {
+			Vector3[] VertsArray = Verts.ToArray();
+
+			if (VertsArray.Length == 0)
+				return Empty;
+
+			Vector3 Min = VertsArray[0];
+			Vector3 Max = Min;
+
+			for (int i = 0; i < VertsArray.Length; i++) {
+				Min = Min.Min(VertsArray[i]);
+				Max = Max.Max(VertsArray[i]);
+			}
+
+			return new AABB(Min, Max);
 		}
 
 		public static AABB operator +(AABB A, AABB B) {
