@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Numerics;
 
 namespace FishGfx {
-	public struct Vertex3 {
+	public unsafe struct Vertex3 {
 		public Vector3 Position;
 		public Vector2 UV;
 		public Color Color;
@@ -36,6 +36,19 @@ namespace FishGfx {
 		public Vertex3(Vector3 Pos, Vector2 UV) : this(Pos, UV, Color.White) {
 		}
 
+		public byte[] ToByteArray() {
+			byte[] Bytes = new byte[sizeof(Vertex3)];
+
+			fixed (Vertex3* ThisPtr = &this) {
+				byte* ThisBytes = (byte*)ThisPtr;
+
+				for (int i = 0; i < Bytes.Length; i++)
+					Bytes[i] = ThisBytes[i];
+			}
+
+			return Bytes;
+		}
+
 		public static implicit operator Vertex3(Vector3 Pos) {
 			return new Vertex3(Pos);
 		}
@@ -49,6 +62,16 @@ namespace FishGfx {
 			}
 
 			return Result;
+		}
+
+		public static Vertex3 FromByteArray(byte[] Bytes) {
+			Vertex3 Vtx = new Vertex3();
+			byte* VtxPtr = (byte*)&Vtx;
+
+			for (int i = 0; i < Bytes.Length; i++)
+				VtxPtr[i] = Bytes[i];
+
+			return Vtx;
 		}
 	}
 }

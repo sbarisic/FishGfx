@@ -1,15 +1,24 @@
-﻿using System;
+﻿using OpenGL;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using OpenGL;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace FishGfx.Graphics {
 	public unsafe class Framebuffer : GraphicsObject {
+		// TODO: Unify
 		Dictionary<FramebufferAttachment, Texture> Textures;
+		Dictionary<FramebufferAttachment, Renderbuffer> Renderbuffers;
+
+		int AttachmentCount {
+			get {
+				return Textures.Count + Renderbuffers.Count;
+			}
+		}
+
 		FramebufferTarget Target;
 
 		public bool Multisampled { get; private set; }
@@ -21,13 +30,14 @@ namespace FishGfx.Graphics {
 				ID = Gl.GenFramebuffer();
 
 			Textures = new Dictionary<FramebufferAttachment, Texture>();
+			Renderbuffers = new Dictionary<FramebufferAttachment, Renderbuffer>();
 		}
 
-		void AddTexture(FramebufferAttachment Attachment, Texture Tex) {
-			if (Textures.Count == 0)
+		void AddAttachment(FramebufferAttachment Attachment, Texture Tex) {
+			if (AttachmentCount == 0)
 				Multisampled = Tex.Multisampled;
 			else if (Textures.Count > 0 && Tex.Multisampled != Multisampled)
-				throw new InvalidOperationException("Every attached texture has to have the same multisampling");
+				throw new InvalidOperationException("Every attachment has to have the same multisampling");
 
 			if (Textures.ContainsKey(Attachment))
 				Textures.Remove(Attachment);
@@ -39,6 +49,18 @@ namespace FishGfx.Graphics {
 			else {
 				Bind();
 				Gl.FramebufferTexture(FramebufferTarget.Framebuffer, Attachment, Tex.ID, 0);
+				Unbind();
+			}
+		}
+
+		void AddAttachment(FramebufferAttachment Attachment, Renderbuffer RBuf) {
+			// TODO: Check MSAA
+
+			if (Internal_OpenGL.Is45OrAbove)
+				Gl.NamedFramebufferRenderbuffer(ID, Attachment, RenderbufferTarget.Renderbuffer, RBuf.ID);
+			else {
+				Bind();
+				Gl.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, Attachment, RenderbufferTarget.Renderbuffer, RBuf.ID);
 				Unbind();
 			}
 		}
@@ -58,12 +80,20 @@ namespace FishGfx.Graphics {
 			return GetTexture(FramebufferAttachment.DepthAttachment);
 		}
 
-		public void AttachColorTexture(Texture Tex, int Color = 0) {
-			AddTexture(FramebufferAttachment.ColorAttachment0 + Color, Tex);
+		public void AttachColor(Texture Tex, int Color = 0) {
+			AddAttachment(FramebufferAttachment.ColorAttachment0 + Color, Tex);
 		}
 
-		public void AttachDepthTexture(Texture Tex) {
-			AddTexture(FramebufferAttachment.DepthAttachment, Tex);
+		public void AttachColor(Renderbuffer RBuf, int Color = 0) {
+			AddAttachment(FramebufferAttachment.ColorAttachment0 + Color, RBuf);
+		}
+
+		public void AttachDepth(Texture Tex) {
+			AddAttachment(FramebufferAttachment.DepthAttachment, Tex);
+		}
+
+		public void AttachDepth(Renderbuffer RBuf) {
+			AddAttachment(FramebufferAttachment.DepthAttachment, RBuf);
 		}
 
 		public void DrawBuffers(params int[] Indices) {
@@ -91,6 +121,24 @@ namespace FishGfx.Graphics {
 				Gl.ClearNamedFramebuffer(ID, OpenGL.Buffer.Stencil, 0, new int[] { Stencil.Value });
 		}
 
+		public void Blit(bool NearestFilter = true, bool ClearStencil = false) {
+			// TODO: DSA check 'nd shit
+
+			BindRead();
+			Gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+			//Gl.DrawBuffer(DrawBufferMode.Back);
+
+			ClearBufferMask ClearMask = ClearBufferMask.DepthBufferBit;
+			if (ClearStencil)
+				ClearMask |= ClearBufferMask.StencilBufferBit;
+
+			Texture Color0 = GetTexture(FramebufferAttachment.ColorAttachment0);
+			BlitFramebufferFilter Filter = NearestFilter ? BlitFramebufferFilter.Nearest : BlitFramebufferFilter.Linear;
+			//Gl.BlitNamedFramebuffer(ID, Target?.ID ?? 0, 0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
+
+			Gl.BlitFramebuffer(0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
+		}
+
 		void BindFramebuffer(FramebufferTarget Target) {
 #if DEBUG
 			FramebufferStatus S;
@@ -102,7 +150,7 @@ namespace FishGfx.Graphics {
 
 
 			if (S != FramebufferStatus.FramebufferComplete)
-				throw new InvalidOperationException("Incomplete framebuffer");
+				throw new InvalidOperationException("Incomplete framebuffer " + S);
 #endif
 
 			this.Target = Target;

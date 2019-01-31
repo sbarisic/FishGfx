@@ -39,26 +39,25 @@ namespace FishGfx.Graphics {
 	}
 
 	public unsafe class Texture : GraphicsObject {
-		internal const int Multisamples = 4;
-
 		internal const int RIGHT = 0;
 		internal const int LEFT = 1;
 		internal const int BOTTOM = 2;
 		internal const int TOP = 3;
 		internal const int FRONT = 4;
 		internal const int BACK = 5;
-
+		
 		public int Width { get; private set; }
 		public int Height { get; private set; }
 		public int MipLevels { get; private set; }
 		public bool Multisampled { get; private set; }
 		public bool IsCubeMap { get; private set; }
+		public int Multisamples { get; private set; }
 
 		public Vector2 Size { get { return new Vector2(Width, Height); } }
 
 		TextureTarget Target;
 
-		internal Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8) {
+		public Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
 			this.Target = Target;
 
 			if (Internal_OpenGL.Is45OrAbove)
@@ -66,9 +65,13 @@ namespace FishGfx.Graphics {
 			else
 				ID = Gl.GenTexture();
 
-			if (Target == TextureTarget.Texture2dMultisample)
-				Multisampled = true;
-			else if (Target == TextureTarget.TextureCubeMap)
+			Multisampled = Samples != 0;
+			Multisamples = Samples;
+
+			if (Target == TextureTarget.Texture2dMultisample && !Multisampled)
+				throw new InvalidOperationException("Please specify sample size for multisampled textures");
+
+			if (Target == TextureTarget.TextureCubeMap)
 				IsCubeMap = true;
 
 			if (!Multisampled) {
@@ -77,7 +80,7 @@ namespace FishGfx.Graphics {
 				SetMaxAnisotropy();
 			}
 
-			Storage2D(W, H, MipLevels, IntFormat);
+			Storage2D(W, H, MipLevels, IntFormat, FixedSampleLocations);
 		}
 
 		private void TextureParam(TextureParameterName ParamName, object Val) {
@@ -144,17 +147,17 @@ namespace FishGfx.Graphics {
 			TextureParam((TextureParameterName)Gl.TEXTURE_MAX_ANISOTROPY, Max);
 		}
 
-		public void Storage2D(int W, int H, int Levels = 1, InternalFormat IntFormat = InternalFormat.Rgba) {
+		public void Storage2D(int W, int H, int Levels = 1, InternalFormat IntFormat = InternalFormat.Rgba, bool FixedSampleLocations = false) {
 			Width = W;
 			Height = H;
 			MipLevels = Levels;
 
 			if (Multisampled) {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureStorage2DMultisample(ID, Multisamples, IntFormat, W, H, false);
+					Gl.TextureStorage2DMultisample(ID, Multisamples, IntFormat, W, H, FixedSampleLocations);
 				else {
 					Bind();
-					Gl.TexStorage2DMultisample(Target, Multisamples, IntFormat, W, H, false);
+					Gl.TexStorage2DMultisample(Target, Multisamples, IntFormat, W, H, FixedSampleLocations);
 					Unbind();
 				}
 			} else {

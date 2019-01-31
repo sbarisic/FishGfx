@@ -45,7 +45,7 @@ namespace FishGfx.Graphics {
 
 			return Uniforms;
 		}
-		
+
 		public static void Push(ShaderUniforms U) {
 			Uniforms.Push(U);
 		}
@@ -58,12 +58,17 @@ namespace FishGfx.Graphics {
 		public Matrix4 Model;
 		public float AlphaTest;
 
+		public Vector2 TextureSize;
+		public int MultisampleCount;
+
 		public void Bind(ShaderProgram Shader) {
 			Shader.Uniform2f("Viewport", Camera.ViewportSize);
 			Shader.UniformMatrix4f("View", Camera.View);
 			Shader.UniformMatrix4f("Project", Camera.Projection);
 			Shader.UniformMatrix4f("Model", Model);
 			Shader.Uniform1f("AlphaTest", AlphaTest);
+			Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
+			Shader.Uniform2f("TextureSize", TextureSize);
 		}
 	}
 

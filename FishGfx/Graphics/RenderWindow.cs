@@ -356,6 +356,8 @@ namespace FishGfx.Graphics {
 				throw new Exception("Render state count is not 0, did you forget to call Gfx.PopRenderState() somewhere?");
 
 			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
+
+			Gl.Enable(EnableCap.Multisample);
 		}
 
 		public void SwapBuffers() {

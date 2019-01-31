@@ -307,7 +307,7 @@ namespace FishGfx.Graphics {
 			}, Thickness);
 		}
 
-		public static void TexturedRectangle(float X, float Y, float W, float H, float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, Texture Texture = null) {
+		public static void TexturedRectangle(float X, float Y, float W, float H, float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, Texture Texture = null, ShaderProgram Shader = null) {
 			Init2D(PrimitiveType.Triangles);
 			Color C = Color ?? FishGfx.Color.White;
 
@@ -315,9 +315,19 @@ namespace FishGfx.Graphics {
 
 			Start2D();
 			Texture?.BindTextureUnit();
-			Default2D.Bind(ShaderUniforms.Current);
+
+			if (Shader != null)
+				Shader.Bind(ShaderUniforms.Current);
+			else
+				Default2D.Bind(ShaderUniforms.Current);
+
 			Mesh2D.Draw();
-			Default2D.Unbind();
+
+			if (Shader != null)
+				Shader.Unbind();
+			else
+				Default2D.Unbind();
+			
 			Texture?.UnbindTextureUnit();
 			End2D();
 		}
