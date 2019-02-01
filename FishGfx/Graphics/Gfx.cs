@@ -172,7 +172,7 @@ namespace FishGfx.Graphics {
 			Point(new Vertex3[] { Position });
 		}
 
-		public static void Line(Vertex3 Start, Vertex3 End, float Thickness) {
+		public static void Line(Vertex3 Start, Vertex3 End, float Thickness = 1) {
 			Init3D(PrimitiveType.Lines);
 			Mesh3D.SetVertices(Start, End);
 

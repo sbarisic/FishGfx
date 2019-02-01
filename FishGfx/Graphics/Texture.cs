@@ -45,17 +45,18 @@ namespace FishGfx.Graphics {
 		internal const int TOP = 3;
 		internal const int FRONT = 4;
 		internal const int BACK = 5;
-		
+
 		public int Width { get; private set; }
 		public int Height { get; private set; }
 		public int MipLevels { get; private set; }
 		public bool Multisampled { get; private set; }
 		public bool IsCubeMap { get; private set; }
 		public int Multisamples { get; private set; }
-
 		public Vector2 Size { get { return new Vector2(Width, Height); } }
 
 		TextureTarget Target;
+		InternalFormat InternalFormat;
+		bool FixedSampleLocations;
 
 		public Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
 			this.Target = Target;
@@ -135,6 +136,14 @@ namespace FishGfx.Graphics {
 			SetFilter(Filter, Filter);
 		}
 
+		public void SetMinFilter(TextureFilter Filter) {
+			TextureParam(TextureParameterName.TextureMinFilter, (int)Filter);
+		}
+
+		public void SetMagFilter(TextureFilter Filter) {
+			TextureParam(TextureParameterName.TextureMagFilter, (int)Filter);
+		}
+
 		public void SetMaxAnisotropy() {
 			if (!Internal_OpenGL.Is45OrAbove)
 				return;
@@ -151,6 +160,8 @@ namespace FishGfx.Graphics {
 			Width = W;
 			Height = H;
 			MipLevels = Levels;
+			InternalFormat = IntFormat;
+			this.FixedSampleLocations = FixedSampleLocations;
 
 			if (Multisampled) {
 				if (Internal_OpenGL.Is45OrAbove)
@@ -330,6 +341,11 @@ namespace FishGfx.Graphics {
 				Gl.GenerateMipmap(Target);
 		}
 
+		public void GenerateMipmap(int NewMipLevels) {
+			Storage2D(Width, Height, NewMipLevels, InternalFormat, FixedSampleLocations);
+			GenerateMipmap();
+		}
+
 		public override void GraphicsDispose() {
 			Gl.DeleteTextures(new uint[] { ID });
 		}
@@ -342,11 +358,28 @@ namespace FishGfx.Graphics {
 
 		public static void UpdateFromImage(Texture T, Image Img) {
 			T.SubImage2D(Img);
+
+			if (T.MipLevels != 1)
+				T.GenerateMipmap();
 		}
 
-		public static Texture FromImage(Image Img) {
-			Texture Tex = new Texture(Img.Width, Img.Height);
+		public static Texture FromImage(Image Img, int MipmapLevels = 0) {
+			bool GenerateMipmaps = MipmapLevels > 0;
+
+			Texture Tex = null;
+			if (Img.Size.Width == 1 || Img.Size.Height == 1)
+				GenerateMipmaps = false;
+
+			if (GenerateMipmaps)
+				Tex = new Texture(Img.Width, Img.Height, MipLevels: MipmapLevels);
+			else
+				Tex = new Texture(Img.Width, Img.Height);
+
 			Tex.SubImage2D(Img);
+
+			if (GenerateMipmaps)
+				Tex.GenerateMipmap();
+
 			return Tex;
 		}
 
@@ -362,15 +395,15 @@ namespace FishGfx.Graphics {
 			UpdateFromImage(T, Image.FromFile(FileName));
 		}
 
-		public static Texture FromFile(string FileName, bool FlipY = false) {
+		public static Texture FromFile(string FileName, bool FlipY = false, int MipmapLevels = 0) {
 			if (FlipY) {
 				using (Bitmap Bmp = new Bitmap(FileName)) {
 					Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
-					return FromImage(Bmp);
+					return FromImage(Bmp, MipmapLevels);
 				}
 			}
 
-			return FromImage(Image.FromFile(FileName));
+			return FromImage(Image.FromFile(FileName), MipmapLevels);
 		}
 
 		public static void CreateOrUpdateFromFile(ref Texture T, string FileName, bool FlipY = false) {
