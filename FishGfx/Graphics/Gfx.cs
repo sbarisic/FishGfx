@@ -28,6 +28,7 @@ namespace FishGfx.Graphics {
 			State.EnableDepthMask = true;
 			State.EnableScissorTest = false;
 			State.EnableBlend = true;
+			State.EnableDepthClamp = true;
 
 			State.PointSize = 1;
 			State.ScissorRegion = new AABB(new Vector2(0, 0));
@@ -78,6 +79,8 @@ namespace FishGfx.Graphics {
 				Gl.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
 
 			Gl.PointSize(State.PointSize);
+
+			GlEnable(Gl.DEPTH_CLAMP, State.EnableDepthClamp);
 		}
 
 		static bool GlEnable(EnableCap Cap, bool Enable) {
@@ -87,6 +90,10 @@ namespace FishGfx.Graphics {
 				Gl.Disable(Cap);
 
 			return Enable;
+		}
+
+		static bool GlEnable(int Cap, bool Enable) {
+			return GlEnable((EnableCap)Cap, Enable);
 		}
 
 
@@ -115,7 +122,9 @@ namespace FishGfx.Graphics {
 			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 		}
 
-
+		public static void ClearDepth() {
+			Gl.Clear(ClearBufferMask.DepthBufferBit);
+		}
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//////////////////////////////////////////////////// 3D  3D  3D ////////////////////////////////////////////////////////////
@@ -327,7 +336,7 @@ namespace FishGfx.Graphics {
 				Shader.Unbind();
 			else
 				Default2D.Unbind();
-			
+
 			Texture?.UnbindTextureUnit();
 			End2D();
 		}

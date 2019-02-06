@@ -163,8 +163,12 @@ namespace FishGfx.Graphics {
 			Rotation = Quaternion.CreateFromYawPitchRoll(Yaw * (float)Math.PI / 180, Pitch * (float)Math.PI / 180, 0);
 		}
 
+		public Vector3 ToWorld(Vector3 V) {
+			return Vector4.Transform(new Vector4(V, 0), World).XYZ();
+		}
+
 		public Vector3 ToWorldNormal(Vector3 V) {
-			Vector3 Ret = Vector4.Transform(new Vector4(V, 0), World).XYZ();
+			Vector3 Ret = ToWorld(V);
 
 			if (Ret.X == 0 && Ret.Y == 0 && Ret.Z == 0)
 				return Vector3.Zero;
@@ -194,6 +198,10 @@ namespace FishGfx.Graphics {
 
 		public static float VerticalFOVFromHorizontal(float FOV, float Width, float Height) {
 			return 2 * (float)Math.Atan(Math.Tan(FOV / 2) * (Height / Width));
+		}
+
+		public static float HorizontalFOVFromVertical(float FOV, float Width, float Height) {
+			return 2 * (float)Math.Atan(Math.Tan(FOV / 2) / Height * Width);
 		}
 
 		public static Matrix4x4 CreateModel(Vector3 Position, Vector3 Scale, Quaternion Rotation) {

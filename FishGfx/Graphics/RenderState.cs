@@ -62,6 +62,7 @@ namespace FishGfx.Graphics {
 		public bool EnableDepthTest;
 		public bool EnableScissorTest;
 		public bool EnableBlend;
+		public bool EnableDepthClamp;
 
 		/// <summary>
 		/// True to enable writing to the depth buffer
