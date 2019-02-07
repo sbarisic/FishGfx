@@ -117,9 +117,27 @@ namespace FishGfx.Graphics {
 			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 		}
 
-		public static void Clear(Color ClearColor) {
+		public static void Clear(Color ClearColor, bool Color, bool Depth, bool Stencil) {
+			if (!(Color || Depth || Stencil))
+				return;
+
 			Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
-			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+			ClearBufferMask ClearMask = 0;
+
+			if (Color)
+				ClearMask |= ClearBufferMask.ColorBufferBit;
+
+			if (Depth)
+				ClearMask |= ClearBufferMask.DepthBufferBit;
+
+			if (Stencil)
+				ClearMask |= ClearBufferMask.StencilBufferBit;
+
+			Gl.Clear(ClearMask);
+		}
+
+		public static void Clear(Color ClearColor) {
+			Clear(ClearColor, true, true, true);
 		}
 
 		public static void ClearDepth() {
