@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using System.Numerics;
 
 namespace FishGfx {
 	[StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -93,6 +94,10 @@ namespace FishGfx {
 
 		public static implicit operator Color(System.Drawing.Color Clr) {
 			return new Color(Clr.R, Clr.G, Clr.B, Clr.A);
+		}
+
+		public static implicit operator Vector3(Color Clr) {
+			return new Vector3(Clr.R, Clr.G, Clr.B) / 255.0f;
 		}
 	}
 }

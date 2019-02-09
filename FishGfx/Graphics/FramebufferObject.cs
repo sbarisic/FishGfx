@@ -121,22 +121,32 @@ namespace FishGfx.Graphics {
 				Gl.ClearNamedFramebuffer(ID, OpenGL.Buffer.Stencil, 0, new int[] { Stencil.Value });
 		}
 
-		public void Blit(bool NearestFilter = true, bool ClearStencil = false) {
+		public void Blit(bool Color, bool Depth, bool Stencil, Framebuffer Destination = null, bool NearestFilter = true) {
 			// TODO: DSA check 'nd shit
 
 			BindRead();
-			Gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+			Gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, Destination?.ID ?? 0);
 			//Gl.DrawBuffer(DrawBufferMode.Back);
 
-			ClearBufferMask ClearMask = ClearBufferMask.DepthBufferBit;
-			if (ClearStencil)
-				ClearMask |= ClearBufferMask.StencilBufferBit;
+			ClearBufferMask BlitMask = 0;
 
-			Texture Color0 = GetTexture(FramebufferAttachment.ColorAttachment0);
+			if (Color)
+				BlitMask |= ClearBufferMask.ColorBufferBit;
+
+			if (Depth)
+				BlitMask |= ClearBufferMask.DepthBufferBit;
+
+			if (Stencil)
+				BlitMask |= ClearBufferMask.StencilBufferBit;
+
+			if (BlitMask == 0)
+				throw new InvalidOperationException();
+
+			Texture Color0 = Textures.First().Value; //etTexture(FramebufferAttachment.ColorAttachment0);
 			BlitFramebufferFilter Filter = NearestFilter ? BlitFramebufferFilter.Nearest : BlitFramebufferFilter.Linear;
-			//Gl.BlitNamedFramebuffer(ID, Target?.ID ?? 0, 0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
 
-			Gl.BlitFramebuffer(0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
+			//Gl.BlitNamedFramebuffer(ID, Target?.ID ?? 0, 0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
+			Gl.BlitFramebuffer(0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, BlitMask, Filter);
 		}
 
 		void BindFramebuffer(FramebufferTarget Target) {

@@ -68,10 +68,25 @@ namespace FishGfx.Graphics {
 		/// True to enable writing to the depth buffer
 		/// </summary>
 		public bool EnableDepthMask;
+		public bool EnableColorMaskR;
+		public bool EnableColorMaskG;
+		public bool EnableColorMaskB;
+		public bool EnableColorMaskA;
 		//public bool EnableTexture2d;
 
 		public float PointSize;
 
 		public AABB ScissorRegion;
+
+		public void SetColorMask(bool R, bool G, bool B, bool A) {
+			EnableColorMaskR = R;
+			EnableColorMaskG = G;
+			EnableColorMaskB = B;
+			EnableColorMaskA = A;
+		}
+
+		public void SetColorMask(bool All) {
+			SetColorMask(All, All, All, All);
+		}
 	}
 }

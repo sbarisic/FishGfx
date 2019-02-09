@@ -25,10 +25,15 @@ namespace FishGfx.Graphics {
 
 			State.EnableCullFace = true;
 			State.EnableDepthTest = true;
-			State.EnableDepthMask = true;
 			State.EnableScissorTest = false;
 			State.EnableBlend = true;
 			State.EnableDepthClamp = true;
+
+			State.EnableDepthMask = true;
+			State.EnableColorMaskR = true;
+			State.EnableColorMaskG = true;
+			State.EnableColorMaskB = true;
+			State.EnableColorMaskA = true;
 
 			State.PointSize = 1;
 			State.ScissorRegion = new AABB(new Vector2(0, 0));
@@ -64,6 +69,7 @@ namespace FishGfx.Graphics {
 				Gl.CullFace((CullFaceMode)State.CullFace);
 
 			Gl.DepthMask(State.EnableDepthMask);
+			Gl.ColorMask(State.EnableColorMaskR, State.EnableColorMaskG, State.EnableColorMaskB, State.EnableColorMaskA);
 
 			if (GlEnable(EnableCap.DepthTest, State.EnableDepthTest))
 				Gl.DepthFunc((DepthFunction)State.DepthFunc);

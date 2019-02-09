@@ -54,21 +54,31 @@ namespace FishGfx.Graphics {
 			return Uniforms.Pop();
 		}
 
+		public static ShaderProgram NopShader;
+
 		public Camera Camera;
 		public Matrix4 Model;
 		public float AlphaTest;
 
+		public Vector2 Resolution;
 		public Vector2 TextureSize;
 		public int MultisampleCount;
 
 		public void Bind(ShaderProgram Shader) {
-			Shader.Uniform2f("Viewport", Camera.ViewportSize);
 			Shader.UniformMatrix4f("View", Camera.View);
 			Shader.UniformMatrix4f("Project", Camera.Projection);
 			Shader.UniformMatrix4f("Model", Model);
-			Shader.Uniform1f("AlphaTest", AlphaTest);
-			Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
-			Shader.Uniform2f("TextureSize", TextureSize);
+
+			// If it's an occlusion test, we most likely don't need these and
+			// should be using the NOP shader
+			//if (!(OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false)) {
+				Shader.Uniform2f("Viewport", Camera.ViewportSize);
+				Shader.Uniform1f("AlphaTest", AlphaTest);
+				Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
+				Shader.Uniform2f("TextureSize", TextureSize);
+				Shader.Uniform2f("Resolution", Resolution);
+				Shader.Uniform3f("ViewPos", Camera.Position);
+			//}
 		}
 	}
 
@@ -129,15 +139,25 @@ namespace FishGfx.Graphics {
 		}
 
 		public virtual void Bind(ShaderUniforms Uniforms) {
+			if ((OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false) && ShaderUniforms.NopShader != null) {
+				if (this != ShaderUniforms.NopShader) {
+					ShaderUniforms.NopShader.Bind(Uniforms);
+					return;
+				}
+			}
+
 			Uniforms.Bind(this);
 			Gl.UseProgram(ID);
 		}
 
-		/*public override void Bind() {
-			Gl.UseProgram(ID);
-		}*/
-
 		public override void Unbind() {
+			if ((OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false) && ShaderUniforms.NopShader != null) {
+				if (this != ShaderUniforms.NopShader) {
+					ShaderUniforms.NopShader.Unbind();
+					return;
+				}
+
+			}
 			Gl.UseProgram(0);
 		}
 
