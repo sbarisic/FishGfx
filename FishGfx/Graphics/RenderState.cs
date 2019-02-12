@@ -50,6 +50,30 @@ namespace FishGfx.Graphics {
 		OneMinusSrc1Alpha = BlendingFactor.OneMinusSrc1Alpha
 	}
 
+	public enum StencilFunction {
+		Skip = -1,
+		Never = 512,
+		Less = 513,
+		Equal = 514,
+		Lequal = 515,
+		Greater = 516,
+		Notequal = 517,
+		Gequal = 518,
+		Always = 519
+	}
+
+	public enum StencilOperation {
+		Skip = -1,
+		Zero = Gl.ZERO,
+		Invert = Gl.INVERT,
+		Keep = Gl.KEEP,
+		Replace = Gl.REPLACE,
+		Incr = Gl.INCR,
+		Decr = Gl.DECR,
+		IncrWrap = Gl.INCR_WRAP,
+		DecrWrap = Gl.DECR_WRAP,
+	}
+
 	public struct RenderState {
 		public CullFace CullFace;
 		public DepthFunc DepthFunc;
@@ -58,11 +82,30 @@ namespace FishGfx.Graphics {
 		public BlendFactor BlendFunc_Src;
 		public BlendFactor BlendFunc_Dst;
 
+		//public uint StencilMask;
+
+		public StencilFunction StencilFrontFunction;
+		public int StencilFrontReference;
+		public uint StencilFrontMask;
+
+		public StencilFunction StencilBackFunction;
+		public int StencilBackReference;
+		public uint StencilBackMask;
+
+		public StencilOperation StencilFrontSFail;
+		public StencilOperation StencilFrontDPFail;
+		public StencilOperation StencilFrontDPPass;
+
+		public StencilOperation StencilBackSFail;
+		public StencilOperation StencilBackDPFail;
+		public StencilOperation StencilBackDPPass;
+
 		public bool EnableCullFace;
 		public bool EnableDepthTest;
 		public bool EnableScissorTest;
 		public bool EnableBlend;
 		public bool EnableDepthClamp;
+		public bool EnableStencilTest;
 
 		/// <summary>
 		/// True to enable writing to the depth buffer
@@ -87,6 +130,18 @@ namespace FishGfx.Graphics {
 
 		public void SetColorMask(bool All) {
 			SetColorMask(All, All, All, All);
+		}
+
+		public void StencilFunc(StencilFunction Func, int Ref, uint Mask) {
+			StencilFrontFunction = StencilBackFunction = Func;
+			StencilFrontReference = StencilBackReference = Ref;
+			StencilFrontMask = StencilBackMask = Mask;
+		}
+
+		public void StencilOp(StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass) {
+			StencilFrontSFail = StencilBackSFail = SFail;
+			StencilFrontDPFail = StencilBackDPFail = DPFail;
+			StencilFrontDPPass = StencilBackDPPass = DPPass;
 		}
 	}
 }

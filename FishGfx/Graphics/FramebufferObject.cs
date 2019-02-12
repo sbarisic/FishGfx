@@ -88,8 +88,14 @@ namespace FishGfx.Graphics {
 			AddAttachment(FramebufferAttachment.ColorAttachment0 + Color, RBuf);
 		}
 
-		public void AttachDepth(Texture Tex) {
-			AddAttachment(FramebufferAttachment.DepthAttachment, Tex);
+		// TODO: Automatically detect stencil
+		public void AttachDepth(Texture Tex, bool HasStencil = false) {
+			FramebufferAttachment Attachment = FramebufferAttachment.DepthAttachment;
+
+			if (HasStencil)
+				Attachment = (FramebufferAttachment)Gl.DEPTH_STENCIL_ATTACHMENT;
+
+			AddAttachment(Attachment, Tex);
 		}
 
 		public void AttachDepth(Renderbuffer RBuf) {

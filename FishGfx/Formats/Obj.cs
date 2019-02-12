@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FishGfx;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -6,7 +7,6 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using FishGfx;
 
 namespace FishGfx.Formats {
 	public static class Obj {
@@ -88,13 +88,13 @@ namespace FishGfx.Formats {
 
 						for (int i = 2; i < Tokens.Length - 1; i++) {
 							string[] V = Tokens[1].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], UVs[V[1].ParseInt(1) - 1]));
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero));
 
 							V = Tokens[i].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], UVs[V[1].ParseInt(1) - 1]));
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero));
 
 							V = Tokens[i + 1].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], UVs[V[1].ParseInt(1) - 1]));
+							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero));
 						}
 
 						break;

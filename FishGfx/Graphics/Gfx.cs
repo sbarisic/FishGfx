@@ -23,9 +23,14 @@ namespace FishGfx.Graphics {
 			State.BlendFunc_Src = BlendFactor.SrcAlpha;
 			State.BlendFunc_Dst = BlendFactor.OneMinusSrcAlpha;
 
+			State.StencilFunc(StencilFunction.Skip, 0, 0);
+			State.StencilOp(StencilOperation.Skip, StencilOperation.Skip, StencilOperation.Skip);
+			//State.StencilMask = 0xFF;
+
+			State.EnableScissorTest = false;
+			State.EnableStencilTest = false;
 			State.EnableCullFace = true;
 			State.EnableDepthTest = true;
-			State.EnableScissorTest = false;
 			State.EnableBlend = true;
 			State.EnableDepthClamp = true;
 
@@ -81,6 +86,22 @@ namespace FishGfx.Graphics {
 				Gl.Scissor((int)Reg.Position.X, (int)Reg.Position.Y, (int)Reg.Size.X, (int)Reg.Size.Y);
 			}
 
+			if (GlEnable(EnableCap.StencilTest, State.EnableStencilTest)) {
+				//Gl.StencilMask(State.StencilMask);
+
+				if (State.StencilBackFunction != StencilFunction.Skip)
+					Gl.StencilFuncSeparate(StencilFaceDirection.Back, (OpenGL.StencilFunction)State.StencilBackFunction, State.StencilBackReference, State.StencilBackMask);
+
+				if (State.StencilFrontFunction != StencilFunction.Skip)
+					Gl.StencilFuncSeparate(StencilFaceDirection.Front, (OpenGL.StencilFunction)State.StencilFrontFunction, State.StencilFrontReference, State.StencilFrontMask);
+
+				if (!(State.StencilBackSFail == StencilOperation.Skip || State.StencilBackDPFail == StencilOperation.Skip || State.StencilBackDPPass == StencilOperation.Skip))
+					Gl.StencilOpSeparate(StencilFaceDirection.Back, (StencilOp)State.StencilBackSFail, (StencilOp)State.StencilBackDPFail, (StencilOp)State.StencilBackDPPass);
+
+				if (!(State.StencilFrontSFail == StencilOperation.Skip || State.StencilFrontDPFail == StencilOperation.Skip || State.StencilFrontDPPass == StencilOperation.Skip))
+					Gl.StencilOpSeparate(StencilFaceDirection.Front, (StencilOp)State.StencilFrontSFail, (StencilOp)State.StencilFrontDPFail, (StencilOp)State.StencilFrontDPPass);
+			}
+
 			if (GlEnable(EnableCap.Blend, State.EnableBlend))
 				Gl.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
 
@@ -118,28 +139,24 @@ namespace FishGfx.Graphics {
 			}
 		}
 
-		public static void Clear() {
-			Gl.ClearColor(69 / 255.0f, 112 / 255.0f, 56 / 255.0f, 1.0f);
-			Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
-		}
-
 		public static void Clear(Color ClearColor, bool Color, bool Depth, bool Stencil) {
 			if (!(Color || Depth || Stencil))
 				return;
 
-			Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
-			ClearBufferMask ClearMask = 0;
-
-			if (Color)
-				ClearMask |= ClearBufferMask.ColorBufferBit;
+			if (Color) {
+				Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
+				Gl.Clear(ClearBufferMask.ColorBufferBit);
+			}
 
 			if (Depth)
-				ClearMask |= ClearBufferMask.DepthBufferBit;
+				Gl.Clear(ClearBufferMask.DepthBufferBit);
 
 			if (Stencil)
-				ClearMask |= ClearBufferMask.StencilBufferBit;
+				Gl.Clear(ClearBufferMask.StencilBufferBit);
+		}
 
-			Gl.Clear(ClearMask);
+		public static void Clear() {
+			Clear(new Color(69, 112, 56), true, true, true);
 		}
 
 		public static void Clear(Color ClearColor) {
@@ -148,6 +165,11 @@ namespace FishGfx.Graphics {
 
 		public static void ClearDepth() {
 			Gl.Clear(ClearBufferMask.DepthBufferBit);
+		}
+
+		public static void ClearStencil(int S) {
+			Gl.ClearStencil(S);
+			Gl.Clear(ClearBufferMask.StencilBufferBit);
 		}
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
