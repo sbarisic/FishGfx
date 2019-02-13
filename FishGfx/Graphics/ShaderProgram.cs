@@ -189,6 +189,15 @@ namespace FishGfx.Graphics {
 			return true;
 		}
 
+		public bool Uniform4f<T>(string Uniform, T Val) where T : struct {
+			int Loc = GetUniformLocation(Uniform);
+			if (Loc == -1)
+				return false;
+
+			Gl.ProgramUniform4f(ID, Loc, 1, Val);
+			return true;
+		}
+
 		public bool Uniform2f<T>(string Uniform, T Val) where T : struct {
 			int Loc = GetUniformLocation(Uniform);
 			if (Loc == -1)

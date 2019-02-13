@@ -88,6 +88,10 @@ namespace FishGfx {
 			return !(A == B);
 		}
 
+		public static Color operator *(Color A, float Val) {
+			return ((Vector3)A) * Val;
+		}
+
 		public static implicit operator System.Drawing.Color(Color Clr) {
 			return System.Drawing.Color.FromArgb(Clr.A, Clr.R, Clr.G, Clr.B);
 		}
@@ -98,6 +102,14 @@ namespace FishGfx {
 
 		public static implicit operator Vector3(Color Clr) {
 			return new Vector3(Clr.R, Clr.G, Clr.B) / 255.0f;
+		}
+
+		public static implicit operator Vector4(Color Clr) {
+			return new Vector4(Clr.R, Clr.G, Clr.B, Clr.A) / 255.0f;
+		}
+
+		public static implicit operator Color(Vector3 V) {
+			return new Color((byte)(V.X * 255), (byte)(V.Y * 255), (byte)(V.Z * 255));
 		}
 	}
 }
