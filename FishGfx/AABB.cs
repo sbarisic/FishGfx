@@ -24,6 +24,12 @@ namespace FishGfx {
 			}
 		}
 
+		public Vector3 Center {
+			get {
+				return Position + Bounds / 2;
+			}
+		}
+
 		public AABB(Vector3 Position, Vector3 Size) {
 			this.Position = Position;
 			this.Size = Size;
@@ -67,7 +73,7 @@ namespace FishGfx {
 		public bool IsInside(Vector2 Point) {
 			return IsInside(new Vector3(Point, 0));
 		}
-
+		
 		public IEnumerable<Vector3> GetVertices() {
 			yield return Position;
 			yield return Position + Size;
