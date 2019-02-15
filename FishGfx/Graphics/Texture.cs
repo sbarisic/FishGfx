@@ -425,5 +425,42 @@ namespace FishGfx.Graphics {
 			fixed (byte* DataPtr = Data)
 				return FromPixels(Width, Height, (IntPtr)DataPtr, Fmt);
 		}
+
+		static bool EqualSize(Image A, Image B) {
+			if (A.Width == B.Width && A.Height == B.Height)
+				return true;
+
+			return false;
+		}
+
+		public static Texture FromFileCubemap(string Left, string Front, string Right, string Back, string Bottom, string Top) {
+			Image Lt = Image.FromFile(Left);
+			Image Ft = Image.FromFile(Front);
+			Image Rt = Image.FromFile(Right);
+			Image Bk = Image.FromFile(Back);
+			Image Bt = Image.FromFile(Bottom);
+			Image Tp = Image.FromFile(Top);
+
+			if (!(EqualSize(Lt, Ft) && EqualSize(Lt, Rt) && EqualSize(Lt, Bk) && EqualSize(Lt, Bt) && EqualSize(Lt, Tp)))
+				throw new Exception("All cubemap image sizes need to be of equal size");
+
+			int W = Lt.Width;
+			int H = Lt.Height;
+
+			Texture CubeTex = new Texture(W, H, TextureTarget.TextureCubeMap);
+			CubeTex.SetFilter(TextureFilter.Linear);
+
+			CubeTex.SubImage3D(Lt, Z: LEFT);
+			CubeTex.SubImage3D(Ft, Z: FRONT);
+			CubeTex.SubImage3D(Rt, Z: RIGHT);
+			CubeTex.SubImage3D(Bk, Z: BACK);
+			CubeTex.SubImage3D(Bt, Z: BOTTOM);
+			CubeTex.SubImage3D(Tp, Z: TOP);
+			return CubeTex;
+		}
+
+		public static Texture FromFileCubemap(string BaseName, string Extension = ".png") {
+			return FromFileCubemap(BaseName + "_lt" + Extension, BaseName + "_ft" + Extension, BaseName + "_rt" + Extension, BaseName + "_bk" + Extension, BaseName + "_bt" + Extension, BaseName + "_tp" + Extension);
+		}
 	}
 }
