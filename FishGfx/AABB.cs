@@ -30,6 +30,18 @@ namespace FishGfx {
 			}
 		}
 
+		public Vector3 Mins {
+			get {
+				return Position;
+			}
+		}
+
+		public Vector3 Maxs {
+			get {
+				return Position + Bounds;
+			}
+		}
+
 		public AABB(Vector3 Position, Vector3 Size) {
 			this.Position = Position;
 			this.Size = Size;

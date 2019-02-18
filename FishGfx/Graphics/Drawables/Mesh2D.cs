@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace FishGfx.Graphics.Drawables {
+	[Obsolete]
 	public class Mesh2D : IDrawable {
 		internal const int VERTEX_ATTRIB = 0;
 		internal const int COLOR_ATTRIB = 1;
@@ -15,7 +16,7 @@ namespace FishGfx.Graphics.Drawables {
 		public Color DefaultColor = Color.White;
 		public PolygonMode PolygonMode = PolygonMode.Fill;
 
-		VertexArray VAO;
+		public VertexArray VAO;
 		BufferObject VertBuffer, ColorBuffer, UVBuffer, ElementBuffer;
 		BufferUsage Usage;
 

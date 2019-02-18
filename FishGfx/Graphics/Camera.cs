@@ -192,6 +192,30 @@ namespace FishGfx.Graphics {
 			}
 		}
 
+		public Vector3[] GetFrustumPoints() {
+			Matrix4x4.Invert(View * Projection, out Matrix4x4 InverseClip);
+
+			Vector4[] Points = new Vector4[] {
+				// Near
+				Vector4.Transform(new Vector3(-1.0f, -1.0f, -1.0f), InverseClip),
+				Vector4.Transform(new Vector3(1.0f, -1.0f, -1.0f), InverseClip),
+				Vector4.Transform(new Vector3(1.0f, 1.0f, -1.0f), InverseClip),
+				Vector4.Transform(new Vector3(-1.0f, 1.0f, -1.0f), InverseClip),
+
+				// Far
+				Vector4.Transform(new Vector3(-1.0f, -1.0f, 1.0f), InverseClip),
+				Vector4.Transform(new Vector3(1.0f, -1.0f, 1.0f), InverseClip),
+				Vector4.Transform(new Vector3(1.0f, 1.0f, 1.0f), InverseClip),
+				Vector4.Transform(new Vector3(-1.0f, 1.0f, 1.0f), InverseClip)
+			};
+
+			Vector3[] Points3D = new Vector3[8];
+			for (int i = 0; i < Points3D.Length; i++)
+				Points3D[i] = Points[i].XYZ() / Points[i].W;
+
+			return Points3D;
+		}
+
 		public static Camera Create(Func<Camera> C) {
 			return C();
 		}
