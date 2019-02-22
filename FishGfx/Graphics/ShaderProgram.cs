@@ -54,7 +54,7 @@ namespace FishGfx.Graphics {
 			return Uniforms.Pop();
 		}
 
-		public static ShaderProgram NopShader;
+		//public static ShaderProgram NopShader;
 
 		public Camera Camera;
 		public Matrix4 Model;
@@ -139,25 +139,11 @@ namespace FishGfx.Graphics {
 		}
 
 		public virtual void Bind(ShaderUniforms Uniforms) {
-			if ((OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false) && ShaderUniforms.NopShader != null) {
-				if (this != ShaderUniforms.NopShader) {
-					ShaderUniforms.NopShader.Bind(Uniforms);
-					return;
-				}
-			}
-
 			Uniforms.Bind(this);
 			Gl.UseProgram(ID);
 		}
 
 		public override void Unbind() {
-			if ((OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false) && ShaderUniforms.NopShader != null) {
-				if (this != ShaderUniforms.NopShader) {
-					ShaderUniforms.NopShader.Unbind();
-					return;
-				}
-
-			}
 			Gl.UseProgram(0);
 		}
 

@@ -247,6 +247,9 @@ namespace FishGfx.Graphics {
 			Glfw.WindowHint(Glfw.Hint.OpenglForwardCompat, false);
 #if DEBUG
 			Glfw.WindowHint(Glfw.Hint.OpenglDebugContext, true);
+#else
+			if ((Major == 4 && Minor >= 6) || (Major > 4))
+				Glfw.WindowHint(Glfw.Hint.ContextNoError, true);
 #endif
 			// TODO: Allow external version select
 

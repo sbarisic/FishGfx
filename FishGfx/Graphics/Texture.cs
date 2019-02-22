@@ -13,6 +13,157 @@ using GLPixelFormat = OpenGL.PixelFormat;
 using IPixFormat = System.Drawing.Imaging.PixelFormat;
 
 namespace FishGfx.Graphics {
+	public enum TextureInternalFmt : int {
+		DepthComponent = 6402,
+		Red = 6403,
+		Rgb = 6407,
+		Rgba = 6408,
+		R3G3B2 = 10768,
+		Alpha4 = 32827,
+		Alpha8 = 32828,
+		Alpha12 = 32829,
+		Alpha16 = 32830,
+		Luminance4 = 32831,
+		Luminance8 = 32832,
+		Luminance12 = 32833,
+		Luminance16 = 32834,
+		Luminance4Alpha4 = 32835,
+		Luminance6Alpha2 = 32836,
+		Luminance8Alpha8 = 32837,
+		Luminance12Alpha4 = 32838,
+		Luminance12Alpha12 = 32839,
+		Luminance16Alpha16 = 32840,
+		Intensity = 32841,
+		Intensity4 = 32842,
+		Intensity8 = 32843,
+		Intensity12 = 32844,
+		Intensity16 = 32845,
+		Rgb2Ext = 32846,
+		Rgb4 = 32847,
+		Rgb5 = 32848,
+		Rgb8 = 32849,
+		Rgb10 = 32850,
+		Rgb12 = 32851,
+		Rgb16 = 32852,
+		Rgba4 = 32854,
+		Rgb5A1 = 32855,
+		Rgba8 = 32856,
+		Rgb10A2 = 32857,
+		Rgba12 = 32858,
+		Rgba16 = 32859,
+		DualAlpha4Sgis = 33040,
+		DualAlpha8Sgis = 33041,
+		DualAlpha12Sgis = 33042,
+		DualAlpha16Sgis = 33043,
+		DualLuminance4Sgis = 33044,
+		DualLuminance8Sgis = 33045,
+		DualLuminance12Sgis = 33046,
+		DualLuminance16Sgis = 33047,
+		DualIntensity4Sgis = 33048,
+		DualIntensity8Sgis = 33049,
+		DualIntensity12Sgis = 33050,
+		DualIntensity16Sgis = 33051,
+		DualLuminanceAlpha4Sgis = 33052,
+		DualLuminanceAlpha8Sgis = 33053,
+		QuadAlpha4Sgis = 33054,
+		QuadAlpha8Sgis = 33055,
+		QuadLuminance4Sgis = 33056,
+		QuadLuminance8Sgis = 33057,
+		QuadIntensity4Sgis = 33058,
+		QuadIntensity8Sgis = 33059,
+		DepthComponent16 = 33189,
+		DepthComponent24 = 33190,
+		DepthComponent32 = 33191,
+		CompressedRed = 33317,
+		CompressedRg = 33318,
+		Rg = 33319,
+		R8 = 33321,
+		R16 = 33322,
+		Rg8 = 33323,
+		Rg16 = 33324,
+		R16f = 33325,
+		R32f = 33326,
+		Rg16f = 33327,
+		Rg32f = 33328,
+		R8i = 33329,
+		R8ui = 33330,
+		R16i = 33331,
+		R16ui = 33332,
+		R32i = 33333,
+		R32ui = 33334,
+		Rg8i = 33335,
+		Rg8ui = 33336,
+		Rg16i = 33337,
+		Rg16ui = 33338,
+		Rg32i = 33339,
+		Rg32ui = 33340,
+		CompressedRgbS3tcDxt1Ext = 33776,
+		CompressedRgbaS3tcDxt1Ext = 33777,
+		CompressedRgbaS3tcDxt3Ext = 33778,
+		CompressedRgbaS3tcDxt5Ext = 33779,
+		CompressedRgb = 34029,
+		CompressedRgba = 34030,
+		DepthStencil = 34041,
+		Rgba32f = 34836,
+		Rgba16f = 34842,
+		Rgb16f = 34843,
+		Depth24Stencil8 = 35056,
+		R11fG11fB10f = 35898,
+		Rgb9E5 = 35901,
+		Srgb = 35904,
+		Srgb8 = 35905,
+		SrgbAlpha = 35906,
+		Srgb8Alpha8 = 35907,
+		CompressedSrgb = 35912,
+		CompressedSrgbAlpha = 35913,
+		CompressedSrgbS3tcDxt1Ext = 35916,
+		CompressedSrgbAlphaS3tcDxt1Ext = 35917,
+		CompressedSrgbAlphaS3tcDxt3Ext = 35918,
+		CompressedSrgbAlphaS3tcDxt5Ext = 35919,
+		DepthComponent32f = 36012,
+		Depth32fStencil8 = 36013,
+		Rgba32ui = 36208,
+		Rgb32ui = 36209,
+		Rgba16ui = 36214,
+		Rgb16ui = 36215,
+		Rgba8ui = 36220,
+		Rgb8ui = 36221,
+		Rgba32i = 36226,
+		Rgb32i = 36227,
+		Rgba16i = 36232,
+		Rgb16i = 36233,
+		Rgba8i = 36238,
+		Rgb8i = 36239,
+		DepthComponent32fNv = 36267,
+		Depth32fStencil8Nv = 36268,
+		CompressedRedRgtc1 = 36283,
+		CompressedSignedRedRgtc1 = 36284,
+		CompressedRgRgtc2 = 36285,
+		CompressedSignedRgRgtc2 = 36286,
+		CompressedRgbaBptcUnorm = 36492,
+		CompressedSrgbAlphaBptcUnorm = 36493,
+		CompressedRgbBptcSignedFloat = 36494,
+		CompressedRgbBptcUnsignedFloat = 36495,
+		R8Snorm = 36756,
+		Rg8Snorm = 36757,
+		Rgb8Snorm = 36758,
+		Rgba8Snorm = 36759,
+		R16Snorm = 36760,
+		Rg16Snorm = 36761,
+		Rgb16Snorm = 36762,
+		Rgb10A2ui = 36975,
+		CompressedR11Eac = 37488,
+		CompressedSignedR11Eac = 37489,
+		CompressedRg11Eac = 37490,
+		CompressedSignedRg11Eac = 37491,
+		CompressedRgb8Etc2 = 37492,
+		CompressedSrgb8Etc2 = 37493,
+		CompressedRgb8PunchthroughAlpha1Etc2 = 37494,
+		CompressedSrgb8PunchthroughAlpha1Etc2 = 37495,
+		CompressedRgba8Etc2Eac = 37496,
+		CompressedSrgb8Alpha8Etc2Eac = 37497
+	}
+
 	public enum TextureWrap : int {
 		Repeat = Gl.REPEAT,
 		MirroredRepeat = Gl.MIRRORED_REPEAT,
@@ -58,7 +209,7 @@ namespace FishGfx.Graphics {
 		InternalFormat InternalFormat;
 		bool FixedSampleLocations;
 
-		public Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, InternalFormat IntFormat = InternalFormat.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
+		public Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
 			this.Target = Target;
 
 			if (Internal_OpenGL.Is45OrAbove)
@@ -156,27 +307,27 @@ namespace FishGfx.Graphics {
 			TextureParam((TextureParameterName)Gl.TEXTURE_MAX_ANISOTROPY, Max);
 		}
 
-		public void Storage2D(int W, int H, int Levels = 1, InternalFormat IntFormat = InternalFormat.Rgba, bool FixedSampleLocations = false) {
+		public void Storage2D(int W, int H, int Levels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba, bool FixedSampleLocations = false) {
 			Width = W;
 			Height = H;
 			MipLevels = Levels;
-			InternalFormat = IntFormat;
+			InternalFormat = (InternalFormat)IntFormat;
 			this.FixedSampleLocations = FixedSampleLocations;
 
 			if (Multisampled) {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureStorage2DMultisample(ID, Multisamples, IntFormat, W, H, FixedSampleLocations);
+					Gl.TextureStorage2DMultisample(ID, Multisamples, InternalFormat, W, H, FixedSampleLocations);
 				else {
 					Bind();
-					Gl.TexStorage2DMultisample(Target, Multisamples, IntFormat, W, H, FixedSampleLocations);
+					Gl.TexStorage2DMultisample(Target, Multisamples, InternalFormat, W, H, FixedSampleLocations);
 					Unbind();
 				}
 			} else {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureStorage2D(ID, Levels, IntFormat, W, H);
+					Gl.TextureStorage2D(ID, Levels, InternalFormat, W, H);
 				else {
 					Bind();
-					Gl.TexStorage2D(Target, Levels, IntFormat, W, H);
+					Gl.TexStorage2D(Target, Levels, InternalFormat, W, H);
 					Unbind();
 				}
 			}
@@ -342,7 +493,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public void GenerateMipmap(int NewMipLevels) {
-			Storage2D(Width, Height, NewMipLevels, InternalFormat, FixedSampleLocations);
+			Storage2D(Width, Height, NewMipLevels, (TextureInternalFmt)InternalFormat, FixedSampleLocations);
 			GenerateMipmap();
 		}
 

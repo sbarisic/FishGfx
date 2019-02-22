@@ -74,6 +74,11 @@ namespace FishGfx.Graphics {
 		DecrWrap = Gl.DECR_WRAP,
 	}
 
+	public enum StencilFace {
+		Front,
+		Back
+	}
+
 	public struct RenderState {
 		public CullFace CullFace;
 		public DepthFunc DepthFunc;
@@ -138,10 +143,26 @@ namespace FishGfx.Graphics {
 			StencilFrontMask = StencilBackMask = Mask;
 		}
 
+		public void StencilOpSeparate(StencilFace F, StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass) {
+			if (F == StencilFace.Front) {
+				StencilFrontSFail = SFail;
+				StencilFrontDPFail = DPFail;
+				StencilFrontDPPass = DPPass;
+			} else {
+				StencilBackSFail = SFail;
+				StencilBackDPFail = DPFail;
+				StencilBackDPPass = DPPass;
+			}
+		}
+
 		public void StencilOp(StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass) {
-			StencilFrontSFail = StencilBackSFail = SFail;
-			StencilFrontDPFail = StencilBackDPFail = DPFail;
-			StencilFrontDPPass = StencilBackDPPass = DPPass;
+			StencilOpSeparate(StencilFace.Front, SFail, DPFail, DPPass);
+			StencilOpSeparate(StencilFace.Back, SFail, DPFail, DPPass);
+		}
+
+		public void BlendFunc(BlendFactor Src, BlendFactor Dst) {
+			BlendFunc_Src = Src;
+			BlendFunc_Dst = Dst;
 		}
 	}
 }

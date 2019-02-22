@@ -149,10 +149,10 @@ namespace FishGfx.Graphics {
 			}
 
 			if (Depth)
-				Gl.Clear(ClearBufferMask.DepthBufferBit);
+				ClearDepth();
 
 			if (Stencil)
-				Gl.Clear(ClearBufferMask.StencilBufferBit);
+				ClearStencil();
 		}
 
 		public static void Clear() {
@@ -163,11 +163,12 @@ namespace FishGfx.Graphics {
 			Clear(ClearColor, true, true, true);
 		}
 
-		public static void ClearDepth() {
+		public static void ClearDepth(float Value = 1) {
+			Gl.ClearDepth(Value);
 			Gl.Clear(ClearBufferMask.DepthBufferBit);
 		}
 
-		public static void ClearStencil(int S) {
+		public static void ClearStencil(int S = 0) {
 			Gl.ClearStencil(S);
 			Gl.Clear(ClearBufferMask.StencilBufferBit);
 		}
