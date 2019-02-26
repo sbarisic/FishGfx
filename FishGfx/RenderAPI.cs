@@ -1,5 +1,6 @@
 ﻿using FishGfx.Graphics;
 using Glfw3;
+using OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,6 +53,22 @@ namespace FishGfx {
 			Glfw.VideoMode VideoMode = Glfw.GetVideoMode(Monitor);
 			Width = VideoMode.Width;
 			Height = VideoMode.Height;
+		}
+
+		public static void DbgPushGroup(string Name) {
+			Gl.PushDebugGroup(DebugSource.DebugSourceApplication, 0, Name.Length, Name);
+		}
+
+		public static void DbgPopGroup() {
+			Gl.PopDebugGroup();
+		}
+
+		public static void DbgMessage(string Msg) {
+			Gl.DebugMessageInsert(DebugSource.DebugSourceApplication, DebugType.DebugTypeOther, 0, DebugSeverity.DebugSeverityLow, Msg.Length, Msg);
+		}
+
+		public static void DbgMessage(string Fmt, params object[] Args) {
+			DbgMessage(string.Format(Fmt, Args));
 		}
 	}
 }

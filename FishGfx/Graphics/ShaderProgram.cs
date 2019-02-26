@@ -65,6 +65,9 @@ namespace FishGfx.Graphics {
 		public int MultisampleCount;
 
 		public void Bind(ShaderProgram Shader) {
+			Shader.Uniform1f("Near", Camera.Near);
+			Shader.Uniform1f("Far", Camera.Far);
+
 			Shader.UniformMatrix4f("View", Camera.View);
 			Shader.UniformMatrix4f("Project", Camera.Projection);
 			Shader.UniformMatrix4f("Model", Model);
@@ -72,12 +75,12 @@ namespace FishGfx.Graphics {
 			// If it's an occlusion test, we most likely don't need these and
 			// should be using the NOP shader
 			//if (!(OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false)) {
-				Shader.Uniform2f("Viewport", Camera.ViewportSize);
-				Shader.Uniform1f("AlphaTest", AlphaTest);
-				Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
-				Shader.Uniform2f("TextureSize", TextureSize);
-				Shader.Uniform2f("Resolution", Resolution);
-				Shader.Uniform3f("ViewPos", Camera.Position);
+			Shader.Uniform2f("Viewport", Camera.ViewportSize);
+			Shader.Uniform1f("AlphaTest", AlphaTest);
+			Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
+			Shader.Uniform2f("TextureSize", TextureSize);
+			Shader.Uniform2f("Resolution", Resolution);
+			Shader.Uniform3f("ViewPos", Camera.Position);
 			//}
 		}
 	}
