@@ -40,10 +40,8 @@ namespace FishGfx.Graphics {
 				throw new Exception("Could not initialize glfw");
 
 			Glfw.SetErrorCallback((Err, Msg) => {
-				//#if !DEBUG
 				if (Err == Glfw.ErrorCode.VersionUnavailable)
 					return;
-				//#endif
 
 				throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
 			});
@@ -71,12 +69,17 @@ namespace FishGfx.Graphics {
 			Gl.DebugMessageCallback((Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
 				Khronos.KhronosApi.LogComment(string.Format("OpenGL {0} {1} {2}, {3}: {4}", Src, DbgType, ID, Severity, Encoding.ASCII.GetString((byte*)Buffer, Len)));
 
-				/*if (Severity == Gl.DebugSeverity.Notification)
+				/*// Will use video memory blah blah
+				if (Src == DebugSource.DebugSourceApi && DbgType == DebugType.DebugTypeOther && ID == 131185)
 					return;*/
 
-				// Will use video memory blah blah
-				if (Src == DebugSource.DebugSourceApi && DbgType == DebugType.DebugTypeOther && ID == 131185)
-					return;
+				if (Src == DebugSource.DebugSourceApplication) {
+					if (DbgType == DebugType.DebugTypeMarker)
+						return;
+
+					if (DbgType == DebugType.DebugTypePushGroup || DbgType == DebugType.DebugTypePopGroup)
+						return;
+				}
 
 				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
 
