@@ -68,6 +68,8 @@ namespace FishGfx.Formats {
 
 					MS.Position = 0;
 					Read(MS);
+
+					LoadTextures(Path.GetDirectoryName(FntFile));
 				}
 			}
 

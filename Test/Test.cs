@@ -44,23 +44,23 @@ namespace Test {
 
 			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
 				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
-			
+
 			Stopwatch SWatch = Stopwatch.StartNew();
 			float Dt = 0;
 
 			{
-			RenderState RS = Gfx.CreateDefaultRenderState();
-			RS.EnableDepthTest = false;
-			Gfx.PushRenderState(RS);
+				RenderState RS = Gfx.CreateDefaultRenderState();
+				RS.EnableDepthTest = false;
+				Gfx.PushRenderState(RS);
 			}
 
 			ShaderUniforms U = ShaderUniforms.Current;
 			U.Camera.SetOrthogonal(0, 0, Window.WindowWidth, Window.WindowHeight);
 
 			Texture Test = Texture.FromFile("data/textures/test16.png");
-			
+
 			GfxFont Fnt = new BMFont("data/fonts/proggy.fnt");
-			Fnt.FlipY = true;
+			//Fnt.FlipY = true;
 
 			Texture ProggyTex = null;
 			using (Bitmap Bmp = new Bitmap("data/fonts/proggy_0.png")) {
@@ -82,7 +82,9 @@ namespace Test {
 
 
 					for (int i = 0; i < 30; i++) {
-						Gfx.DrawText(Fnt, ProggyTex, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
+						//Gfx.DrawText(Fnt, ProggyTex, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
+
+						Gfx.DrawText(Fnt, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
 					}
 
 					Gfx.Rectangle(300, 100, 100, 100);
