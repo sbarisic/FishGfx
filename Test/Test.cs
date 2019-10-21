@@ -57,16 +57,8 @@ namespace Test {
 			ShaderUniforms U = ShaderUniforms.Current;
 			U.Camera.SetOrthogonal(0, 0, Window.WindowWidth, Window.WindowHeight);
 
-			Texture Test = Texture.FromFile("data/textures/test16.png");
-
 			GfxFont Fnt = new BMFont("data/fonts/proggy.fnt");
-			//Fnt.FlipY = true;
 
-			Texture ProggyTex = null;
-			using (Bitmap Bmp = new Bitmap("data/fonts/proggy_0.png")) {
-				Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
-				ProggyTex = Texture.FromImage(Bmp);
-			}
 
 			while (!Window.ShouldClose) {
 				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
@@ -79,16 +71,11 @@ namespace Test {
 
 				//*
 				{
-
-
 					for (int i = 0; i < 30; i++) {
-						//Gfx.DrawText(Fnt, ProggyTex, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
-
 						Gfx.DrawText(Fnt, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
 					}
 
 					Gfx.Rectangle(300, 100, 100, 100);
-
 				}
 				//*/
 
