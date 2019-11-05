@@ -7,79 +7,51 @@ using System.Numerics;
 
 namespace FishGfx.Graphics.Drawables {
 	public class Sprite : IDrawable {
-		Mesh2D Mesh;
-		bool Dirty;
+		Mesh3D Mesh;
 
-		Vector2 _Size;
-		public Vector2 Size {
-			get {
-				return _Size;
-			}
-			set {
-				_Size = value;
-				Dirty = true;
-			}
-		}
-
-		Vector2 _Position;
-		public Vector2 Position {
-			get {
-				return _Position;
-			}
-			set {
-				_Position = value;
-				Dirty = true;
-			}
-		}
-
+		public ShaderProgram Shader;
 		public Texture Texture;
+		public Vector2 Position;
+		public Vector2 Size;
 
-		public Sprite(Vector2 Position, Vector2 Size) {
-			this.Size = Size;
-			this.Position = Position;
-			Mesh = new Mesh2D();
+		public Sprite() {
+			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
+			Mesh.PrimitiveType = PrimitiveType.Triangles;
 
-			Mesh.SetUVs(new Vector2[] {
-				new Vector2(0, 0),
-				new Vector2(1, 0),
-				new Vector2(1, 1),
-				new Vector2(0, 0),
-				new Vector2(1, 1),
-				new Vector2(0, 1)
+			Mesh.SetVertices(new Vertex3[] {
+				new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
+				new Vertex3(new Vector3(0, 1, 0), new Vector2(0, 1)),
+				new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
+				new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
+				new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
+				new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0))
 			});
+
+			Position = new Vector2(0, 0);
+			Size = new Vector2(1, 1);
 		}
 
-		public Sprite(float X, float Y, float W, float H) : this(new Vector2(X, Y), new Vector2(W, H)) {
+		public Sprite(Texture Tex) : this() {
+			Texture = Tex;
 		}
 
-		public void SetColors(Color[] Colors) {
-			if (Colors.Length != 6)
-				throw new Exception("Colors has to have 6 elements");
-
-			Mesh.SetColors(Colors);
+		public void SetUVs(Vector2 A, Vector2 B, Vector2 C, Vector2 D) {
+			Mesh.SetUVs(new Vector2[] { A, B, C, C, D, A });
 		}
 
-		public void SetColors(Color C) {
-			SetColors(new Color[] { C, C, C, C, C, C });
+		public void SetUVs(Vector2 Min, Vector2 Max) {
+			SetUVs(Min, new Vector2(Min.X, Max.Y), Max, new Vector2(Max.X, Min.Y));
 		}
 
 		public void Draw() {
-			if (Dirty) {
-				Dirty = false;
+			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Size.X, Size.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
 
-				Mesh.SetVertices(new Vector2[] {
-					new Vector2(0, 0) + Position,
-					new Vector2(Size.X, 0) + Position,
-					new Vector2(Size.X, Size.Y) + Position,
-					new Vector2(0, 0) + Position,
-					new Vector2(Size.X, Size.Y) + Position,
-					new Vector2(0, Size.Y) + Position,
-				});
-			}
-
+			Shader?.Bind(ShaderUniforms.Current);
 			Texture?.BindTextureUnit();
 			Mesh.Draw();
 			Texture?.UnbindTextureUnit();
+			Shader?.Unbind();
 		}
 	}
 }
+

@@ -135,6 +135,8 @@
     <Compile Include="Formats\GenericMesh.cs" />
     <Compile Include="Formats\Smd.cs" />
     <Compile Include="Formats\Obj.cs" />
+    <Compile Include="Game\FishGfxGame.cs" />
+    <Compile Include="Game\InputManager.cs" />
     <Compile Include="GfxFont.cs" />
     <Compile Include="Glfw3\Glfw.cs" />
     <Compile Include="Glfw3\Glfw.Delegate.cs" />
@@ -228,13 +230,13 @@
     <None Include="data\defaultRayCast.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="data\defaultFlatColor.frag">
+    <None Include="data\shaders\defaultFlatColor.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="data\default3d.vert">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="data\default.frag">
+    <None Include="data\shaders\default.frag">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="data\default.vert">

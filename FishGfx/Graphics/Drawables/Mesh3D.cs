@@ -87,10 +87,17 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		void SetUVs(uint Size, IntPtr Data, int ElementCount, int RelativeOffset, int Stride) {
-			if (UVBuffer == null) {
+			/*if (UVBuffer == null) {
 				VAO.AttribFormat(UV_ATTRIB, ElementCount);
 				VAO.AttribBinding(UV_ATTRIB, VAO.BindVertexBuffer(UVBuffer = new BufferObject(), Offset: RelativeOffset, Stride: Stride));
-			}
+			}*/
+
+			if (UVBuffer == null)
+				UVBuffer = new BufferObject();
+
+			// TODO: Fix this, is BindVertexBuffer correct? Shouldn't this be element buffer? How to change stride on the fly?
+			VAO.AttribFormat(UV_ATTRIB, ElementCount);
+			VAO.AttribBinding(UV_ATTRIB, VAO.BindVertexBuffer(UVBuffer, Offset: RelativeOffset, Stride: Stride));
 
 			if (Data != IntPtr.Zero)
 				UVBuffer.SetData(Size, Data, (int)(Size / Stride), Usage);

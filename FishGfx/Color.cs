@@ -9,19 +9,26 @@ using System.Numerics;
 namespace FishGfx {
 	[StructLayout(LayoutKind.Sequential, Pack = 1)]
 	public struct Color {
-		public static readonly Color Transparent = new Color() { R = 0, G = 0, B = 0, A = 0 };
-		public static readonly Color White = new Color() { R = 255, G = 255, B = 255, A = 255 };
-		public static readonly Color Black = new Color() { R = 0, G = 0, B = 0, A = 255 };
+		public static readonly Color Transparent = new Color(0, 0, 0, 0);
+		public static readonly Color White = new Color(255, 255, 255, 255);
+		public static readonly Color Black = new Color(0, 0, 0, 255);
 
-		public static readonly Color Red = new Color() { R = 255, G = 0, B = 0, A = 255 };
-		public static readonly Color Green = new Color() { R = 0, G = 255, B = 0, A = 255 };
-		public static readonly Color Blue = new Color() { R = 0, G = 0, B = 255, A = 255 };
+		public static readonly Color Red = new Color(255, 0, 0);
+		public static readonly Color Green = new Color(0, 255, 0);
+		public static readonly Color Blue = new Color(0, 0, 255);
 
-		public static readonly Color Yellow = new Color() { R = 255, G = 255, B = 0, A = 255 };
-		public static readonly Color Cyan = new Color() { R = 0, G = 255, B = 255, A = 255 };
-		public static readonly Color Magenta = new Color() { R = 255, G = 0, B = 255, A = 255 };
+		public static readonly Color Yellow = new Color(255, 255, 0);
+		public static readonly Color Cyan = new Color(0, 255, 255);
+		public static readonly Color Magenta = new Color(255, 0, 255);
 
-		public static readonly Color Orange = new Color() { R = 230, G = 140, B = 0, A = 255 };
+		public static readonly Color Orange = new Color(230, 140, 0);
+
+		// https://digitalsynopsis.com/design/color-thesaurus-correct-names-of-shades/
+		public static readonly Color Amber = new Color(137, 49, 1);
+		public static readonly Color Apple = new Color(169, 27, 13);
+		public static readonly Color Pine = new Color(35, 79, 30);
+		public static readonly Color Coal = new Color(11, 10, 8);
+		public static readonly Color Sky = new Color(98, 197, 218);
 
 		public byte R;
 		public byte G;

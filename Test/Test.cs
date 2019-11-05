@@ -5,17 +5,59 @@ using FishGfx.Graphics.Drawables;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
+//using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx.Game;
 
 namespace Test {
+	class TestGame : FishGfxGame {
+		protected override RenderWindow CreateWindow() {
+			return new RenderWindow(800, 600, "Test");
+		}
+
+		Sprite TestSprite;
+
+		protected override void Init() {
+			TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
+			TestSprite.Position = new Vector2(0, 0);
+			TestSprite.Size = new Vector2(32, 32);
+			TestSprite.Shader = DefaultShader;
+		}
+
+		protected override void Update(float Dt) {
+			if (Input.GetKeyPressed(Key.Escape))
+				Window.Close();
+
+			const float MoveSpeed = 100;
+
+			if (Input.GetKeyDown(Key.W)) {
+				TestSprite.Position += new Vector2(0, MoveSpeed) * Dt;
+			}
+			if (Input.GetKeyDown(Key.A)) {
+				TestSprite.Position += new Vector2(-MoveSpeed, 0) * Dt;
+			}
+			if (Input.GetKeyDown(Key.S)) {
+				TestSprite.Position += new Vector2(0, -MoveSpeed) * Dt;
+			}
+			if (Input.GetKeyDown(Key.D)) {
+				TestSprite.Position += new Vector2(MoveSpeed, 0) * Dt;
+			}
+		}
+
+		protected override void Draw(float Dt) {
+			Gfx.Clear(Color.Sky);
+			TestSprite.Draw();
+		}
+	}
+
 	class Program {
 		static void Main(string[] args) {
-			Run();
+			FishGfxGame.Run(new TestGame());
+			//Run();
 		}
 
 		static RenderWindow Window;

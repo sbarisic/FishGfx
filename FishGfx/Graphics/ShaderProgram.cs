@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Matrix4 = System.Numerics.Matrix4x4;
 using Vector2 = System.Numerics.Vector2;
+using Vector3 = System.Numerics.Vector3;
 
 namespace FishGfx.Graphics {
 	public enum ShaderType {
@@ -63,7 +64,7 @@ namespace FishGfx.Graphics {
 		public Vector2 Resolution;
 		public Vector2 TextureSize;
 		public int MultisampleCount;
-
+		
 		public void Bind(ShaderProgram Shader) {
 			Shader.Uniform1f("Near", Camera.Near);
 			Shader.Uniform1f("Far", Camera.Far);
