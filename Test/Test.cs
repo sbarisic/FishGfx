@@ -16,7 +16,7 @@ using FishGfx.Game;
 namespace Test {
 	class TestGame : FishGfxGame {
 		protected override RenderWindow CreateWindow() {
-			return new RenderWindow(800, 600, "Test");
+			return new RenderWindow(1366, 768, "Test");
 		}
 
 		//Sprite TestSprite;
@@ -28,13 +28,15 @@ namespace Test {
 			TestSprite.Size = new Vector2(32, 32);
 			TestSprite.Shader = DefaultShader;*/
 
-			Map = new Tilemap(16, 10, 10);
+			Map = new Tilemap(16, 15, 15, Texture.FromFile("data/textures/tileset/test.png"));
 			Map.Shader = DefaultShader;
-			Map.TileAtlas = Texture.FromFile("data/textures/tileset/test.png");
-			Map.SetTile(1, 0, 0);
-			Map.SetTile(2, 1, 0);
-			Map.SetTile(3, 0, 1);
-			Map.SetTile(4, 2, 2);
+			Map.Position = new Vector2(100, 100);
+
+			/*Map.ClearTiles(68);
+			Map.SetTile(0, 0, 0);
+			Map.SetTile(1, 1, 1);
+			Map.SetTile(2, 2, 2);
+			Map.SetTile(3, 3, 3);*/
 		}
 
 		protected override void Update(float Dt) {

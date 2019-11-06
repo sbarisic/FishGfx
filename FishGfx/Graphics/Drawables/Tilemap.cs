@@ -12,18 +12,26 @@ namespace FishGfx.Graphics.Drawables {
 		Mesh3D Mesh;
 
 		public ShaderProgram Shader;
-		public Texture TileAtlas;
 		public Vector2 Position;
 		public Vector2 Size;
 
 		bool Dirty;
+		int DrawableTileCount;
+
+		Texture TileAtlas;
+		int TileAtlasWidth;
+		int TileAtlasHeight;
+		int TextureWidth;
+		int TextureHeight;
 
 		int Width;
 		int Height;
 		int TileSize;
 		int[] Tiles;
 
-		public Tilemap(int TileSize, int Width, int Height) {
+		Vector2 TileUVSize;
+
+		public Tilemap(int TileSize, int Width, int Height, Texture TileAtlasTexture) {
 			this.TileSize = TileSize;
 			this.Width = Width;
 			this.Height = Height;
@@ -44,12 +52,38 @@ namespace FishGfx.Graphics.Drawables {
 			Position = new Vector2(0, 0);
 			Size = new Vector2(1, 1);
 
+			SetTileAtlas(TileAtlasTexture);
+			ClearTiles(-1);
+		}
+
+		public void ClearTiles(int Tile) {
+			for (int i = 0; i < Tiles.Length; i++)
+				Tiles[i] = Tile;
+			Dirty = true;
+		}
+
+		public void SetTileAtlas(Texture Tex) {
+			TileAtlas = Tex;
+
+			TextureWidth = Tex.Width;
+			TextureHeight = Tex.Height;
+
+			TileAtlasWidth = TextureWidth / TileSize;
+			TileAtlasHeight = TextureHeight / TileSize;
+
+			TileUVSize = new Vector2(TileSize, TileSize) / new Vector2(TextureWidth, TextureHeight);
+
 			Dirty = true;
 		}
 
 		void IdxToXY(int Idx, out int X, out int Y) {
 			X = Idx % Width;
 			Y = (Idx - X) / Width;
+		}
+
+		void TileToTileXY(int Tile, out int X, out int Y) {
+			X = Tile % TileAtlasWidth;
+			Y = (Tile - X) / TileAtlasWidth;
 		}
 
 		public void SetTile(int Tile, int X, int Y) {
@@ -75,25 +109,28 @@ namespace FishGfx.Graphics.Drawables {
 
 		void Update() {
 			VertList.Clear();
+			DrawableTileCount = 0;
 
 			for (int i = 0; i < Tiles.Length; i++) {
 				int Tile = Tiles[i];
-				if (Tile == 0)
+				if (Tile < 0)
 					continue;
 
 				IdxToXY(i, out int X, out int Y);
+				TileToTileXY(Tile, out int TX, out int TY);
 
-				// TODO: UV size and position bad
+				Vector2 UVPos = new Vector2(TX, TY) * TileUVSize;
+				UVPos.Y = 1.0f - UVPos.Y - TileUVSize.Y;
 
 				Vector3 Pos = new Vector3(X, Y, 0) * TileSize;
-				Vector2 UVPos = new Vector2(X, Y) * TileSize;
+				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos));
+				VertList.Add(new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileUVSize.Y)));
+				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileUVSize.X, TileUVSize.Y)));
+				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileUVSize.X, TileUVSize.Y)));
+				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileUVSize.X, 0)));
+				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos));
 
-				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos));
-				VertList.Add(new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileSize)));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileSize, TileSize)));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileSize, TileSize)));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileSize, 0)));
-				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos));
+				DrawableTileCount++;
 			}
 
 			Mesh.SetVertices(VertList.ToArray());
@@ -104,6 +141,9 @@ namespace FishGfx.Graphics.Drawables {
 				Dirty = false;
 				Update();
 			}
+
+			if (DrawableTileCount <= 0)
+				return;
 
 			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Size.X, Size.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
 
