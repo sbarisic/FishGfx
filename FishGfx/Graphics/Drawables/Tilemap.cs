@@ -18,7 +18,17 @@ namespace FishGfx.Graphics.Drawables {
 
 		bool Dirty;
 
+		int Width;
+		int Height;
+		int TileSize;
+		int[] Tiles;
+
 		public Tilemap(int TileSize, int Width, int Height) {
+			this.TileSize = TileSize;
+			this.Width = Width;
+			this.Height = Height;
+			Tiles = new int[Width * Height];
+
 			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
 			Mesh.PrimitiveType = PrimitiveType.Triangles;
 
@@ -37,8 +47,54 @@ namespace FishGfx.Graphics.Drawables {
 			Dirty = true;
 		}
 
+		void IdxToXY(int Idx, out int X, out int Y) {
+			X = Idx % Width;
+			Y = (Idx - X) / Width;
+		}
+
+		public void SetTile(int Tile, int X, int Y) {
+			if (X < 0 || X >= Width)
+				throw new Exception("X out of bounds");
+
+			if (Y < 0 || Y >= Height)
+				throw new Exception("Y out of bounds");
+
+			Tiles[Y * Width + X] = Tile;
+			Dirty = true;
+		}
+
+		public int GetTile(int X, int Y) {
+			if (X < 0 || X >= Width)
+				throw new Exception("X out of bounds");
+
+			if (Y < 0 || Y >= Height)
+				throw new Exception("Y out of bounds");
+
+			return Tiles[Y * Width + X];
+		}
+
 		void Update() {
 			VertList.Clear();
+
+			for (int i = 0; i < Tiles.Length; i++) {
+				int Tile = Tiles[i];
+				if (Tile == 0)
+					continue;
+
+				IdxToXY(i, out int X, out int Y);
+
+				// TODO: UV size and position bad
+
+				Vector3 Pos = new Vector3(X, Y, 0) * TileSize;
+				Vector2 UVPos = new Vector2(X, Y) * TileSize;
+
+				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos));
+				VertList.Add(new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileSize)));
+				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileSize, TileSize)));
+				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileSize, TileSize)));
+				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileSize, 0)));
+				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos));
+			}
 
 			Mesh.SetVertices(VertList.ToArray());
 		}

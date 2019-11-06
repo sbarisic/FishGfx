@@ -19,13 +19,22 @@ namespace Test {
 			return new RenderWindow(800, 600, "Test");
 		}
 
-		Sprite TestSprite;
+		//Sprite TestSprite;
+		Tilemap Map;
 
 		protected override void Init() {
-			TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
+			/*TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
 			TestSprite.Position = new Vector2(0, 0);
 			TestSprite.Size = new Vector2(32, 32);
-			TestSprite.Shader = DefaultShader;
+			TestSprite.Shader = DefaultShader;*/
+
+			Map = new Tilemap(16, 10, 10);
+			Map.Shader = DefaultShader;
+			Map.TileAtlas = Texture.FromFile("data/textures/tileset/test.png");
+			Map.SetTile(1, 0, 0);
+			Map.SetTile(2, 1, 0);
+			Map.SetTile(3, 0, 1);
+			Map.SetTile(4, 2, 2);
 		}
 
 		protected override void Update(float Dt) {
@@ -34,7 +43,7 @@ namespace Test {
 
 			const float MoveSpeed = 100;
 
-			if (Input.GetKeyDown(Key.W)) {
+			/*if (Input.GetKeyDown(Key.W)) {
 				TestSprite.Position += new Vector2(0, MoveSpeed) * Dt;
 			}
 			if (Input.GetKeyDown(Key.A)) {
@@ -45,12 +54,13 @@ namespace Test {
 			}
 			if (Input.GetKeyDown(Key.D)) {
 				TestSprite.Position += new Vector2(MoveSpeed, 0) * Dt;
-			}
+			}*/
 		}
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
-			TestSprite.Draw();
+			//TestSprite.Draw();
+			Map.Draw();
 		}
 	}
 
