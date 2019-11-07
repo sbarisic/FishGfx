@@ -10,33 +10,113 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics {
 	public class Camera {
-		public float Near { get; private set; }
-		public float Far { get; private set; }
-		public float VerticalFOV { get; private set; }
-		public float HorizontalFOV { get; private set; }
+		public float Near {
+			get; private set;
+		}
+		public float Far {
+			get; private set;
+		}
+		public float VerticalFOV {
+			get; private set;
+		}
+		public float HorizontalFOV {
+			get; private set;
+		}
 
 		Matrix4x4 _View;
 		Matrix4x4 _World;
 		Vector3 _Position;
 		Quaternion _Rotation;
 
-		public Matrix4x4 View { get { Refresh(); return _View; } private set { _View = value; } }
-		public Matrix4x4 World { get { Refresh(); return _World; } private set { _World = value; } }
-		public Matrix4x4 Projection { get; private set; }
-		public Vector3 Position { get { return _Position; } set { Dirty = true; _Position = value; } }
-		public Quaternion Rotation { get { return _Rotation; } set { Dirty = true; _Rotation = value; } }
+		public Matrix4x4 View {
+			get {
+				Refresh();
+				return _View;
+			}
+			private set {
+				_View = value;
+			}
+		}
+		public Matrix4x4 World {
+			get {
+				Refresh();
+				return _World;
+			}
+			private set {
+				_World = value;
+			}
+		}
+		public Matrix4x4 Projection {
+			get; private set;
+		}
+		public Vector3 Position {
+			get {
+				return _Position;
+			}
+			set {
+				Dirty = true;
+				_Position = value;
+			}
+		}
+		public Quaternion Rotation {
+			get {
+				return _Rotation;
+			}
+			set {
+				Dirty = true;
+				_Rotation = value;
+			}
+		}
 
 		bool Dirty;
-		public Vector2 ViewportSize { get; private set; }
+		public Vector2 ViewportSize {
+			get; private set;
+		}
 
-		public Vector3 ForwardNormal { get { return -Vector3.UnitZ; } }
-		public Vector3 RightNormal { get { return Vector3.UnitX; } }
-		public Vector3 UpNormal { get { return Vector3.UnitY; } }
+		public Vector3 ForwardNormal {
+			get {
+				return -Vector3.UnitZ;
+			}
+		}
+		public Vector3 RightNormal {
+			get {
+				return Vector3.UnitX;
+			}
+		}
+		public Vector3 UpNormal {
+			get {
+				return Vector3.UnitY;
+			}
+		}
 
 		Vector3 _WorldForwardNormal, _WorldRightNormal, _WorldUpNormal;
-		public Vector3 WorldForwardNormal { get { Refresh(); return _WorldForwardNormal; } private set { _WorldForwardNormal = value; } }
-		public Vector3 WorldRightNormal { get { Refresh(); return _WorldRightNormal; } private set { _WorldRightNormal = value; } }
-		public Vector3 WorldUpNormal { get { Refresh(); return _WorldUpNormal; } private set { _WorldUpNormal = value; } }
+		public Vector3 WorldForwardNormal {
+			get {
+				Refresh();
+				return _WorldForwardNormal;
+			}
+			private set {
+				_WorldForwardNormal = value;
+			}
+		}
+		public Vector3 WorldRightNormal {
+			get {
+				Refresh();
+				return _WorldRightNormal;
+			}
+			private set {
+				_WorldRightNormal = value;
+			}
+		}
+		public Vector3 WorldUpNormal {
+			get {
+				Refresh();
+				return _WorldUpNormal;
+			}
+			private set {
+				_WorldUpNormal = value;
+			}
+		}
 
 		public bool MouseMovement;
 		float Yaw, Pitch;
@@ -124,15 +204,21 @@ namespace FishGfx.Graphics {
 		}
 
 		public Vector3 ScreenToWorld(Vector2 Screen, Matrix4x4 ModelMatrix) {
-			Matrix4x4 ProjView = Projection * View * ModelMatrix;
+			Matrix4x4 ProjView = ModelMatrix * View * Projection;
 			Matrix4x4.Invert(ProjView, out Matrix4x4 InvProjView);
 
 			Vector4 Pt = new Vector4((Screen / (ViewportSize / 2)) - Vector2.One, 0, 1);
+			Pt.Y = -Pt.Y; // TODO: Maybe remove?
+
 			Pt = Vector4.Transform(Pt, InvProjView);
-			Pt /= Pt.W;
+			//Pt /= Pt.W; // TODO: Maybe remove?
 			Pt.Z = 0;
 
 			return Pt.XYZ();
+		}
+
+		public Vector3 ScreenToWorld(Vector2 Screen) {
+			return ScreenToWorld(Screen, Matrix4x4.Identity);
 		}
 
 		public Vector3 ScreenToWorldDirection(Vector2 Screen, Matrix4x4 ModelMatrix) {
