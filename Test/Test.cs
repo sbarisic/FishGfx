@@ -39,13 +39,11 @@ namespace Test {
 			Map.SetTile(2, 2, 2);
 			Map.SetTile(3, 3, 3);*/
 
-			int W = 40;
+			int W = 50;
 			int H = 20;
 
 			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/Nice_curses_12x12.png"), 12, W, H, H * 2, DefaultShader);
-
-			for (int i = 0; i < 11; i++)
-				Con.PrintLine("Hello World #" + i);
+			Con.PrintLine("Hello World!");
 
 			Window.OnChar += (Wnd, Chr, Uni) => {
 				Con.Print(Chr);

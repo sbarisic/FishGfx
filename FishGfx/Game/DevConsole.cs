@@ -54,7 +54,9 @@ namespace FishGfx.Game {
 			this.BufferHeight = BufferHeight;
 			BufferWidth = Width;
 			CursorX = 0;
-			CursorY = BufferHeight - 1;
+			//CursorY = BufferHeight - 1;
+			CursorY = 0;
+
 			ViewScroll = 0;
 			CharSize = Size;
 
@@ -69,12 +71,12 @@ namespace FishGfx.Game {
 			if (CursorY < 0) {
 				CursorY = 0;
 
-				// TODO
-				for (int X = 0; X < BufferWidth; X++) {
-					char CC = GetChar(X, CursorY - 1);
-					SetChar(X, CursorY, CC);
-					SetChar(X, CursorY - 1, (char)0);
-				}
+				for (int Y = BufferHeight - 2; Y >= 0; Y--)
+					for (int X = 0; X < BufferWidth; X++) {
+						char CC = GetChar(X, Y);
+						SetChar(X, Y + 1, CC);
+						SetChar(X, Y, (char)0);
+					}
 			}
 
 			return;
