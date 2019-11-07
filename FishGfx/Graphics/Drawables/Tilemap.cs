@@ -13,7 +13,7 @@ namespace FishGfx.Graphics.Drawables {
 
 		public ShaderProgram Shader;
 		public Vector2 Position;
-		public Vector2 Size;
+		public Vector2 Scale;
 
 		bool Dirty;
 		int DrawableTileCount;
@@ -24,8 +24,14 @@ namespace FishGfx.Graphics.Drawables {
 		int TextureWidth;
 		int TextureHeight;
 
-		int Width;
-		int Height;
+		public int Width {
+			get; private set;
+		}
+
+		public int Height {
+			get; private set;
+		}
+
 		int TileSize;
 		int[] Tiles;
 
@@ -50,13 +56,13 @@ namespace FishGfx.Graphics.Drawables {
 			});
 
 			Position = new Vector2(0, 0);
-			Size = new Vector2(1, 1);
+			Scale = new Vector2(1, 1);
 
 			SetTileAtlas(TileAtlasTexture);
-			ClearTiles(-1);
+			ClearTiles();
 		}
 
-		public void ClearTiles(int Tile) {
+		public void ClearTiles(int Tile = -1) {
 			for (int i = 0; i < Tiles.Length; i++)
 				Tiles[i] = Tile;
 			Dirty = true;
@@ -86,7 +92,7 @@ namespace FishGfx.Graphics.Drawables {
 			Y = (Tile - X) / TileAtlasWidth;
 		}
 
-		public void SetTile(int Tile, int X, int Y) {
+		public void SetTile(int X, int Y, int Tile) {
 			if (X < 0 || X >= Width)
 				throw new Exception("X out of bounds");
 
@@ -105,6 +111,25 @@ namespace FishGfx.Graphics.Drawables {
 				throw new Exception("Y out of bounds");
 
 			return Tiles[Y * Width + X];
+		}
+
+		public bool TryWorldPosToTile(Vector2 WorldPos, out int X, out int Y) {
+			X = Y = 0;
+
+			// TODO: Clean that shit up, what the fuck
+			Vector2 LocalPos = WorldPos - Position;
+
+			if (LocalPos.X < 0 || LocalPos.Y < 0)
+				return false;
+
+			LocalPos = (LocalPos / Scale) / TileSize;
+			X = (int)LocalPos.X;
+			Y = (int)LocalPos.Y;
+
+			if (X >= Width || Y >= Height)
+				return false;
+
+			return true;
 		}
 
 		void Update() {
@@ -145,7 +170,7 @@ namespace FishGfx.Graphics.Drawables {
 			if (DrawableTileCount <= 0)
 				return;
 
-			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Size.X, Size.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
+			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
 
 			Shader?.Bind(ShaderUniforms.Current);
 			TileAtlas?.BindTextureUnit();

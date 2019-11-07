@@ -12,8 +12,6 @@ namespace FishGfx.Game {
 		protected RenderWindow Window;
 		protected int Framerate = 60;
 
-		protected ShaderUniforms Uniforms;
-
 
 		public InputManager Input {
 			get;
@@ -47,8 +45,7 @@ namespace FishGfx.Game {
 			Game.Window = Game.CreateWindow();
 			Game.Input = new InputManager(Game.Window);
 
-			Game.Uniforms = ShaderUniforms.Current;
-			Game.Uniforms.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
+			ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
 
 			Game.CreateResources();
 			Game.Init();

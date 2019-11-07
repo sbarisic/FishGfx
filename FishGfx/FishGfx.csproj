@@ -135,6 +135,7 @@
     <Compile Include="Formats\GenericMesh.cs" />
     <Compile Include="Formats\Smd.cs" />
     <Compile Include="Formats\Obj.cs" />
+    <Compile Include="Game\DevConsole.cs" />
     <Compile Include="Game\FishGfxGame.cs" />
     <Compile Include="Game\InputManager.cs" />
     <Compile Include="GfxFont.cs" />
@@ -291,6 +292,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\fonts\proggy_0.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\fonts\tileset\hack32.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\fonts\tileset\hack64.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\fonts\tileset\Nice_curses_12x12.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\textures\colors\white.png">

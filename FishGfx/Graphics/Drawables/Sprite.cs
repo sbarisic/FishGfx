@@ -11,8 +11,9 @@ namespace FishGfx.Graphics.Drawables {
 
 		public ShaderProgram Shader;
 		public Texture Texture;
+		public Vector2 Center;
 		public Vector2 Position;
-		public Vector2 Size;
+		public Vector2 Scale;
 
 		public Sprite() {
 			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
@@ -26,9 +27,9 @@ namespace FishGfx.Graphics.Drawables {
 				new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
 				new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0))
 			});
-
+			Center = new Vector2(0, 0);
 			Position = new Vector2(0, 0);
-			Size = new Vector2(1, 1);
+			Scale = new Vector2(1, 1);
 		}
 
 		public Sprite(Texture Tex) : this() {
@@ -44,7 +45,7 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public void Draw() {
-			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Size.X, Size.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
+			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X - Center.X, Position.Y - Center.Y, 0);
 
 			Shader?.Bind(ShaderUniforms.Current);
 			Texture?.BindTextureUnit();

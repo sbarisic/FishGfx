@@ -16,53 +16,70 @@ using FishGfx.Game;
 namespace Test {
 	class TestGame : FishGfxGame {
 		protected override RenderWindow CreateWindow() {
-			return new RenderWindow(1366, 768, "Test");
+			return new RenderWindow(800, 600, "Test");
 		}
 
-		//Sprite TestSprite;
-		Tilemap Map;
+		DevConsole Con;
 
 		protected override void Init() {
 			/*TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
 			TestSprite.Position = new Vector2(0, 0);
-			TestSprite.Size = new Vector2(32, 32);
-			TestSprite.Shader = DefaultShader;*/
+			TestSprite.Scale = new Vector2(16, 16);
+			TestSprite.Center = TestSprite.Scale / 2;
+			TestSprite.Shader = DefaultShader;
 
 			Map = new Tilemap(16, 15, 15, Texture.FromFile("data/textures/tileset/test.png"));
 			Map.Shader = DefaultShader;
 			Map.Position = new Vector2(100, 100);
+			Map.Scale = new Vector2(2, 2);
 
-			/*Map.ClearTiles(68);
+			Map.ClearTiles(68);
 			Map.SetTile(0, 0, 0);
 			Map.SetTile(1, 1, 1);
 			Map.SetTile(2, 2, 2);
 			Map.SetTile(3, 3, 3);*/
+
+			int W = 40;
+			int H = 20;
+
+			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/Nice_curses_12x12.png"), 12, W, H, H * 2, DefaultShader);
+
+			for (int i = 0; i < 11; i++)
+				Con.PrintLine("Hello World #" + i);
+
+			Window.OnChar += (Wnd, Chr, Uni) => {
+				Con.Print(Chr);
+			};
+
+			Window.OnKey += (Wnd, Key, Scancode, Pressed, Repeat, Mods) => {
+				if (!Pressed)
+					return;
+
+				if (Key == Key.Enter || Key == Key.NumpadEnter)
+					Con.PutChar('\n');
+
+				if (Key == Key.Up)
+					Con.SetViewScroll(Con.GetViewScroll() + 1);
+
+				if (Key == Key.Down)
+					Con.SetViewScroll(Con.GetViewScroll() - 1);
+			};
+
+			RenderState RS = Gfx.CreateDefaultRenderState();
+			RS.EnableDepthTest = false;
+			Gfx.PushRenderState(RS);
 		}
 
 		protected override void Update(float Dt) {
 			if (Input.GetKeyPressed(Key.Escape))
 				Window.Close();
-
-			const float MoveSpeed = 100;
-
-			/*if (Input.GetKeyDown(Key.W)) {
-				TestSprite.Position += new Vector2(0, MoveSpeed) * Dt;
-			}
-			if (Input.GetKeyDown(Key.A)) {
-				TestSprite.Position += new Vector2(-MoveSpeed, 0) * Dt;
-			}
-			if (Input.GetKeyDown(Key.S)) {
-				TestSprite.Position += new Vector2(0, -MoveSpeed) * Dt;
-			}
-			if (Input.GetKeyDown(Key.D)) {
-				TestSprite.Position += new Vector2(MoveSpeed, 0) * Dt;
-			}*/
 		}
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
-			//TestSprite.Draw();
-			Map.Draw();
+
+			Gfx.FilledRectangle(0, 0, Con.CharSize * Con.Width, Con.CharSize * Con.Height, Color.Coal);
+			Con.Draw();
 		}
 	}
 
