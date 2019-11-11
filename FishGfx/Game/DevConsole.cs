@@ -6,15 +6,24 @@ using System.Threading.Tasks;
 using FishGfx;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
+using System.Numerics;
 
 namespace FishGfx.Game {
+	public delegate void ConsoleOnInput(string Input);
+
 	public class DevConsole {
 		Tilemap Tiles;
 
 		int CursorX;
 		int CursorY;
 
+		int BackspaceCounter;
+
 		char[] CharBuffer;
+		StringBuilder InputBuffer;
+		bool AwaitingInput;
+
+		public event ConsoleOnInput OnInput;
 
 		public int Width {
 			get {
@@ -46,10 +55,23 @@ namespace FishGfx.Game {
 			private set;
 		}
 
+		public Vector2 Position {
+			get {
+				return Tiles.Position;
+			}
+
+			set {
+				Tiles.Position = value;
+			}
+		}
+
 		public DevConsole(Texture FontTileset, int Size, int Width, int Height, int BufferHeight, ShaderProgram DrawShader) {
 			Tiles = new Tilemap(Size, Width, Height, FontTileset);
 			Tiles.Shader = DrawShader;
 			Tiles.ClearTiles('0');
+
+			InputBuffer = new StringBuilder();
+			AwaitingInput = false;
 
 			this.BufferHeight = BufferHeight;
 			BufferWidth = Width;
@@ -78,19 +100,32 @@ namespace FishGfx.Game {
 						SetChar(X, Y, (char)0);
 					}
 			}
+		}
 
-			return;
+		void NewLine() {
+			CursorX = 0;
+			CursorY--;
+			CheckScroll();
+		}
 
-			if (CursorY >= BufferHeight) {
-				CursorY--;
-				// TODO: Scroll
+		void CursorForward() {
+			CursorX++;
 
-				/*for (int X = 0; X < BufferWidth; X++) {
-					char CC = GetChar(X, CursorY - 1);
-					SetChar(X, CursorY, CC);
-					SetChar(X, CursorY - 1, (char)0);
-				}*/
+			if (CursorX >= BufferWidth)
+				NewLine();
+
+			CheckScroll();
+		}
+
+		void CursorBackward() {
+			CursorX--;
+
+			if (CursorX < 0) {
+				CursorX = BufferWidth - 1;
+				CursorY++;
 			}
+
+			CheckScroll();
 		}
 
 		void SetChar(int X, int Y, char C) {
@@ -112,10 +147,27 @@ namespace FishGfx.Game {
 			return CharBuffer[Y * BufferWidth + X];
 		}
 
-		void NewLine() {
-			CursorX = 0;
-			CursorY--;
-			CheckScroll();
+		void Backspace() {
+			if (BackspaceCounter <= 0)
+				return;
+
+			BackspaceCounter--;
+
+			if (AwaitingInput)
+				InputBuffer.Length--;
+
+			CursorBackward();
+			SetChar(CursorX, CursorY, (char)0);
+		}
+
+		void OnCommand(string Cmd) {
+			OnInput?.Invoke(Cmd);
+			//PrintLine(string.Format("You entered '{0}'", Cmd));
+			BeginInput();
+		}
+
+		public void ResetBackspaceCounter() {
+			BackspaceCounter = 0;
 		}
 
 		public int GetViewScroll() {
@@ -133,21 +185,45 @@ namespace FishGfx.Game {
 			Dirty = true;
 		}
 
+		public void BeginInput() {
+			Print("> ");
+
+			ResetBackspaceCounter();
+			InputBuffer.Clear();
+
+			AwaitingInput = true;
+		}
+
 		public void PutChar(char Chr) {
-			if (Chr == '\n') {
-				NewLine();
+			if (Chr == '\b') {
+				Backspace();
 				return;
 			}
 
-			//Tiles.SetTile((int)Chr, CursorX++, Height - CursorY - 1);
-			SetChar(CursorX++, CursorY, Chr);
+			if (Chr == '\n') {
+				NewLine();
 
-			if (CursorX >= BufferWidth) {
-				CursorX = 0;
-				CursorY++;
+				if (AwaitingInput) {
+					AwaitingInput = false;
+					OnCommand(InputBuffer.ToString());
+				}
+
+				return;
 			}
 
-			CheckScroll();
+			if (AwaitingInput)
+				InputBuffer.Append(Chr);
+
+			BackspaceCounter++;
+			SetChar(CursorX, CursorY, Chr);
+			CursorForward();
+		}
+
+		public void SendInput(string Str) {
+			if (!AwaitingInput)
+				return;
+
+			Print(Str);
 		}
 
 		public void Print(string Str) {

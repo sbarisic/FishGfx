@@ -43,10 +43,17 @@ namespace Test {
 			int H = 20;
 
 			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/Nice_curses_12x12.png"), 12, W, H, H * 2, DefaultShader);
-			Con.PrintLine("Hello World!");
+			Con.Position = new Vector2(0, Window.WindowHeight - H * Con.CharSize);
+
+			Con.OnInput += (In) => {
+				Con.PrintLine(string.Format("You wrote '{0}'", In));
+			};
+
+			Con.PrintLine("Welcome to the Developer Console");
+			Con.BeginInput();
 
 			Window.OnChar += (Wnd, Chr, Uni) => {
-				Con.Print(Chr);
+				Con.SendInput(Chr);
 			};
 
 			Window.OnKey += (Wnd, Key, Scancode, Pressed, Repeat, Mods) => {
@@ -55,6 +62,9 @@ namespace Test {
 
 				if (Key == Key.Enter || Key == Key.NumpadEnter)
 					Con.PutChar('\n');
+
+				if (Key == Key.Backspace)
+					Con.PutChar('\b');
 
 				if (Key == Key.Up)
 					Con.SetViewScroll(Con.GetViewScroll() + 1);
