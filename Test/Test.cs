@@ -21,6 +21,8 @@ namespace Test {
 
 		DevConsole Con;
 
+		BMFont TestFont;
+
 		protected override void Init() {
 			/*TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
 			TestSprite.Position = new Vector2(0, 0);
@@ -39,14 +41,35 @@ namespace Test {
 			Map.SetTile(2, 2, 2);
 			Map.SetTile(3, 3, 3);*/
 
-			int W = 50;
-			int H = 20;
+			//int W = 80;
+			//int H = 40;
+			//Con = new DevConsole(Texture.FromFile("data/fonts/tileset/cheepicus8.png"), 8, W, H, H * 2, DefaultShader);
 
-			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/Nice_curses_12x12.png"), 12, W, H, H * 2, DefaultShader);
+			//TestFont = new BMFont("data/fonts/proggy.fnt");
+
+			int W = 65;
+			int H = 20;
+			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/nicecurses12.png"), 12, W, H, H * 2, DefaultShader);
 			Con.Position = new Vector2(0, Window.WindowHeight - H * Con.CharSize);
 
 			Con.OnInput += (In) => {
-				Con.PrintLine(string.Format("You wrote '{0}'", In));
+				if (In.Length == 0) {
+					Con.PrintLine();
+					return;
+				}
+
+				if (In.StartsWith("rainbow")) {
+					foreach (var C in In.Substring(7).Trim()) {
+						Con.TextColor = GfxUtils.RandomColor();
+						Con.PutChar(C);
+					}
+
+					Con.TextColor = Color.White;
+					Con.PrintLine();
+					return;
+				}
+
+				Con.PrintLine("You wrote '{0}'", In);
 			};
 
 			Con.PrintLine("Welcome to the Developer Console");
@@ -86,8 +109,10 @@ namespace Test {
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
 
-			Gfx.FilledRectangle(0, 0, Con.CharSize * Con.Width, Con.CharSize * Con.Height, Color.Coal);
+			Gfx.FilledRectangle(Con.Position.X, Con.Position.Y, Con.CharSize * Con.Width, Con.CharSize * Con.Height, Color.Coal);
 			Con.Draw();
+
+			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);
 		}
 	}
 

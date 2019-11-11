@@ -20,6 +20,8 @@ namespace FishGfx.Game {
 		int BackspaceCounter;
 
 		char[] CharBuffer;
+		Color[] ColorBuffer;
+
 		StringBuilder InputBuffer;
 		bool AwaitingInput;
 
@@ -65,6 +67,8 @@ namespace FishGfx.Game {
 			}
 		}
 
+		public Color TextColor;
+
 		public DevConsole(Texture FontTileset, int Size, int Width, int Height, int BufferHeight, ShaderProgram DrawShader) {
 			Tiles = new Tilemap(Size, Width, Height, FontTileset);
 			Tiles.Shader = DrawShader;
@@ -82,7 +86,10 @@ namespace FishGfx.Game {
 			ViewScroll = 0;
 			CharSize = Size;
 
+			TextColor = Color.White;
+
 			CharBuffer = new char[Width * BufferHeight];
+			ColorBuffer = new Color[CharBuffer.Length];
 			Dirty = true;
 		}
 
@@ -96,8 +103,10 @@ namespace FishGfx.Game {
 				for (int Y = BufferHeight - 2; Y >= 0; Y--)
 					for (int X = 0; X < BufferWidth; X++) {
 						char CC = GetChar(X, Y);
-						SetChar(X, Y + 1, CC);
-						SetChar(X, Y, (char)0);
+						Color CClr = GetColor(X, Y);
+
+						SetChar(X, Y + 1, CC, CClr);
+						SetChar(X, Y, (char)0, Color.White);
 					}
 			}
 		}
@@ -128,10 +137,11 @@ namespace FishGfx.Game {
 			CheckScroll();
 		}
 
-		void SetChar(int X, int Y, char C) {
+		void SetChar(int X, int Y, char C, Color Clr) {
 			Y = BufferHeight - Y - 1;
 
 			CharBuffer[Y * BufferWidth + X] = C;
+			ColorBuffer[Y * BufferWidth + X] = Clr;
 			Dirty = true;
 		}
 
@@ -147,6 +157,18 @@ namespace FishGfx.Game {
 			return CharBuffer[Y * BufferWidth + X];
 		}
 
+		Color GetColor(int X, int Y) {
+			Y = BufferHeight - Y - 1;
+
+			if (X < 0 || X >= BufferWidth)
+				throw new Exception("X out of range");
+
+			if (Y < 0 || Y >= BufferHeight)
+				throw new Exception("Y out of range");
+
+			return ColorBuffer[Y * BufferWidth + X];
+		}
+
 		void Backspace() {
 			if (BackspaceCounter <= 0)
 				return;
@@ -157,7 +179,7 @@ namespace FishGfx.Game {
 				InputBuffer.Length--;
 
 			CursorBackward();
-			SetChar(CursorX, CursorY, (char)0);
+			SetChar(CursorX, CursorY, (char)0, Color.White);
 		}
 
 		void OnCommand(string Cmd) {
@@ -215,7 +237,7 @@ namespace FishGfx.Game {
 				InputBuffer.Append(Chr);
 
 			BackspaceCounter++;
-			SetChar(CursorX, CursorY, Chr);
+			SetChar(CursorX, CursorY, Chr, TextColor);
 			CursorForward();
 		}
 
@@ -231,14 +253,21 @@ namespace FishGfx.Game {
 				PutChar(C);
 		}
 
-		public void PrintLine(string Str) {
+		public void PrintLine(string Str = "") {
 			Print(Str + "\n");
+		}
+
+		public void PrintLine(string Fmt, params object[] Args) {
+			PrintLine(string.Format(Fmt, Args));
 		}
 
 		void Refresh() {
 			for (int Y = 0; Y < Tiles.Height; Y++) {
 				for (int X = 0; X < Tiles.Width; X++) {
-					Tiles.SetTile(X, Y, GetChar(X, Y + ViewScroll));
+					char Chr = GetChar(X, Y + ViewScroll);
+					Color Clr = GetColor(X, Y + ViewScroll);
+
+					Tiles.SetTile(X, Y, Chr, Clr);
 				}
 			}
 		}

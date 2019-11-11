@@ -140,6 +140,10 @@ namespace FishGfx.Formats {
 								break;
 							}
 
+						case 5: {
+								throw new NotImplementedException("Kerning pairs not implemented");
+							}
+
 						default:
 							throw new NotImplementedException("Invalid block type? " + BlockType);
 					}

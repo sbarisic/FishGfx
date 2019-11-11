@@ -178,6 +178,9 @@
   <ItemGroup />
   <ItemGroup>
     <Compile Include="Glfw3\Glfw.Struct.cs" />
+    <None Include="data\fonts\opensans.fnt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="data\fonts\proggy.fnt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -291,7 +294,13 @@
     <Content Include="data\dynamite.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="data\fonts\opensans_0.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="data\fonts\proggy_0.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\fonts\tileset\cheepicus8.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\fonts\tileset\hack32.png">
@@ -300,7 +309,7 @@
     <Content Include="data\fonts\tileset\hack64.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="data\fonts\tileset\Nice_curses_12x12.png">
+    <Content Include="data\fonts\tileset\nicecurses12.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\textures\colors\white.png">

@@ -45,6 +45,7 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public void Draw() {
+			Matrix4x4 OldModel = ShaderUniforms.Current.Model;
 			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X - Center.X, Position.Y - Center.Y, 0);
 
 			Shader?.Bind(ShaderUniforms.Current);
@@ -52,6 +53,8 @@ namespace FishGfx.Graphics.Drawables {
 			Mesh.Draw();
 			Texture?.UnbindTextureUnit();
 			Shader?.Unbind();
+
+			ShaderUniforms.Current.Model = OldModel;
 		}
 	}
 }

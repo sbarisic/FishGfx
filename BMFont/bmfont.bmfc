@@ -2,7 +2,7 @@
 fileVersion=1
 
 # font settings
-fontName=ProggyCleanTT
+fontName=Open Sans
 fontFile=ProggyClean.ttf
 charSet=0
 fontSize=-32
@@ -30,8 +30,8 @@ useFixedHeight=0
 forceZero=0
 
 # output file
-outWidth=256
-outHeight=256
+outWidth=300
+outHeight=300
 outBitDepth=32
 fontDescFormat=2
 fourChnlPacked=0
@@ -50,6 +50,6 @@ invB=0
 outlineThickness=0
 
 # selected chars
-chars=0-127,129-255,8364
+chars=32-126,160-255
 
 # imported icon images
