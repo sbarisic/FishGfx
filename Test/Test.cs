@@ -47,9 +47,11 @@ namespace Test {
 
 			//TestFont = new BMFont("data/fonts/proggy.fnt");
 
-			int W = 65;
-			int H = 20;
-			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/nicecurses12.png"), 12, W, H, H * 2, DefaultShader);
+			int FontSize = 8;
+			int W = (int)Math.Floor((float)Window.WindowWidth / FontSize);
+			int H = (int)((Window.WindowHeight * 0.4f) / FontSize);
+
+			Con = new DevConsole(Texture.FromFile("data/fonts/tileset/cheepicus8.png"), FontSize, W, H, H * 2, DefaultShader);
 			Con.Position = new Vector2(0, Window.WindowHeight - H * Con.CharSize);
 
 			Con.OnInput += (In) => {
@@ -75,26 +77,8 @@ namespace Test {
 			Con.PrintLine("Welcome to the Developer Console");
 			Con.BeginInput();
 
-			Window.OnChar += (Wnd, Chr, Uni) => {
-				Con.SendInput(Chr);
-			};
-
-			Window.OnKey += (Wnd, Key, Scancode, Pressed, Repeat, Mods) => {
-				if (!Pressed)
-					return;
-
-				if (Key == Key.Enter || Key == Key.NumpadEnter)
-					Con.PutChar('\n');
-
-				if (Key == Key.Backspace)
-					Con.PutChar('\b');
-
-				if (Key == Key.Up)
-					Con.SetViewScroll(Con.GetViewScroll() + 1);
-
-				if (Key == Key.Down)
-					Con.SetViewScroll(Con.GetViewScroll() - 1);
-			};
+			Window.OnChar += (Wnd, Chr, Uni) => Con.SendInput(Chr);
+			Window.OnKey += Con.SendKey;
 
 			RenderState RS = Gfx.CreateDefaultRenderState();
 			RS.EnableDepthTest = false;
@@ -108,8 +92,6 @@ namespace Test {
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
-
-			Gfx.FilledRectangle(Con.Position.X, Con.Position.Y, Con.CharSize * Con.Width, Con.CharSize * Con.Height, Color.Coal);
 			Con.Draw();
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);

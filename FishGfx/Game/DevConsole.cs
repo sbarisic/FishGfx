@@ -68,6 +68,7 @@ namespace FishGfx.Game {
 		}
 
 		public Color TextColor;
+		public bool Enabled;
 
 		public DevConsole(Texture FontTileset, int Size, int Width, int Height, int BufferHeight, ShaderProgram DrawShader) {
 			Tiles = new Tilemap(Size, Width, Height, FontTileset);
@@ -91,6 +92,7 @@ namespace FishGfx.Game {
 			CharBuffer = new char[Width * BufferHeight];
 			ColorBuffer = new Color[CharBuffer.Length];
 			Dirty = true;
+			Enabled = true;
 		}
 
 		void CheckScroll() {
@@ -183,7 +185,11 @@ namespace FishGfx.Game {
 		}
 
 		void OnCommand(string Cmd) {
-			OnInput?.Invoke(Cmd);
+			if (Cmd.Length != 0) {
+				OnInput?.Invoke(Cmd);
+			}
+
+
 			//PrintLine(string.Format("You entered '{0}'", Cmd));
 			BeginInput();
 		}
@@ -241,13 +247,6 @@ namespace FishGfx.Game {
 			CursorForward();
 		}
 
-		public void SendInput(string Str) {
-			if (!AwaitingInput)
-				return;
-
-			Print(Str);
-		}
-
 		public void Print(string Str) {
 			foreach (var C in Str)
 				PutChar(C);
@@ -272,12 +271,50 @@ namespace FishGfx.Game {
 			}
 		}
 
+		public void SendKey(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) {
+			if (!Pressed)
+				return;
+
+			// TODO: Handle somewhere else
+			if (Key == Key.F1)
+				Enabled = !Enabled;
+
+			if (!Enabled)
+				return;
+
+			if (Key == Key.Enter || Key == Key.NumpadEnter)
+				PutChar('\n');
+
+			if (Key == Key.Backspace)
+				PutChar('\b');
+
+			if (Key == Key.Up)
+				SetViewScroll(GetViewScroll() + 1);
+
+			if (Key == Key.Down)
+				SetViewScroll(GetViewScroll() - 1);
+		}
+
+		public void SendInput(string Str) {
+			if (!Enabled)
+				return;
+
+			if (!AwaitingInput)
+				return;
+
+			Print(Str);
+		}
+
 		public void Draw() {
+			if (!Enabled)
+				return;
+
 			if (Dirty) {
 				Dirty = false;
 				Refresh();
 			}
 
+			Gfx.FilledRectangle(Position.X, Position.Y, CharSize * Width, CharSize * Height, Color.Coal);
 			Tiles.Draw();
 		}
 	}
