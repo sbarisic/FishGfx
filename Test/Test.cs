@@ -100,6 +100,9 @@ namespace Test {
 
 	class Program {
 		static void Main(string[] args) {
+			GameLevel Lvl = GameLevel.FromFile("levels/rnm_lvl0.json");
+
+
 			FishGfxGame.Run(new TestGame());
 			//Run();
 		}
