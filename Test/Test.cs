@@ -22,6 +22,7 @@ namespace Test {
 		DevConsole Con;
 
 		BMFont TestFont;
+		GameLevel Lvl;
 
 		protected override void Init() {
 			/*TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
@@ -83,6 +84,13 @@ namespace Test {
 			RenderState RS = Gfx.CreateDefaultRenderState();
 			RS.EnableDepthTest = false;
 			Gfx.PushRenderState(RS);
+
+
+
+			Lvl = GameLevel.FromFile("levels/rnm_lvl0.json");
+			Lvl.Init(DefaultShader);
+
+			Sprite PlayerSprite = new Sprite();
 		}
 
 		protected override void Update(float Dt) {
@@ -92,6 +100,9 @@ namespace Test {
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
+
+			Lvl.Draw();
+
 			Con.Draw();
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);
@@ -100,9 +111,6 @@ namespace Test {
 
 	class Program {
 		static void Main(string[] args) {
-			GameLevel Lvl = GameLevel.FromFile("levels/rnm_lvl0.json");
-
-
 			FishGfxGame.Run(new TestGame());
 			//Run();
 		}

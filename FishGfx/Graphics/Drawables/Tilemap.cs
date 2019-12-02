@@ -32,7 +32,10 @@ namespace FishGfx.Graphics.Drawables {
 			get; private set;
 		}
 
-		int TileSize;
+		public int TileSize {
+			get; private set;
+		}
+
 		int[] Tiles;
 		Color[] TileColors;
 
@@ -86,6 +89,10 @@ namespace FishGfx.Graphics.Drawables {
 			TileUVSize = new Vector2(TileSize, TileSize) / new Vector2(TextureWidth, TextureHeight);
 
 			Dirty = true;
+		}
+
+		public Texture GetTileAtlas() {
+			return TileAtlas;
 		}
 
 		void IdxToXY(int Idx, out int X, out int Y) {
