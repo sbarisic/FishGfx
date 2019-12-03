@@ -71,16 +71,18 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Entity.cs" />
     <Compile Include="GameLevel.cs" />
+    <Compile Include="Pawn.cs" />
+    <Compile Include="Player.cs" />
+    <Compile Include="SpriteAnimator.cs" />
     <Compile Include="Test.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="levels\rnm_lvl0.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="levels\test2.json">
+    <None Include="levels\rick_and_morty.oep" />
+    <None Include="levels\rm_level0.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="packages.config" />

@@ -7,48 +7,22 @@ using Newtonsoft.Json;
 using System.IO;
 using FishGfx.Graphics.Drawables;
 using FishGfx.Graphics;
+using System.Numerics;
+using FishGfx.Game;
 
 namespace Test {
-	class LevelValues {
-		[JsonProperty("time_limit")]
-		public int TimeLimit;
-	}
-
-	class LevelEntity {
-		public string Name;
-		public int ID;
-
+	class LevelTile {
 		public int X;
 		public int Y;
-
-		public int OriginX;
-		public int OriginY;
-
-		public override string ToString() {
-			return string.Format("Entity '{0}'", Name);
-		}
-	}
-
-	class LevelDecal {
+		public int ID;
 	}
 
 	class LevelLayer {
 		public string Name;
+		// public string Tileset; 
 
-		public int OffsetX;
-		public int OffsetY;
-		public string Tileset;
-
-		public int GridCellWidth;
-		public int GridCellHeight;
-
-		public int GridCellsX;
-		public int GridCellsY;
-
-		public string[] Grid;
 		public LevelEntity[] Entities;
-		public LevelDecal[] Decals;
-		public int[][] DataCoords;
+		public LevelTile[] Tiles;
 
 		public override string ToString() {
 			return string.Format("Layer '{0}'", Name);
@@ -58,15 +32,39 @@ namespace Test {
 	class GameLevel {
 		public int Width;
 		public int Height;
-		public int OffsetX;
-		public int OffsetY;
 
-		public LevelValues Values;
+		[JsonProperty("time_limit")]
+		public int TimeLimit;
+
 		public LevelLayer[] Layers;
 
 		public static GameLevel FromFile(string FileName) {
+			const bool InvertY = true;
+
 			string JsonSrc = File.ReadAllText(FileName);
 			GameLevel Lvl = JsonConvert.DeserializeObject<GameLevel>(JsonSrc);
+
+
+			for (int i = 0; i < Lvl.Layers.Length; i++) {
+				LevelLayer L = Lvl.Layers[i];
+
+				if (L.Name == "entities")
+					for (int j = 0; j < L.Entities.Length; j++) {
+						LevelEntity Ent = L.Entities[j];
+						Ent.Y = Lvl.Height - Ent.Y - 1;
+					}
+
+				/*if (L.DataCoords != null)
+					for (int j = 0; j < L.DataCoords.Length; j++) {
+						int[] XY = L.DataCoords[j];
+
+						if (XY.Length > 1) {
+							XY[1] = Lvl.Height - XY[1] - 1;
+							L.DataCoords[j] = XY;
+						}
+					}*/
+			}
+
 			return Lvl;
 		}
 
@@ -74,37 +72,32 @@ namespace Test {
 		Tilemap Main;
 		Tilemap Background;
 
-		void FillTilemap(Tilemap Map, int[][] Coords) {
+		void FillTilemap(Tilemap Map, LevelTile[] Tiles) {
 			Texture TileAtlas = Map.GetTileAtlas();
-			int TileCountX = TileAtlas.Width / Map.TileSize;
+			//int TileCountX = TileAtlas.Width / Map.TileSize;
 
-			for (int i = 0; i < Coords.Length; i++) {
-				int[] XY = Coords[i];
+			for (int i = 0; i < Tiles.Length; i++) {
+				int TileX = Tiles[i].X;
+				int TileY = Map.Height - Tiles[i].Y - 1;
+				int TileIdx = Tiles[i].ID;
 
-				if (XY.Length == 1)
-					continue;
-
-				int TileX = XY[0];
-				int TileY = XY[1];
-
-				int MapX = i % Map.Width;
-				int MapY = (i - MapX) / Map.Width;
-				MapY = Map.Height - MapY - 1;
-
-				int TileIdx = TileY * TileCountX + TileX;
-				Map.SetTile(MapX, MapY, TileIdx);
+				Map.SetTile(TileX, TileY, TileIdx);
 			}
 		}
 
-		IEnumerable<LevelEntity> GetEntityByName(string Name) {
+		public IEnumerable<LevelEntity> GetAllEntities() {
 			for (int i = 0; i < Layers.Length; i++) {
 				if (Layers[i].Name == "entities")
 					for (int j = 0; j < Layers[i].Entities.Length; j++) {
-						LevelEntity Ent = Layers[i].Entities[j];
-
-						if (Ent.Name == Name)
-							yield return Ent;
+						yield return Layers[i].Entities[j];
 					}
+			}
+		}
+
+		public IEnumerable<LevelEntity> GetEntitiesByName(string Name) {
+			foreach (var E in GetAllEntities()) {
+				if (E.Name == Name)
+					yield return E;
 			}
 		}
 
@@ -112,32 +105,29 @@ namespace Test {
 			Texture TileTex = Texture.FromFile("data/textures/tilemap.png");
 			int TileSize = 16;
 
+			int TilesX = Width / TileSize;
+			int TilesY = Height / TileSize;
+
 			for (int i = 0; i < Layers.Length; i++) {
 				LevelLayer Layer = Layers[i];
 
 				switch (Layer.Name) {
 					case "foreground":
-						Foreground = new Tilemap(TileSize, Layer.GridCellsX, Layer.GridCellsY, TileTex);
+						Foreground = new Tilemap(TileSize, TilesX, TilesY, TileTex);
 						Foreground.Shader = Shader;
-						FillTilemap(Foreground, Layer.DataCoords);
+						FillTilemap(Foreground, Layer.Tiles);
 						break;
 
 					case "main":
-						Main = new Tilemap(TileSize, Layer.GridCellsX, Layer.GridCellsY, TileTex);
+						Main = new Tilemap(TileSize, TilesX, TilesY, TileTex);
 						Main.Shader = Shader;
-						FillTilemap(Main, Layer.DataCoords);
+						FillTilemap(Main, Layer.Tiles);
 						break;
 
 					case "background":
-						Background = new Tilemap(TileSize, Layer.GridCellsX, Layer.GridCellsY, TileTex);
+						Background = new Tilemap(TileSize, TilesX, TilesY, TileTex);
 						Background.Shader = Shader;
-						FillTilemap(Background, Layer.DataCoords);
-						break;
-
-					case "grid":
-						break;
-
-					case "decals":
+						FillTilemap(Background, Layer.Tiles);
 						break;
 
 					case "entities":
@@ -149,10 +139,13 @@ namespace Test {
 			}
 		}
 
-		public void Draw() {
+		public void DrawBackground() {
 			Background?.Draw();
 			Main?.Draw();
-			//Foreground?.Draw();
+		}
+
+		public void DrawForeground() {
+			Foreground?.Draw();
 		}
 	}
 }

@@ -12,6 +12,12 @@ namespace FishGfx.Game {
 		protected RenderWindow Window;
 		protected int Framerate = 60;
 
+		Stopwatch GameStopwatch;
+		public float GameTime {
+			get {
+				return GameStopwatch.ElapsedMilliseconds / 1000.0f;
+			}
+		}
 
 		public InputManager Input {
 			get;
@@ -43,6 +49,7 @@ namespace FishGfx.Game {
 			float Dt;
 
 			Game.Window = Game.CreateWindow();
+			Game.GameStopwatch = Stopwatch.StartNew();
 			Game.Input = new InputManager(Game.Window);
 
 			ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);

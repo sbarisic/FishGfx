@@ -15,37 +15,19 @@ using FishGfx.Game;
 
 namespace Test {
 	class TestGame : FishGfxGame {
+		DevConsole Con;
+
+		GameLevel Lvl;
+		List<Entity> Entities = new List<Entity>();
+
+		//Sprite PlayerSprite;
+		//SpriteAnimator PlayerAnimator;
+
 		protected override RenderWindow CreateWindow() {
 			return new RenderWindow(800, 600, "Test");
 		}
 
-		DevConsole Con;
-
-		BMFont TestFont;
-		GameLevel Lvl;
-
 		protected override void Init() {
-			/*TestSprite = new Sprite(Texture.FromFile("data/textures/test16.png"));
-			TestSprite.Position = new Vector2(0, 0);
-			TestSprite.Scale = new Vector2(16, 16);
-			TestSprite.Center = TestSprite.Scale / 2;
-			TestSprite.Shader = DefaultShader;
-
-			Map = new Tilemap(16, 15, 15, Texture.FromFile("data/textures/tileset/test.png"));
-			Map.Shader = DefaultShader;
-			Map.Position = new Vector2(100, 100);
-			Map.Scale = new Vector2(2, 2);
-
-			Map.ClearTiles(68);
-			Map.SetTile(0, 0, 0);
-			Map.SetTile(1, 1, 1);
-			Map.SetTile(2, 2, 2);
-			Map.SetTile(3, 3, 3);*/
-
-			//int W = 80;
-			//int H = 40;
-			//Con = new DevConsole(Texture.FromFile("data/fonts/tileset/cheepicus8.png"), 8, W, H, H * 2, DefaultShader);
-
 			//TestFont = new BMFont("data/fonts/proggy.fnt");
 
 			int FontSize = 8;
@@ -77,32 +59,75 @@ namespace Test {
 
 			Con.PrintLine("Welcome to the Developer Console");
 			Con.BeginInput();
+			Con.Enabled = false;
 
 			Window.OnChar += (Wnd, Chr, Uni) => Con.SendInput(Chr);
 			Window.OnKey += Con.SendKey;
 
 			RenderState RS = Gfx.CreateDefaultRenderState();
 			RS.EnableDepthTest = false;
+			RS.EnableCullFace = false;
 			Gfx.PushRenderState(RS);
 
 
-
-			Lvl = GameLevel.FromFile("levels/rnm_lvl0.json");
+			// Load the level
+			Lvl = GameLevel.FromFile("levels/rm_level0.json");
 			Lvl.Init(DefaultShader);
+			foreach (var E in Lvl.GetAllEntities())
+				Spawn(E);
 
-			Sprite PlayerSprite = new Sprite();
+			// Spawn player
+			Player Ply = new Player(this, DefaultShader);
+			Ply.Position = Lvl.GetEntitiesByName("spawn_player").First().Position + Ply.Size * new Vector2(0.5f, -1);
+			Spawn(Ply);
 		}
+
+		public void Spawn(Entity Ent) {
+			Entities.Add(Ent);
+		}
+
+		Vector2 LastMoveDirection;
 
 		protected override void Update(float Dt) {
 			if (Input.GetKeyPressed(Key.Escape))
 				Window.Close();
+
+			foreach (var Ent in Entities)
+				Ent.Update(Dt, GameTime);
+
+			/*Key KeyMoveLeft = Key.A;
+			Key KeyMoveRight = Key.D;
+			Vector2 MoveDirection = new Vector2(0, 0);
+
+			PlayerSprite.Position = Input.GetMousePos() * new Vector2(1, -1) + Window.WindowSize * new Vector2(0, 1);
+
+			if (Input.GetKeyDown(Key.A)) {
+				PlayerAnimator.Play("walk_left", false);
+				MoveDirection = new Vector2(-1, 0);
+			}
+
+			if (Input.GetKeyDown(Key.D)) {
+				PlayerAnimator.Play("walk_right", false);
+				MoveDirection = new Vector2(1, 0);
+			}
+
+			if (MoveDirection.Length() == 0) {
+				if (LastMoveDirection.X < 0)
+					PlayerAnimator.Play("stand_left");
+				else
+					PlayerAnimator.Play("stand_right");
+			} else
+				LastMoveDirection = MoveDirection;*/
 		}
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
+			Lvl.DrawBackground();
 
-			Lvl.Draw();
+			foreach (var Ent in Entities)
+				Ent.Draw();
 
+			Lvl.DrawForeground();
 			Con.Draw();
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);

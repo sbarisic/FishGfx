@@ -1,0 +1,147 @@
+<?xml version="1.0"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <OgmoVersion>1.0</OgmoVersion>
+  <Name>Rick and Morty</Name>
+  <BackgroundColor A="255" R="125" G="160" B="255" />
+  <GridColor A="255" R="255" G="255" B="255" />
+  <LevelDefaultSize>
+    <Width>640</Width>
+    <Height>480</Height>
+  </LevelDefaultSize>
+  <LevelMinimumSize>
+    <Width>400</Width>
+    <Height>400</Height>
+  </LevelMinimumSize>
+  <LevelMaximumSize>
+    <Width>8000</Width>
+    <Height>8000</Height>
+  </LevelMaximumSize>
+  <Filename>C:\Projekti\OgmoEditor\bin\levels\rick_and_morty.oep</Filename>
+  <RecentLevelDirectory>C:\Projekti\OgmoEditor\bin\levels</RecentLevelDirectory>
+  <AngleMode>Radians</AngleMode>
+  <ProjectType>JSON</ProjectType>
+  <CameraEnabled>false</CameraEnabled>
+  <CameraSize>
+    <Width>640</Width>
+    <Height>480</Height>
+  </CameraSize>
+  <ExportCameraPosition>false</ExportCameraPosition>
+  <LevelValueDefinitions>
+    <ValueDefinition xsi:type="IntValueDefinition" Name="time_limit" Default="300" Min="0" Max="3000" ShowSlider="false" />
+  </LevelValueDefinitions>
+  <LayerDefinitions>
+    <LayerDefinition xsi:type="TileLayerDefinition">
+      <Name>background</Name>
+      <Grid>
+        <Width>16</Width>
+        <Height>16</Height>
+      </Grid>
+      <ScrollFactor>
+        <X>1</X>
+        <Y>1</Y>
+      </ScrollFactor>
+      <GroupName>default</GroupName>
+      <ExportMode>JSON</ExportMode>
+    </LayerDefinition>
+    <LayerDefinition xsi:type="TileLayerDefinition">
+      <Name>main</Name>
+      <Grid>
+        <Width>16</Width>
+        <Height>16</Height>
+      </Grid>
+      <ScrollFactor>
+        <X>1</X>
+        <Y>1</Y>
+      </ScrollFactor>
+      <GroupName>default</GroupName>
+      <ExportMode>JSON</ExportMode>
+    </LayerDefinition>
+    <LayerDefinition xsi:type="TileLayerDefinition">
+      <Name>foreground</Name>
+      <Grid>
+        <Width>16</Width>
+        <Height>16</Height>
+      </Grid>
+      <ScrollFactor>
+        <X>1</X>
+        <Y>1</Y>
+      </ScrollFactor>
+      <GroupName>default</GroupName>
+      <ExportMode>JSON</ExportMode>
+    </LayerDefinition>
+    <LayerDefinition xsi:type="EntityLayerDefinition">
+      <Name>entities</Name>
+      <Grid>
+        <Width>16</Width>
+        <Height>16</Height>
+      </Grid>
+      <ScrollFactor>
+        <X>1</X>
+        <Y>1</Y>
+      </ScrollFactor>
+      <GroupName>default</GroupName>
+    </LayerDefinition>
+  </LayerDefinitions>
+  <Tilesets>
+    <Tileset>
+      <Name>default</Name>
+      <FilePath>..\..\..\FishGfx\Test\data\textures\tilemap.png</FilePath>
+      <TileSize>
+        <Width>16</Width>
+        <Height>16</Height>
+      </TileSize>
+      <TileSep>0</TileSep>
+      <GroupName>default</GroupName>
+    </Tileset>
+  </Tilesets>
+  <EntityDefinitions>
+    <EntityDefinition Name="spawn_player" Limit="-1" ResizableX="false" ResizableY="false" Rotatable="false" RotateIncrement="15" GroupName="default">
+      <Size>
+        <Width>37</Width>
+        <Height>54</Height>
+      </Size>
+      <Origin>
+        <X>0</X>
+        <Y>0</Y>
+      </Origin>
+      <ImageDefinition DrawMode="Image" ImagePath="..\..\..\FishGfx\Test\data\textures\rick\1.png" Tiled="false">
+        <RectColor A="255" R="255" G="0" B="0" />
+      </ImageDefinition>
+      <ValueDefinitions />
+      <NodesDefinition Enabled="false" Limit="-1" DrawMode="None" Ghost="false" />
+    </EntityDefinition>
+    <EntityDefinition Name="torch_fire" Limit="-1" ResizableX="false" ResizableY="false" Rotatable="false" RotateIncrement="15" GroupName="default">
+      <Size>
+        <Width>16</Width>
+        <Height>16</Height>
+      </Size>
+      <Origin>
+        <X>0</X>
+        <Y>0</Y>
+      </Origin>
+      <ImageDefinition DrawMode="Rectangle" ImagePath="" Tiled="false">
+        <RectColor A="255" R="255" G="92" B="15" />
+      </ImageDefinition>
+      <ValueDefinitions />
+      <NodesDefinition Enabled="false" Limit="-1" DrawMode="None" Ghost="false" />
+    </EntityDefinition>
+  </EntityDefinitions>
+  <LayerGroups>
+    <groupNames>
+      <GroupName>All</GroupName>
+      <GroupName>default</GroupName>
+    </groupNames>
+  </LayerGroups>
+  <TilesetGroups>
+    <groupNames>
+      <GroupName>All</GroupName>
+      <GroupName>default</GroupName>
+    </groupNames>
+  </TilesetGroups>
+  <EntityGroups>
+    <groupNames>
+      <GroupName>All</GroupName>
+      <GroupName>default</GroupName>
+    </groupNames>
+  </EntityGroups>
+</project>
