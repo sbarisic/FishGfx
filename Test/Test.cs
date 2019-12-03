@@ -94,30 +94,6 @@ namespace Test {
 
 			foreach (var Ent in Entities)
 				Ent.Update(Dt, GameTime);
-
-			/*Key KeyMoveLeft = Key.A;
-			Key KeyMoveRight = Key.D;
-			Vector2 MoveDirection = new Vector2(0, 0);
-
-			PlayerSprite.Position = Input.GetMousePos() * new Vector2(1, -1) + Window.WindowSize * new Vector2(0, 1);
-
-			if (Input.GetKeyDown(Key.A)) {
-				PlayerAnimator.Play("walk_left", false);
-				MoveDirection = new Vector2(-1, 0);
-			}
-
-			if (Input.GetKeyDown(Key.D)) {
-				PlayerAnimator.Play("walk_right", false);
-				MoveDirection = new Vector2(1, 0);
-			}
-
-			if (MoveDirection.Length() == 0) {
-				if (LastMoveDirection.X < 0)
-					PlayerAnimator.Play("stand_left");
-				else
-					PlayerAnimator.Play("stand_right");
-			} else
-				LastMoveDirection = MoveDirection;*/
 		}
 
 		protected override void Draw(float Dt) {

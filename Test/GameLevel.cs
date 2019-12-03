@@ -53,16 +53,6 @@ namespace Test {
 						LevelEntity Ent = L.Entities[j];
 						Ent.Y = Lvl.Height - Ent.Y - 1;
 					}
-
-				/*if (L.DataCoords != null)
-					for (int j = 0; j < L.DataCoords.Length; j++) {
-						int[] XY = L.DataCoords[j];
-
-						if (XY.Length > 1) {
-							XY[1] = Lvl.Height - XY[1] - 1;
-							L.DataCoords[j] = XY;
-						}
-					}*/
 			}
 
 			return Lvl;
