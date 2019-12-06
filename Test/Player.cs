@@ -41,6 +41,14 @@ namespace Test {
 
 			Move(Dt, MoveDir);
 			base.Update(Dt, GameTime);
+
+			if (Position.Y < -100)
+				Position.Y = 600;
+
+			if (Position.X < -32)
+				Position.X = 800;
+			if (Position.X > 832)
+				Position.X = 0;
 		}
 	}
 }
