@@ -49,7 +49,7 @@ namespace FishGfx.Game {
 		}
 
 		public Vector2 GetMousePos() {
-			return new Vector2(MouseX, MouseY);
+			return new Vector2(MouseX, Window.WindowSize.Y - MouseY);
 		}
 
 		public Vector2 GetMousePosNormal() {

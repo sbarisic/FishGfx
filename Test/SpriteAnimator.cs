@@ -104,6 +104,10 @@ namespace Test {
 		}
 
 		public void Play(string Name, bool Reset = true) {
+			// TODO: Add a flag for this
+			if (!Anims.ContainsKey(Name))
+				return;
+
 			Current = Anims[Name];
 
 			if (Reset)

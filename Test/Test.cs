@@ -17,7 +17,7 @@ namespace Test {
 	class TestGame : FishGfxGame {
 		DevConsole Con;
 
-		GameLevel Lvl;
+		public GameLevel Lvl;
 		List<Entity> Entities = new List<Entity>();
 
 		//Sprite PlayerSprite;
@@ -86,8 +86,6 @@ namespace Test {
 			Entities.Add(Ent);
 		}
 
-		Vector2 LastMoveDirection;
-
 		protected override void Update(float Dt) {
 			if (Input.GetKeyPressed(Key.Escape))
 				Window.Close();
@@ -98,12 +96,14 @@ namespace Test {
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
-			Lvl.DrawBackground();
+			Lvl.LayerBack.Draw();
+			Lvl.LayerMain.Draw();
+
 
 			foreach (var Ent in Entities)
 				Ent.Draw();
 
-			Lvl.DrawForeground();
+			Lvl.LayerFore.Draw();
 			Con.Draw();
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);

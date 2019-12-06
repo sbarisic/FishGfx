@@ -58,9 +58,9 @@ namespace Test {
 			return Lvl;
 		}
 
-		Tilemap Foreground;
-		Tilemap Main;
-		Tilemap Background;
+		public Tilemap LayerFore;
+		public Tilemap LayerMain;
+		public Tilemap LayerBack;
 
 		void FillTilemap(Tilemap Map, LevelTile[] Tiles) {
 			Texture TileAtlas = Map.GetTileAtlas();
@@ -103,21 +103,21 @@ namespace Test {
 
 				switch (Layer.Name) {
 					case "foreground":
-						Foreground = new Tilemap(TileSize, TilesX, TilesY, TileTex);
-						Foreground.Shader = Shader;
-						FillTilemap(Foreground, Layer.Tiles);
+						LayerFore = new Tilemap(TileSize, TilesX, TilesY, TileTex);
+						LayerFore.Shader = Shader;
+						FillTilemap(LayerFore, Layer.Tiles);
 						break;
 
 					case "main":
-						Main = new Tilemap(TileSize, TilesX, TilesY, TileTex);
-						Main.Shader = Shader;
-						FillTilemap(Main, Layer.Tiles);
+						LayerMain = new Tilemap(TileSize, TilesX, TilesY, TileTex);
+						LayerMain.Shader = Shader;
+						FillTilemap(LayerMain, Layer.Tiles);
 						break;
 
 					case "background":
-						Background = new Tilemap(TileSize, TilesX, TilesY, TileTex);
-						Background.Shader = Shader;
-						FillTilemap(Background, Layer.Tiles);
+						LayerBack = new Tilemap(TileSize, TilesX, TilesY, TileTex);
+						LayerBack.Shader = Shader;
+						FillTilemap(LayerBack, Layer.Tiles);
 						break;
 
 					case "entities":
@@ -129,13 +129,15 @@ namespace Test {
 			}
 		}
 
-		public void DrawBackground() {
-			Background?.Draw();
-			Main?.Draw();
-		}
+		public bool GetSolid(Vector2 Pos, out int TileID) {
+			TileID = -1;
 
-		public void DrawForeground() {
-			Foreground?.Draw();
+			if (LayerMain.TryWorldPosToTile(Pos, out int X, out int Y)) {
+				if ((TileID = LayerMain.GetTile(X, Y)) != -1)
+					return true;
+			}
+
+			return false;
 		}
 	}
 }
