@@ -21,6 +21,10 @@ namespace Test {
 			return Math.Abs(SignedDist = (A.X - B.X));
 		}
 
+		public static float DistanceY(Vector2 A, Vector2 B, out float SignedDist) {
+			return Math.Abs(SignedDist = (A.Y - B.Y));
+		}
+
 		public static IEnumerable<Vector2> BresenhamLine(int X0, int Y0, int X1, int Y1) {
 			bool Steep = Math.Abs(Y1 - Y0) > Math.Abs(X1 - X0);
 

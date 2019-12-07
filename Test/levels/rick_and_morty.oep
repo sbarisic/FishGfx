@@ -16,8 +16,8 @@
     <Width>8000</Width>
     <Height>8000</Height>
   </LevelMaximumSize>
-  <Filename>C:\Projekti\OgmoEditor\bin\levels\rick_and_morty.oep</Filename>
-  <RecentLevelDirectory>C:\Projekti\OgmoEditor\bin\levels</RecentLevelDirectory>
+  <Filename>C:\Projects\FishGfx\Test\levels\rick_and_morty.oep</Filename>
+  <RecentLevelDirectory>C:\Projects\FishGfx\Test\levels</RecentLevelDirectory>
   <AngleMode>Radians</AngleMode>
   <ProjectType>JSON</ProjectType>
   <CameraEnabled>false</CameraEnabled>
@@ -130,16 +130,22 @@
     <groupNames>
       <GroupName>All</GroupName>
       <GroupName>default</GroupName>
+      <GroupName>All</GroupName>
+      <GroupName>default</GroupName>
     </groupNames>
   </LayerGroups>
   <TilesetGroups>
     <groupNames>
       <GroupName>All</GroupName>
       <GroupName>default</GroupName>
+      <GroupName>All</GroupName>
+      <GroupName>default</GroupName>
     </groupNames>
   </TilesetGroups>
   <EntityGroups>
     <groupNames>
+      <GroupName>All</GroupName>
+      <GroupName>default</GroupName>
       <GroupName>All</GroupName>
       <GroupName>default</GroupName>
     </groupNames>

@@ -36,7 +36,7 @@ namespace FishGfx.Graphics.Drawables {
 			get; private set;
 		}
 
-		int[] Tiles;
+		public int[] Tiles;
 		Color[] TileColors;
 
 		Vector2 TileUVSize;

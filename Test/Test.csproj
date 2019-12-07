@@ -73,6 +73,27 @@
   <ItemGroup>
     <Compile Include="Entity.cs" />
     <Compile Include="GameLevel.cs" />
+    <Compile Include="Humper\Base\Constants.cs" />
+    <Compile Include="Humper\Base\Maths.cs" />
+    <Compile Include="Humper\Base\RectangleF.cs" />
+    <Compile Include="Humper\Box.cs" />
+    <Compile Include="Humper\Collision.cs" />
+    <Compile Include="Humper\Grid.cs" />
+    <Compile Include="Humper\Hit.cs" />
+    <Compile Include="Humper\IBox.cs" />
+    <Compile Include="Humper\ICollision.cs" />
+    <Compile Include="Humper\IHit.cs" />
+    <Compile Include="Humper\IMovement.cs" />
+    <Compile Include="Humper\IWorld.cs" />
+    <Compile Include="Humper\Movement.cs" />
+    <Compile Include="Humper\Responses\BounceResponse.cs" />
+    <Compile Include="Humper\Responses\CollisionResponse.cs" />
+    <Compile Include="Humper\Responses\CollisionResponses.cs" />
+    <Compile Include="Humper\Responses\CrossResponse.cs" />
+    <Compile Include="Humper\Responses\ICollisionResponse.cs" />
+    <Compile Include="Humper\Responses\SlideResponse.cs" />
+    <Compile Include="Humper\Responses\TouchResponse.cs" />
+    <Compile Include="Humper\World.cs" />
     <Compile Include="Interfaces.cs" />
     <Compile Include="Pawn.cs" />
     <Compile Include="Player.cs" />

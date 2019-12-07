@@ -56,6 +56,7 @@ namespace FishGfx.Game {
 
 			Game.CreateResources();
 			Game.Init();
+			SWatch.Restart();
 
 			while (!Game.Window.ShouldClose) {
 				if (Game.Framerate > 0)

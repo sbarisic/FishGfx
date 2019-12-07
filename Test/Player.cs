@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace Test {
 	class Player : Pawn {
-		public Player(FishGfxGame Game, ShaderProgram Shader) : base(Game, Shader) {
+		public Player(TestGame Game, ShaderProgram Shader) : base(Game, Shader) {
 			List<Texture> WalkLeftFrames = new List<Texture>();
 			for (int i = 2; i < 10; i++)
 				WalkLeftFrames.Add(Texture.FromFile(string.Format("data/textures/rick/{0}.png", i)));
@@ -22,28 +22,29 @@ namespace Test {
 
 			Sprite.Texture = WalkLeftFrames[0];
 			CenterResizeSprite();
+			CreatePhysicsBox();
 		}
 
 		void CalcCameraPos() {
 			Camera Cam = ShaderUniforms.Current.Camera;
-			Vector2 CameraPos = new Vector2(Cam.Position.X, Cam.Position.Y);
 
-			// TODO: Horizontal smoothing and vertical offset
+			Vector2 HalfViewport = Cam.ViewportSize / 2;
+			Vector2 CameraPos = new Vector2(Cam.Position.X, Cam.Position.Y) + HalfViewport;
+
+			// TODO: Horizontal smoothing
 			Vector2 FollowPos = Position;
 			Vector2 CurPos = CameraPos;
 
-			float DistX = 0;
-			float DistY = 0;
+			float FollowDistX = Cam.ViewportSize.X / 6;
+			float FollowDistY = Cam.ViewportSize.Y / 6;
 
-			if (Utils.DistanceX(FollowPos, CurPos, out DistX) > 2) {
-				// TODO: Better way?
-				if (DistX > 0)
-					CurPos = CurPos + new Vector2(DistX - 2, 0);
-				else
-					CurPos = CurPos + new Vector2(DistX + 2, 0);
-			}
+			if (Utils.DistanceX(FollowPos, CurPos, out float DistX) > FollowDistX)
+				CurPos = CurPos + new Vector2(DistX + (FollowDistX * (DistX > 0 ? -1 : 1)), 0);
 
-			Cam.Position = new Vector3(Utils.Round(CurPos - Cam.ViewportSize / 2), 0);
+			if (Utils.DistanceY(FollowPos, CurPos, out float DistY) > FollowDistY)
+				CurPos = CurPos + new Vector2(0, DistY + (FollowDistY * (DistY > 0 ? -1 : 1)));
+
+			Cam.Position = new Vector3(Utils.Round(CurPos - HalfViewport), 0);
 		}
 
 		public override void Update(float Dt, float GameTime) {
@@ -60,6 +61,12 @@ namespace Test {
 
 			if (Grounded && Game.Input.GetKeyDown(KeyJump))
 				MoveDir.Y = 1;
+
+			// Debug movement
+			if (Game.Input.GetKeyDown(Key.W))
+				MoveDir.Y = 1;
+			if (Game.Input.GetKeyDown(Key.S))
+				MoveDir.Y = -1;
 
 			Move(Dt, MoveDir);
 			base.Update(Dt, GameTime);

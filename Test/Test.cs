@@ -12,16 +12,23 @@ using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using FishGfx.Game;
+using Humper;
 
 namespace Test {
+	enum PhysicsTags {
+		Solid,
+		Pawn
+	}
+
 	class TestGame : FishGfxGame {
 		DevConsole Con;
 
+
+		public World PhysWorld;
 		public GameLevel Lvl;
+
 		List<Entity> Entities = new List<Entity>();
 
-		//Sprite PlayerSprite;
-		//SpriteAnimator PlayerAnimator;
 
 		protected override RenderWindow CreateWindow() {
 			return new RenderWindow(800, 600, "Test");
@@ -69,16 +76,29 @@ namespace Test {
 			RS.EnableCullFace = false;
 			Gfx.PushRenderState(RS);
 
+			InitGame();
+		}
 
+		public void InitGame() {
 			// Load the level
 			Lvl = GameLevel.FromFile("levels/rm_level0.json");
 			Lvl.Init(DefaultShader);
+
+			// Create physics world
+			int TileSize = Lvl.LayerMain.TileSize;
+			PhysWorld = new World(Lvl.LayerMain.Width * TileSize, Lvl.LayerMain.Height * TileSize);
+
+			for (int Y = 0; Y < Lvl.LayerMain.Height; Y++)
+				for (int X = 0; X < Lvl.LayerMain.Width; X++)
+					if (Lvl.LayerMain.GetTile(X, Y) != -1)
+						PhysWorld.Create(X * TileSize, Y * TileSize, TileSize, TileSize).AddTags(PhysicsTags.Solid);
+
 			foreach (var E in Lvl.GetAllEntities())
 				Spawn(E);
 
 			// Spawn player
 			Player Ply = new Player(this, DefaultShader);
-			Ply.Position = Lvl.GetEntitiesByName("spawn_player").First().Position + Ply.Size * new Vector2(0.5f, -1);
+			Ply.Position = Lvl.GetEntitiesByName("spawn_player").First().Position + (Ply.Size * new Vector2(0.5f, -1));
 			Spawn(Ply);
 		}
 
@@ -103,6 +123,17 @@ namespace Test {
 			foreach (var Ent in Entities)
 				Ent.Draw();
 
+
+			// Debug draw world
+			if (true) {
+				Camera Cam = ShaderUniforms.Current.Camera;
+				PhysWorld.DrawDebug((int)Cam.Position.X, (int)Cam.Position.Y, (int)Cam.ViewportSize.X, (int)Cam.ViewportSize.Y, (X, Y, W, H, Alpha) => {
+				}, (IBox) => {
+					Gfx.Rectangle(IBox.X, IBox.Y, IBox.Width, IBox.Height);
+				}, (Str, X, Y, Alpha) => {
+				});
+			}
+
 			//Lvl.LayerFore.Draw();
 			Con.Draw();
 
@@ -113,84 +144,6 @@ namespace Test {
 	class Program {
 		static void Main(string[] args) {
 			FishGfxGame.Run(new TestGame());
-			//Run();
-		}
-
-		static RenderWindow Window;
-
-		static void Run() {
-			Vector2 Size = RenderWindow.GetDesktopResolution() * 0.9f;
-			Window = new RenderWindow((int)Size.X, (int)Size.Y, "FishGfx Test");
-
-#if DEBUG
-			Console.WriteLine("Running {0}", RenderAPI.Version);
-			Console.WriteLine(RenderAPI.Renderer);
-			//File.WriteAllLines("gl_extensions.txt", RenderAPI.Extensions);
-#endif
-
-			Window.CaptureCursor = false;
-			Window.OnMouseMoveDelta += (Wnd, X, Y) => {
-			};
-
-			Window.OnMouseMove += (Wnd, X, Y) => {
-			};
-
-			Window.OnKey += (RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) => {
-				if (Key == Key.Escape && Pressed)
-					Environment.Exit(0);
-			};
-
-			ShaderProgram Default = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/default3d.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "data/defaultFlatColor.frag"));
-
-			Stopwatch SWatch = Stopwatch.StartNew();
-			float Dt = 0;
-
-			{
-				RenderState RS = Gfx.CreateDefaultRenderState();
-				RS.EnableDepthTest = false;
-				Gfx.PushRenderState(RS);
-			}
-
-			ShaderUniforms U = ShaderUniforms.Current;
-			U.Camera.SetOrthogonal(0, 0, Window.WindowWidth, Window.WindowHeight);
-
-			GfxFont Fnt = new BMFont("data/fonts/proggy.fnt");
-
-
-			while (!Window.ShouldClose) {
-				while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / 60))
-					;
-
-				Dt = SWatch.ElapsedMilliseconds / 1000.0f;
-				SWatch.Restart();
-
-				Gfx.Clear();
-
-				//*
-				{
-					for (int i = 0; i < 30; i++) {
-						Gfx.DrawText(Fnt, new Vector2(0, i * Fnt.LineHeight), "Hello World!", FishGfx.Color.White);
-					}
-
-					Gfx.Rectangle(300, 100, 100, 100);
-				}
-				//*/
-
-				/*Gfx.Line(new Vertex2(25, 10), new Vertex2(25, 100));
-				Gfx.Rectangle(50, 10, 100, 100);
-				Gfx.FilledRectangle(200, 10, 100, 100);
-
-				Gfx.TexturedRectangle(350, 10, 100, 100, Texture: Test);
-				Gfx.Rectangle(350, 10, 100, 100, Clr: Color.Red);*/
-
-				// Update
-				{
-
-				}
-				Window.SwapBuffers();
-				Events.Poll();
-			}
 		}
 	}
 }

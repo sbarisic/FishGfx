@@ -120,11 +120,12 @@ namespace Test {
 
 			if (Current.TryStepFrame(GameTime)) {
 				Sprite.Texture = Frames[Current.CurrentFrame];
+				Sprite.FlipX = Current.FlipX;
 
-				if ((Current.FlipX && Sprite.Scale.X > 0) || (!Current.FlipX && Sprite.Scale.X < 0)) {
+				/*if ((Current.FlipX && Sprite.Scale.X > 0) || (!Current.FlipX && Sprite.Scale.X < 0)) {
 					Sprite.Scale.X *= -1;
 					Sprite.Center.X *= -1;
-				}
+				}*/
 			}
 
 		}

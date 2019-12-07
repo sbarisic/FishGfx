@@ -9,9 +9,9 @@ using FishGfx.Game;
 
 namespace Test {
 	class Entity {
-		public FishGfxGame Game;
+		public TestGame Game;
 
-		public Entity(FishGfxGame Game) {
+		public Entity(TestGame Game) {
 			this.Game = Game;
 		}
 

@@ -15,6 +15,8 @@ namespace FishGfx.Graphics.Drawables {
 		public Vector2 Position;
 		public Vector2 Scale;
 
+		public bool FlipX;
+
 		public Sprite() {
 			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
 			Mesh.PrimitiveType = PrimitiveType.Triangles;
@@ -45,8 +47,11 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public void Draw() {
+			Vector2 FlipScale = new Vector2(FlipX ? -1 : 1, 1);
+
 			Matrix4x4 OldModel = ShaderUniforms.Current.Model;
-			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X - Center.X, Position.Y - Center.Y, 0);
+			Matrix4x4 Translation = Matrix4x4.CreateTranslation(Position.X - Center.X * FlipScale.X, Position.Y - Center.Y * FlipScale.Y, 0);
+			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Scale.X * FlipScale.X, Scale.Y * FlipScale.Y, 1) * Translation;
 
 			Shader?.Bind(ShaderUniforms.Current);
 			Texture?.BindTextureUnit();
