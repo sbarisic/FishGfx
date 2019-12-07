@@ -13,6 +13,10 @@ namespace Test {
 			B = Tmp;
 		}
 
+		public static Vector2 Round(Vector2 Vec) {
+			return new Vector2((int)Vec.X, (int)Vec.Y);
+		}
+
 		public static IEnumerable<Vector2> BresenhamLine(int X0, int Y0, int X1, int Y1) {
 			bool Steep = Math.Abs(Y1 - Y0) > Math.Abs(X1 - X0);
 
