@@ -96,14 +96,14 @@ namespace Test {
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
-			Lvl.LayerBack.Draw();
+			//Lvl.LayerBack.Draw();
 			Lvl.LayerMain.Draw();
 
 
 			foreach (var Ent in Entities)
 				Ent.Draw();
 
-			Lvl.LayerFore.Draw();
+			//Lvl.LayerFore.Draw();
 			Con.Draw();
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);

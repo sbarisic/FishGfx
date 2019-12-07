@@ -24,6 +24,28 @@ namespace Test {
 			CenterResizeSprite();
 		}
 
+		void CalcCameraPos() {
+			Camera Cam = ShaderUniforms.Current.Camera;
+			Vector2 CameraPos = new Vector2(Cam.Position.X, Cam.Position.Y);
+
+			// TODO: Horizontal smoothing and vertical offset
+			Vector2 FollowPos = Position;
+			Vector2 CurPos = CameraPos;
+
+			float DistX = 0;
+			float DistY = 0;
+
+			if (Utils.DistanceX(FollowPos, CurPos, out DistX) > 2) {
+				// TODO: Better way?
+				if (DistX > 0)
+					CurPos = CurPos + new Vector2(DistX - 2, 0);
+				else
+					CurPos = CurPos + new Vector2(DistX + 2, 0);
+			}
+
+			Cam.Position = new Vector3(Utils.Round(CurPos - Cam.ViewportSize / 2), 0);
+		}
+
 		public override void Update(float Dt, float GameTime) {
 			Key KeyLeft = Key.A;
 			Key KeyRight = Key.D;
@@ -50,8 +72,7 @@ namespace Test {
 			if (Position.X > 832)
 				Position.X = 0;*/
 
-			Camera Cam = ShaderUniforms.Current.Camera;
-			Cam.Position = new Vector3(Utils.Round(Position - Cam.ViewportSize / 2), 0);
+			CalcCameraPos();
 		}
 	}
 }
