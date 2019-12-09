@@ -9,7 +9,9 @@ using System.Threading.Tasks;
 
 namespace Test {
 	class Player : Pawn {
-		public Player(TestGame Game, ShaderProgram Shader) : base(Game, Shader) {
+		public override void OnSpawn() {
+			base.OnSpawn();
+
 			List<Texture> WalkLeftFrames = new List<Texture>();
 			for (int i = 2; i < 10; i++)
 				WalkLeftFrames.Add(Texture.FromFile(string.Format("data/textures/rick/{0}.png", i)));
@@ -23,6 +25,11 @@ namespace Test {
 			Sprite.Texture = WalkLeftFrames[0];
 			CenterResizeSprite();
 			CreatePhysicsBox();
+		}
+
+		public override void Kill(PhysicsTags Reason) {
+			Console.WriteLine("You died by " + Reason);
+			Teleport(Game.Lvl.GetEntitiesByName("spawn_player").First().Position);
 		}
 
 		void CalcCameraPos() {

@@ -71,7 +71,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Entity.cs" />
+    <Compile Include="Entities\Entity.cs" />
     <Compile Include="GameLevel.cs" />
     <Compile Include="Humper\Base\Constants.cs" />
     <Compile Include="Humper\Base\Maths.cs" />
@@ -95,8 +95,9 @@
     <Compile Include="Humper\Responses\TouchResponse.cs" />
     <Compile Include="Humper\World.cs" />
     <Compile Include="Interfaces.cs" />
-    <Compile Include="Pawn.cs" />
-    <Compile Include="Player.cs" />
+    <Compile Include="ParticleSystem.cs" />
+    <Compile Include="Entities\Pawn.cs" />
+    <Compile Include="Entities\Player.cs" />
     <Compile Include="SpriteAnimator.cs" />
     <Compile Include="Test.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -146,6 +147,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\textures\rick\9.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\fire_10x26.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\textures\tilemap.png">

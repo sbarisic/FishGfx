@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
+using System.Drawing;
+using FishGfx;
 
 namespace Test {
 	class SpriteAnimation {
@@ -72,7 +74,7 @@ namespace Test {
 	class SpriteAnimator {
 		Dictionary<string, SpriteAnimation> Anims;
 
-		List<Texture> Frames;
+		public List<Texture> Frames;
 		SpriteAnimation Current;
 
 		public SpriteAnimator() {
@@ -93,6 +95,22 @@ namespace Test {
 			Anim.FrameCount = AnimFrames.Length;
 			Frames.AddRange(AnimFrames);
 			AddAnimation(Name, Anim);
+		}
+
+		public void AddAnimation(string Name, SpriteAnimation Anim, Image AnimAtlas, int FrameWidth, int FrameHeight) {
+			int FramesX = AnimAtlas.Width / FrameWidth;
+			int FramesY = AnimAtlas.Height / FrameHeight;
+			List<Texture> AnimFrames = new List<Texture>();
+
+			using (Bitmap AnimBitmap = new Bitmap(AnimAtlas)) {
+				for (int Y = 0; Y < FramesY; Y++)
+					for (int X = 0; X < FramesX; X++) {
+						Bitmap FrameBmp = AnimBitmap.Clone(new Rectangle(X * FrameWidth, Y * FrameHeight, FrameWidth, FrameHeight), AnimBitmap.PixelFormat);
+						AnimFrames.Add(Texture.FromImage(FrameBmp));
+					}
+			}
+
+			AddAnimation(Name, Anim, AnimFrames.ToArray());
 		}
 
 		public SpriteAnimation CloneAnimation(string Name, string NewName) {

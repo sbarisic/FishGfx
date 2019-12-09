@@ -28,7 +28,7 @@ namespace FishGfx.Game {
 			return new RenderWindow(800, 600, nameof(FishGfxGame));
 		}
 
-		protected ShaderProgram DefaultShader;
+		public ShaderProgram DefaultShader;
 
 		protected virtual void CreateShaders() {
 			DefaultShader = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/default3d.vert"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/default.frag"));

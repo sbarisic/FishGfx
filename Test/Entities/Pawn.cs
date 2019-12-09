@@ -27,7 +27,6 @@ namespace Test {
 		public Vector2 Velocity;
 
 		protected bool Grounded;
-		protected int GroundTileID;
 
 		// Movement stuff for pawns
 		protected float MoveAccelX = 128;
@@ -53,9 +52,9 @@ namespace Test {
 			}
 		}
 
-		public Pawn(TestGame Game, ShaderProgram Shader) : base(Game) {
+		public override void OnSpawn() {
 			Sprite = new Sprite();
-			Sprite.Shader = Shader;
+			Sprite.Shader = Game.DefaultShader;
 
 			Animator = new SpriteAnimator();
 		}
@@ -95,6 +94,18 @@ namespace Test {
 			Animator.Update(GameTime, Sprite);
 		}
 
+		public virtual void Teleport(Vector2 NewPosition) {
+			PhysBox.Move(NewPosition.X, NewPosition.Y, (Col) => {
+				return CollisionResponses.None;
+			});
+
+			Position.X = PhysBox.X;
+			Position.Y = PhysBox.Y;
+		}
+
+		public virtual void Kill(PhysicsTags Reason) {
+		}
+
 		public virtual void Move(float Dt, Vector2 MoveDir) {
 			Vector2 Gravity = new Vector2(0, -30);
 
@@ -115,16 +126,27 @@ namespace Test {
 			Vector2 NewPos = Position + Velocity * Dt;
 
 			IMovement PawnMove = PhysBox.Move(NewPos.X, NewPos.Y, (Col) => {
+				if (!Col.Other.HasTag(PhysicsTags.Solid))
+					return CollisionResponses.None;
+
 				return CollisionResponses.Slide;
 			});
 
 			Position.X = PhysBox.X;
 			Position.Y = PhysBox.Y;
 
+			if (Position.Y < 0)
+				Kill(PhysicsTags.Hazard);
+
+			//Console.WriteLine("Pos: {0:0.00}, {1:0.00}", Position.X, Position.Y);
+
 			bool WasGrounded = Grounded;
 			Grounded = false;
 
 			foreach (var Hit in PawnMove.Hits) {
+				if (Hit.Box.HasTag(PhysicsTags.Spike))
+					Kill(PhysicsTags.Spike);
+
 				if (Hit.Box.HasTag(PhysicsTags.Solid)) {
 
 					if (Hit.Normal.X < 0) {

@@ -15,9 +15,13 @@ using FishGfx.Game;
 using Humper;
 
 namespace Test {
+	[Flags]
 	enum PhysicsTags {
-		Solid,
-		Pawn
+		None = 0,
+		Solid = 1 << 0,
+		Pawn = 1 << 1,
+		Spike = 1 << 2,
+		Hazard = 1 << 3,
 	}
 
 	class TestGame : FishGfxGame {
@@ -86,7 +90,7 @@ namespace Test {
 
 			// Create physics world
 			int TileSize = Lvl.LayerMain.TileSize;
-			PhysWorld = new World(Lvl.LayerMain.Width * TileSize, Lvl.LayerMain.Height * TileSize);
+			PhysWorld = new World(Lvl.LayerMain.Width * TileSize, Lvl.LayerMain.Height * TileSize, TileSize * 4);
 
 			// Create all tile collision boxes
 			AABB?[] CollisionBoxes = new AABB?[] { };
@@ -113,7 +117,6 @@ namespace Test {
 						AABB BoxB = CollisionBoxes[B].Value;
 
 						if (BoxA.Adjacent(BoxB)) {
-
 							CollisionBoxes[A] = BoxA.Union(BoxB);
 							CollisionBoxes[B] = null;
 							Merging = true;
@@ -137,12 +140,15 @@ namespace Test {
 				Spawn(E);
 
 			// Spawn player
-			Player Ply = new Player(this, DefaultShader);
-			Ply.Position = Lvl.GetEntitiesByName("spawn_player").First().Position + (Ply.Size * new Vector2(0.5f, -1));
+			Player Ply = new Player();
 			Spawn(Ply);
+
+			Ply.Teleport(Lvl.GetEntitiesByName("spawn_player").First().Position);
 		}
 
 		public void Spawn(Entity Ent) {
+			Ent.Game = this;
+			Ent.OnSpawn();
 			Entities.Add(Ent);
 		}
 
@@ -156,7 +162,7 @@ namespace Test {
 
 		protected override void Draw(float Dt) {
 			Gfx.Clear(Color.Sky);
-			//Lvl.LayerBack.Draw();
+			Lvl.LayerBack.Draw();
 			Lvl.LayerMain.Draw();
 
 
@@ -164,8 +170,8 @@ namespace Test {
 				Ent.Draw();
 
 
-			// Debug draw world
-			if (true) {
+			// DEBUG DRAW
+			if (false) {
 				Camera Cam = ShaderUniforms.Current.Camera;
 
 				PhysWorld.DrawDebug((int)Cam.Position.X, (int)Cam.Position.Y, (int)Cam.ViewportSize.X, (int)Cam.ViewportSize.Y, (X, Y, W, H, Alpha) => {
@@ -177,7 +183,7 @@ namespace Test {
 				});
 			}
 
-			//Lvl.LayerFore.Draw();
+			Lvl.LayerFore.Draw();
 			Con.Draw();
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);
