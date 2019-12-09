@@ -31,10 +31,10 @@ namespace Test {
 
 		// Movement stuff for pawns
 		protected float MoveAccelX = 128;
-		protected float MoveAccelY = 512;
-
 		protected float MaxVelocityX = 192;
-		protected float MaxVelocityY = 512;
+
+		protected float MoveAccelY = 512 + 64; // 512
+		protected float MaxVelocityY = 512 + 128;
 
 		protected float DeccelX = 0.6f;
 		protected float DeccelY = 0.99f;
@@ -66,8 +66,7 @@ namespace Test {
 		}
 
 		protected virtual void CreatePhysicsBox() {
-			Vector2 Pos = Sprite.Position - Sprite.Center;
-			PhysBox = Game.PhysWorld.Create(Pos.X, Pos.Y, Size.X, Size.Y);
+			PhysBox = Game.PhysWorld.Create(Position.X, Position.Y, Size.X, Size.Y);
 			PhysBox.AddTags(PhysicsTags.Pawn);
 		}
 
@@ -98,43 +97,79 @@ namespace Test {
 
 		public virtual void Move(float Dt, Vector2 MoveDir) {
 			Vector2 Gravity = new Vector2(0, -30);
-			//Gravity = Vector2.Zero;
 
 			Vector2 MoveAccel = MoveDir * new Vector2(Grounded ? MoveAccelX : AirMoveAccelX, MoveAccelY);
 			Velocity += MoveAccel + Gravity;
 
-			Velocity.X = GfxUtils.Clamp(Velocity.X * (Grounded ? DeccelX : AirDeccelX), -MaxVelocityX, MaxVelocityX);
-			Velocity.Y = GfxUtils.Clamp(Velocity.Y * DeccelY, -MaxVelocityY, MaxVelocityY);
+			Velocity.X = GfxUtils.Clamp(Velocity.X, -MaxVelocityX, MaxVelocityX);
+			Velocity.Y = GfxUtils.Clamp(Velocity.Y, -MaxVelocityY, MaxVelocityY);
+
+			if (MoveDir.X == 0)
+				Velocity.X *= (Grounded ? DeccelX : AirDeccelX);
+
+			if (MoveDir.Y == 0)
+				Velocity.Y *= DeccelY;
 		}
 
 		public override void Update(float Dt, float GameTime) {
-			Vector2 Pos = Position - Sprite.Center;
-			Vector2 NewPos = Utils.Round(Pos + Velocity * Dt);
+			Vector2 NewPos = Position + Velocity * Dt;
 
 			IMovement PawnMove = PhysBox.Move(NewPos.X, NewPos.Y, (Col) => {
 				return CollisionResponses.Slide;
 			});
 
-			Pos.X = PhysBox.X;
-			Pos.Y = PhysBox.Y;
+			Position.X = PhysBox.X;
+			Position.Y = PhysBox.Y;
 
-			Grounded = PawnMove.Hits.Any((Hit) => Hit.Box.HasTag(PhysicsTags.Solid) && Hit.Normal.Y > 0);
+			bool WasGrounded = Grounded;
+			Grounded = false;
+
+			foreach (var Hit in PawnMove.Hits) {
+				if (Hit.Box.HasTag(PhysicsTags.Solid)) {
+
+					if (Hit.Normal.X < 0) {
+						if (Velocity.X >= 0)
+							Velocity.X = 0;
+					} else if (Hit.Normal.X > 0) {
+						if (Velocity.X <= 0)
+							Velocity.X = 0;
+					} else if (Hit.Normal.Y < 0) {
+						// Hit with head
+
+						if (Velocity.Y >= 0)
+							Velocity.Y = 0;
+					} else if (Hit.Normal.Y > 0) {
+						// Ground
+
+						if (!WasGrounded)
+							Velocity.X = 0;
+
+						Grounded = true;
+
+						if (Velocity.Y <= 0)
+							Velocity.Y = 0;
+					}
+
+				}
+			}
+
+			/*Grounded = PawnMove.Hits.Any((Hit) => Hit.Box.HasTag(PhysicsTags.Solid) && Hit.Normal.Y > 0);
 			if (Grounded && Velocity.Y <= 0)
-				Velocity.Y = 0;
+				Velocity.Y = 0;*/
 
 			/*if (CCounter++ > 0) {
 				CCounter = 0;
 				Console.WriteLine("Velocity: {0:0.00} .. {1:0.00}", Velocity.X, Velocity.Y);
 			}*/
 
-			Position = Pos + Sprite.Center;
+			//Position = Pos + Sprite.Center;
 			Animate(GameTime, Velocity);
 		}
 
 		//int CCounter;
 
 		public override void Draw() {
-			Sprite.Position = Position;
+			Sprite.Position = Position + Sprite.Center;
 			Sprite.Draw();
 		}
 	}

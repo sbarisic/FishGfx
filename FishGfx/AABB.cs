@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+// TODO: REMOVE!
+using System.Drawing;
 
 namespace FishGfx {
 	public struct AABB {
@@ -59,6 +61,26 @@ namespace FishGfx {
 		public AABB(float X, float Y, float W, float H) : this(new Vector2(X, Y), new Vector2(W, H)) {
 		}
 
+		public bool Adjacent(AABB Other) {
+			if (Size.X == Other.Size.X) {
+
+				if (Position.X == Other.Position.X)
+					if ((Position.Y + Size.Y) == Other.Position.Y || (Position.Y - Other.Size.Y) == Other.Position.Y)
+						return true;
+
+			}
+
+			if (Size.Y == Other.Size.Y) {
+
+				if (Position.Y == Other.Position.Y)
+					if ((Position.X + Size.X) == Other.Position.X || (Position.X - Other.Size.X) == Other.Position.X)
+						return true;
+
+			}
+
+			return false;
+		}
+
 		public bool Collide(AABB Other) {
 			foreach (var BoxVert in Other.GetVertices())
 				if (IsInside(BoxVert))
@@ -85,7 +107,7 @@ namespace FishGfx {
 		public bool IsInside(Vector2 Point) {
 			return IsInside(new Vector3(Point, 0));
 		}
-		
+
 		public IEnumerable<Vector3> GetVertices() {
 			yield return Position;
 			yield return Position + Size;
@@ -135,6 +157,16 @@ namespace FishGfx {
 			return new AABB(Position.Max(Other.Position), B - A);
 		}
 
+		public AABB Union(AABB Other) {
+			Rectangle A = new Rectangle((int)Position.X, (int)Position.Y, (int)Size.X, (int)Size.Y);
+			Rectangle B = new Rectangle((int)Other.Position.X, (int)Other.Position.Y, (int)Other.Size.X, (int)Other.Size.Y);
+
+			Rectangle C = Rectangle.Union(A, B);
+			return new AABB(C.X, C.Y, C.Width, C.Height);
+
+			//RectangleConverter.
+		}
+
 		public override string ToString() {
 			return string.Format("{0} .. {2} ({1})", Position, Size, Position + Size);
 		}
@@ -153,7 +185,7 @@ namespace FishGfx {
 				Max = Max.Max(VertsArray[i]);
 			}
 
-			return new AABB(Min, Max);
+			return new AABB(Min, Max - Min);
 		}
 
 		public static AABB operator +(AABB A, AABB B) {

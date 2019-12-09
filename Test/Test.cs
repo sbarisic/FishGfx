@@ -88,10 +88,50 @@ namespace Test {
 			int TileSize = Lvl.LayerMain.TileSize;
 			PhysWorld = new World(Lvl.LayerMain.Width * TileSize, Lvl.LayerMain.Height * TileSize);
 
+			// Create all tile collision boxes
+			AABB?[] CollisionBoxes = new AABB?[] { };
+			bool Merging;
+
 			for (int Y = 0; Y < Lvl.LayerMain.Height; Y++)
 				for (int X = 0; X < Lvl.LayerMain.Width; X++)
 					if (Lvl.LayerMain.GetTile(X, Y) != -1)
-						PhysWorld.Create(X * TileSize, Y * TileSize, TileSize, TileSize).AddTags(PhysicsTags.Solid);
+						CollisionBoxes = CollisionBoxes.Add(new AABB(X * TileSize, Y * TileSize, TileSize, TileSize));
+
+			// Merge all adjacent collision boxes
+			do {
+				Merging = false;
+
+				for (int A = 0; A < CollisionBoxes.Length; A++) {
+					for (int B = 0; B < CollisionBoxes.Length; B++) {
+						if (A == B)
+							continue;
+
+						if (CollisionBoxes[A] == null || CollisionBoxes[B] == null)
+							continue;
+
+						AABB BoxA = CollisionBoxes[A].Value;
+						AABB BoxB = CollisionBoxes[B].Value;
+
+						if (BoxA.Adjacent(BoxB)) {
+
+							CollisionBoxes[A] = BoxA.Union(BoxB);
+							CollisionBoxes[B] = null;
+							Merging = true;
+						}
+					}
+				}
+			} while (Merging);
+
+			// Create collision box objects finally
+			foreach (var Box in CollisionBoxes) {
+				if (Box == null)
+					continue;
+
+				AABB B = Box.Value;
+
+				IBox ColBox = PhysWorld.Create(B.Position.X, B.Position.Y, B.Size.X, B.Size.Y);
+				ColBox.AddTags(PhysicsTags.Solid);
+			}
 
 			foreach (var E in Lvl.GetAllEntities())
 				Spawn(E);
@@ -127,9 +167,12 @@ namespace Test {
 			// Debug draw world
 			if (true) {
 				Camera Cam = ShaderUniforms.Current.Camera;
+
 				PhysWorld.DrawDebug((int)Cam.Position.X, (int)Cam.Position.Y, (int)Cam.ViewportSize.X, (int)Cam.ViewportSize.Y, (X, Y, W, H, Alpha) => {
 				}, (IBox) => {
-					Gfx.Rectangle(IBox.X, IBox.Y, IBox.Width, IBox.Height);
+					Color Clr = IBox.Data is Color C ? C : Color.White;
+
+					Gfx.Rectangle(IBox.X, IBox.Y, IBox.Width, IBox.Height, Clr: Clr);
 				}, (Str, X, Y, Alpha) => {
 				});
 			}

@@ -32,7 +32,7 @@ namespace Test {
 			Vector2 CameraPos = new Vector2(Cam.Position.X, Cam.Position.Y) + HalfViewport;
 
 			// TODO: Horizontal smoothing
-			Vector2 FollowPos = Position;
+			Vector2 FollowPos = Position - Sprite.Center;
 			Vector2 CurPos = CameraPos;
 
 			float FollowDistX = Cam.ViewportSize.X / 6;

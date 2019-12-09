@@ -13,6 +13,29 @@ namespace Test {
 			B = Tmp;
 		}
 
+		public static T[] Add<T>(this T[] Arr, T New) {
+			Array.Resize(ref Arr, Arr.Length + 1);
+			Arr[Arr.Length - 1] = New;
+			return Arr;
+		}
+
+		public static T?[] RemoveNulls<T>(this T?[] Arr) where T : struct {
+			int Count = 0;
+
+			for (int i = 0; i < Arr.Length; i++)
+				if (Arr[i] != null)
+					Count++;
+
+			T?[] NewArr = new T?[Count];
+			int Idx = 0;
+
+			for (int i = 0; i < Arr.Length; i++)
+				if (Arr[i] != null)
+					NewArr[Idx++] = Arr[i].Value;
+
+			return NewArr;
+		}
+
 		public static Vector2 Round(Vector2 Vec) {
 			return new Vector2((int)Vec.X, (int)Vec.Y);
 		}
