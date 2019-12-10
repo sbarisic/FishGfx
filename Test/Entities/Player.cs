@@ -10,14 +10,6 @@ using FishGfx;
 
 namespace Test {
 	class Player : Pawn {
-		static Texture[] RickDeathTiles;
-		static Texture[] FireParticles;
-
-		static Player() {
-			RickDeathTiles = Texture.FromFileAtlas("data/textures/rick/9.png", 8, 12);
-			FireParticles = Texture.FromFileAtlas("data/textures/particles/fire.png", 4, 4);
-		}
-
 		public override void OnSpawn() {
 			List<Texture> WalkLeftFrames = new List<Texture>();
 			for (int i = 2; i < 10; i++)
@@ -43,7 +35,7 @@ namespace Test {
 
 			base.Kill(Reason);
 
-			Game.Particles.SpawnParticles(Particle.CreateExplosion(Game.GameTime, Position, RickDeathTiles));
+			Game.Particles.SpawnParticles(Particle.CreateExplosion(Game.GameTime, Position, ParticleSystem.RickDeath));
 
 			Console.WriteLine("You died by " + Reason);
 			//Teleport(Game.Lvl.GetEntitiesByName("spawn_player").First().Position);
@@ -77,6 +69,11 @@ namespace Test {
 			Key KeyJump = Key.Space;
 			Vector2 MoveDir = Vector2.Zero;
 
+			if (Dead && Game.Input.GetKeyPressed(KeyJump)) {
+				Game.Con.OnCommand("respawn");
+				return;
+			}
+
 			if (Game.Input.GetKeyDown(KeyLeft))
 				MoveDir.X = -1;
 
@@ -89,7 +86,9 @@ namespace Test {
 			// Debug movement
 			if (Game.Input.GetKeyDown(Key.W)) {
 				MoveDir.Y = 1;
-				Game.Particles.SpawnParticle(Particle.CreateExplosionParticle(Game.GameTime, Position + Sprite.Center, FireParticles.Random(), 64));
+
+				if (!Dead)
+					Game.Particles.SpawnParticle(Particle.CreateExplosionParticle(Game.GameTime, Position + Sprite.Center, ParticleSystem.Fire.Random(), 64));
 			}
 
 			if (Game.Input.GetKeyDown(Key.S))

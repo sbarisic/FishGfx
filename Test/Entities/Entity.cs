@@ -76,6 +76,10 @@ namespace Test {
 		}
 
 		public override void Update(float Dt, float GameTime) {
+			if (Name == "torch_fire") {
+				Game.Particles.SpawnParticle(Particle.CreateFireParticle(Game.GameTime, Position + Sprite.Scale * 0.5f, ParticleSystem.Fire.Random(), 32));
+			}
+
 			if (SpriteAnimator != null && Sprite != null)
 				SpriteAnimator.Update(GameTime, Sprite);
 		}

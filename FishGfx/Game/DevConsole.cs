@@ -184,11 +184,10 @@ namespace FishGfx.Game {
 			SetChar(CursorX, CursorY, (char)0, Color.White);
 		}
 
-		void OnCommand(string Cmd) {
+		public void OnCommand(string Cmd) {
 			if (Cmd.Length != 0) {
 				OnInput?.Invoke(Cmd);
 			}
-
 
 			//PrintLine(string.Format("You entered '{0}'", Cmd));
 			BeginInput();

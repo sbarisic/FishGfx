@@ -26,6 +26,15 @@ namespace Test {
 			Velocity = Vector2.Zero;
 		}
 
+		public static Particle CreateFireParticle(float GameTime, Vector2 Position, Texture Tex, float Velocity = 64) {
+			Particle Part = new Particle(GameTime, 0.3f, Tex);
+
+			Part.Position = Position;
+			Part.Velocity = new Vector2(GfxUtils.RandomFloat() * 2 - 1, GfxUtils.RandomFloat() + 1 * 2) * Velocity;
+
+			return Part;
+		}
+
 		public static Particle CreateExplosionParticle(float GameTime, Vector2 Position, Texture Tex, float Velocity = 96) {
 			Particle Part = new Particle(GameTime, 2, Tex);
 
@@ -49,6 +58,14 @@ namespace Test {
 	}
 
 	class ParticleSystem {
+		public static Texture[] RickDeath;
+		public static Texture[] Fire;
+
+		static ParticleSystem() {
+			RickDeath = Texture.FromFileAtlas("data/textures/rick/9.png", 8, 12);
+			Fire = Texture.FromFileAtlas("data/textures/particles/fire.png", 4, 4);
+		}
+
 		Sprite Sprite;
 		Particle?[] Particles;
 

@@ -25,8 +25,7 @@ namespace Test {
 	}
 
 	class TestGame : FishGfxGame {
-		DevConsole Con;
-
+		public DevConsole Con;
 
 		public World PhysWorld;
 		public GameLevel Lvl;
