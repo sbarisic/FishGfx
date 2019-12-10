@@ -31,6 +31,8 @@ namespace Test {
 		public World PhysWorld;
 		public GameLevel Lvl;
 
+		Parallax Background;
+
 		List<Entity> Entities = new List<Entity>();
 
 
@@ -139,6 +141,14 @@ namespace Test {
 			foreach (var E in Lvl.GetAllEntities())
 				Spawn(E);
 
+			// Create background parallax
+			Background = new Parallax(this);
+
+			string BackgroundFolder = "data/textures/background/" + Lvl.Background;
+			string[] BackgroundImages = Directory.GetFiles(BackgroundFolder);
+			foreach (var Img in BackgroundImages)
+				Background.AddLayer(Texture.FromFile(Img));
+
 			// Spawn player
 			Player Ply = new Player();
 			Spawn(Ply);
@@ -161,7 +171,10 @@ namespace Test {
 		}
 
 		protected override void Draw(float Dt) {
+			Camera Cam = ShaderUniforms.Current.Camera;
+
 			Gfx.Clear(Color.Sky);
+			Background.Draw(Cam);
 			Lvl.LayerBack.Draw();
 			Lvl.LayerMain.Draw();
 
@@ -172,8 +185,6 @@ namespace Test {
 
 			// DEBUG DRAW
 			if (false) {
-				Camera Cam = ShaderUniforms.Current.Camera;
-
 				PhysWorld.DrawDebug((int)Cam.Position.X, (int)Cam.Position.Y, (int)Cam.ViewportSize.X, (int)Cam.ViewportSize.Y, (X, Y, W, H, Alpha) => {
 				}, (IBox) => {
 					Color Clr = IBox.Data is Color C ? C : Color.White;

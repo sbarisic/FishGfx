@@ -36,6 +36,8 @@ namespace Test {
 		[JsonProperty("time_limit")]
 		public int TimeLimit;
 
+		public string Background;
+
 		public LevelLayer[] Layers;
 
 		public static GameLevel FromFile(string FileName) {

@@ -2,6 +2,7 @@
   "width": 1920,
   "height": 480,
   "time_limit": 300,
+  "background": "jungle",
   "layers": [
     {
       "name": "background",

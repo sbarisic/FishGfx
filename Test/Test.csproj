@@ -95,6 +95,7 @@
     <Compile Include="Humper\Responses\TouchResponse.cs" />
     <Compile Include="Humper\World.cs" />
     <Compile Include="Interfaces.cs" />
+    <Compile Include="Parallax.cs" />
     <Compile Include="ParticleSystem.cs" />
     <Compile Include="Entities\Pawn.cs" />
     <Compile Include="Entities\Player.cs" />
@@ -120,6 +121,33 @@
   <ItemGroup>
     <Content Include="..\FishGfx\glfw3.dll">
       <Link>glfw3.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\forest\Backgroud1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\forest\Backgroud2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\forest\Backgroud3.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\forest\Nuvens.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\jungle\1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\jungle\2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\jungle\3.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\jungle\4.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\textures\background\jungle\5.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\textures\rick\1.png">
