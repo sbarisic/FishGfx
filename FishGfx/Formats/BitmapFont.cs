@@ -59,7 +59,7 @@ namespace FishGfx.Formats {
 		public Dictionary<string, Texture> PageNames;
 		Dictionary<char, CharBlock> Chars;
 
-		public BMFont(string FntFile = null, float FontSize = -1) {
+		public BMFont(string FntFile = null, float FontSize = -1, bool DoLoadTextures = true) {
 			if (FntFile != null) {
 				using (MemoryStream MS = new MemoryStream()) {
 					using (FileStream FS = File.OpenRead(FntFile)) {
@@ -69,7 +69,8 @@ namespace FishGfx.Formats {
 					MS.Position = 0;
 					Read(MS);
 
-					LoadTextures(Path.GetDirectoryName(FntFile));
+					if (DoLoadTextures)
+						LoadTextures(Path.GetDirectoryName(FntFile));
 				}
 			}
 
