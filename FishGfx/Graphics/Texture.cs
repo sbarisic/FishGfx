@@ -197,13 +197,29 @@ namespace FishGfx.Graphics {
 		internal const int FRONT = 4;
 		internal const int BACK = 5;
 
-		public int Width { get; private set; }
-		public int Height { get; private set; }
-		public int MipLevels { get; private set; }
-		public bool Multisampled { get; private set; }
-		public bool IsCubeMap { get; private set; }
-		public int Multisamples { get; private set; }
-		public Vector2 Size { get { return new Vector2(Width, Height); } }
+		public int Width {
+			get; private set;
+		}
+		public int Height {
+			get; private set;
+		}
+		public int MipLevels {
+			get; private set;
+		}
+		public bool Multisampled {
+			get; private set;
+		}
+		public bool IsCubeMap {
+			get; private set;
+		}
+		public int Multisamples {
+			get; private set;
+		}
+		public Vector2 Size {
+			get {
+				return new Vector2(Width, Height);
+			}
+		}
 
 		TextureTarget Target;
 		InternalFormat InternalFormat;
@@ -256,7 +272,8 @@ namespace FishGfx.Graphics {
 					Unbind();
 				}
 
-			} else throw new NotImplementedException();
+			} else
+				throw new NotImplementedException();
 		}
 
 		public void SetWrap(TextureWrap Wrap) {
@@ -555,6 +572,24 @@ namespace FishGfx.Graphics {
 			}
 
 			return FromImage(Image.FromFile(FileName), MipmapLevels);
+		}
+
+		public static Texture[] FromFileAtlas(string FileName, int TileWidth, int TileHeight, int MipmapLevels = 0) {
+			List<Texture> AnimFrames = new List<Texture>();
+
+			using (Bitmap Bmp = new Bitmap(FileName)) {
+				int FramesX = Bmp.Width / TileWidth;
+				int FramesY = Bmp.Height / TileHeight;
+
+				for (int Y = 0; Y < FramesY; Y++)
+					for (int X = 0; X < FramesX; X++) {
+						Bitmap FrameBmp = Bmp.Clone(new Rectangle(X * TileWidth, Y * TileHeight, TileWidth, TileHeight), Bmp.PixelFormat);
+						AnimFrames.Add(FromImage(FrameBmp, MipmapLevels: MipmapLevels));
+					}
+
+			}
+
+			return AnimFrames.ToArray();
 		}
 
 		public static void CreateOrUpdateFromFile(ref Texture T, string FileName, bool FlipY = false) {

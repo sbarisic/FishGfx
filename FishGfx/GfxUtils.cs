@@ -12,12 +12,28 @@ namespace FishGfx {
 	public static unsafe partial class GfxUtils {
 		static Random Rnd = new Random();
 
+		public static T Random<T>(this T[] Arr) {
+			return Arr[Rnd.Next(0, Arr.Length)];
+		}
+
 		public static byte RandomByte() {
 			return (byte)Rnd.Next(256);
 		}
 
 		public static Color RandomColor() {
 			return new Color(RandomByte(), RandomByte(), RandomByte());
+		}
+
+		public static float RandomFloat() {
+			return (float)Rnd.NextDouble();
+		}
+
+		public static float RandomDir() {
+			return (float)(Rnd.NextDouble() * 2 - 1);
+		}
+
+		public static Vector2 RandomDir2() {
+			return Vector2.Normalize(new Vector2(RandomDir(), RandomDir()));
 		}
 
 		public static float Clamp(this float Num, float Min, float Max) {

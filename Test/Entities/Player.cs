@@ -6,12 +6,19 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx;
 
 namespace Test {
 	class Player : Pawn {
-		public override void OnSpawn() {
-			base.OnSpawn();
+		static Texture[] RickDeathTiles;
+		static Texture[] FireParticles;
 
+		static Player() {
+			RickDeathTiles = Texture.FromFileAtlas("data/textures/rick/9.png", 8, 12);
+			FireParticles = Texture.FromFileAtlas("data/textures/particles/fire.png", 4, 4);
+		}
+
+		public override void OnSpawn() {
 			List<Texture> WalkLeftFrames = new List<Texture>();
 			for (int i = 2; i < 10; i++)
 				WalkLeftFrames.Add(Texture.FromFile(string.Format("data/textures/rick/{0}.png", i)));
@@ -25,11 +32,21 @@ namespace Test {
 			Sprite.Texture = WalkLeftFrames[0];
 			CenterResizeSprite();
 			CreatePhysicsBox();
+
+			base.OnSpawn();
 		}
 
+
 		public override void Kill(PhysicsTags Reason) {
+			if (Dead)
+				return;
+
+			base.Kill(Reason);
+
+			Game.Particles.SpawnParticles(Particle.CreateExplosion(Game.GameTime, Position, RickDeathTiles));
+
 			Console.WriteLine("You died by " + Reason);
-			Teleport(Game.Lvl.GetEntitiesByName("spawn_player").First().Position);
+			//Teleport(Game.Lvl.GetEntitiesByName("spawn_player").First().Position);
 		}
 
 		void CalcCameraPos() {
@@ -70,8 +87,11 @@ namespace Test {
 				MoveDir.Y = 1;
 
 			// Debug movement
-			if (Game.Input.GetKeyDown(Key.W))
+			if (Game.Input.GetKeyDown(Key.W)) {
 				MoveDir.Y = 1;
+				Game.Particles.SpawnParticle(Particle.CreateExplosionParticle(Game.GameTime, Position + Sprite.Center, FireParticles.Random(), 64));
+			}
+
 			if (Game.Input.GetKeyDown(Key.S))
 				MoveDir.Y = -1;
 

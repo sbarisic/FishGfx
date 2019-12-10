@@ -47,7 +47,6 @@ namespace Test {
 			}
 		}
 
-		ParticleSystem Particles;
 		SpriteAnimator SpriteAnimator;
 		Sprite Sprite;
 
@@ -67,7 +66,7 @@ namespace Test {
 				Sprite.Shader = Game.DefaultShader;
 
 				SpriteAnimator = new SpriteAnimator();
-				SpriteAnimator.AddAnimation("default", new SpriteAnimation(2.0f / 100, Loop: true), Image.FromFile("data/textures/fire_10x26.png"), 10, 26);
+				SpriteAnimator.AddAnimation("default", new SpriteAnimation(2.0f / 100, Loop: true), Texture.FromFileAtlas("data/textures/fire_10x26.png", 10, 26));
 				SpriteAnimator.Play("default");
 
 				Sprite.Texture = SpriteAnimator.Frames[0];
@@ -77,15 +76,11 @@ namespace Test {
 		}
 
 		public override void Update(float Dt, float GameTime) {
-			Particles?.Update(Dt, GameTime);
-
-			if (Sprite != null)
-				SpriteAnimator?.Update(GameTime, Sprite);
+			if (SpriteAnimator != null && Sprite != null)
+				SpriteAnimator.Update(GameTime, Sprite);
 		}
 
 		public override void Draw() {
-			Particles?.Draw();
-
 			if (Sprite != null) {
 				Sprite.Position = Position;
 				Sprite.Draw();

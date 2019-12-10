@@ -97,7 +97,7 @@ namespace Test {
 			AddAnimation(Name, Anim);
 		}
 
-		public void AddAnimation(string Name, SpriteAnimation Anim, Image AnimAtlas, int FrameWidth, int FrameHeight) {
+		/*public void AddAnimation(string Name, SpriteAnimation Anim, Image AnimAtlas, int FrameWidth, int FrameHeight) {
 			int FramesX = AnimAtlas.Width / FrameWidth;
 			int FramesY = AnimAtlas.Height / FrameHeight;
 			List<Texture> AnimFrames = new List<Texture>();
@@ -111,7 +111,7 @@ namespace Test {
 			}
 
 			AddAnimation(Name, Anim, AnimFrames.ToArray());
-		}
+		}*/
 
 		public SpriteAnimation CloneAnimation(string Name, string NewName) {
 			SpriteAnimation Old = Anims[Name];

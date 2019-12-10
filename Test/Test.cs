@@ -31,7 +31,8 @@ namespace Test {
 		public World PhysWorld;
 		public GameLevel Lvl;
 
-		Parallax Background;
+		public Parallax Background;
+		public ParticleSystem Particles;
 
 		List<Entity> Entities = new List<Entity>();
 
@@ -64,6 +65,12 @@ namespace Test {
 
 					Con.TextColor = Color.White;
 					Con.PrintLine();
+					return;
+				}
+
+				if (In == "respawn") {
+					Player Ply = Entities.Where(Ent => Ent is Player).FirstOrDefault() as Player;
+					Ply.Respawn(Lvl.GetEntitiesByName("spawn_player").First().Position);
 					return;
 				}
 
@@ -144,6 +151,9 @@ namespace Test {
 			// Create background parallax
 			Background = new Parallax(this);
 
+			// Create particle system
+			Particles = new ParticleSystem(this);
+
 			string BackgroundFolder = "data/textures/background/" + Lvl.Background;
 			string[] BackgroundImages = Directory.GetFiles(BackgroundFolder);
 			foreach (var Img in BackgroundImages)
@@ -151,9 +161,8 @@ namespace Test {
 
 			// Spawn player
 			Player Ply = new Player();
+			Ply.Position = Lvl.GetEntitiesByName("spawn_player").First().Position;
 			Spawn(Ply);
-
-			Ply.Teleport(Lvl.GetEntitiesByName("spawn_player").First().Position);
 		}
 
 		public void Spawn(Entity Ent) {
@@ -166,8 +175,11 @@ namespace Test {
 			if (Input.GetKeyPressed(Key.Escape))
 				Window.Close();
 
-			foreach (var Ent in Entities)
-				Ent.Update(Dt, GameTime);
+			if (!Con.Enabled)
+				foreach (var Ent in Entities)
+					Ent.Update(Dt, GameTime);
+
+			Particles.Update(Dt, GameTime);
 		}
 
 		protected override void Draw(float Dt) {
@@ -195,7 +207,13 @@ namespace Test {
 			}
 
 			Lvl.LayerFore.Draw();
+			Particles.Draw();
+
+			// TODO: Handle that shit better, what the fuck
+			Vector2 ConPos = Con.Position;
+			Con.Position = Cam.Position.XY() + ConPos;
 			Con.Draw();
+			Con.Position = ConPos;
 
 			//Gfx.DrawText(TestFont, new Vector2(100, 50), "The quick, brown fox! Hello. Hello?", Color.White, 32);
 		}

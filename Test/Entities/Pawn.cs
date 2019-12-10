@@ -20,8 +20,8 @@ namespace Test {
 		protected const string ANIM_JUMP = "jump";
 		protected const string ANIM_FALL = "fall";
 
-		protected Sprite Sprite;
-		protected SpriteAnimator Animator;
+		protected Sprite Sprite = new Sprite();
+		protected SpriteAnimator Animator = new SpriteAnimator();
 
 		public Vector2 Position;
 		public Vector2 Velocity;
@@ -43,8 +43,9 @@ namespace Test {
 
 		// Other stuff
 		bool LookingLeft;
-
 		IBox PhysBox;
+
+		public bool Dead;
 
 		public Vector2 Size {
 			get {
@@ -53,10 +54,13 @@ namespace Test {
 		}
 
 		public override void OnSpawn() {
-			Sprite = new Sprite();
 			Sprite.Shader = Game.DefaultShader;
+			Respawn(Position);
+		}
 
-			Animator = new SpriteAnimator();
+		public virtual void Respawn(Vector2 Position) {
+			Dead = false;
+			Teleport(Position);
 		}
 
 		protected void CenterResizeSprite() {
@@ -104,13 +108,19 @@ namespace Test {
 		}
 
 		public virtual void Kill(PhysicsTags Reason) {
+			Dead = true;
 		}
 
 		public virtual void Move(float Dt, Vector2 MoveDir) {
-			Vector2 Gravity = new Vector2(0, -30);
+			if (Dead) {
+				Velocity = Vector2.Zero;
+				return;
+			}
 
-			Vector2 MoveAccel = MoveDir * new Vector2(Grounded ? MoveAccelX : AirMoveAccelX, MoveAccelY);
-			Velocity += MoveAccel + Gravity;
+			Velocity += MoveDir * new Vector2(Grounded ? MoveAccelX : AirMoveAccelX, MoveAccelY);
+
+			// Gravity
+			Velocity += new Vector2(0, -30);
 
 			Velocity.X = GfxUtils.Clamp(Velocity.X, -MaxVelocityX, MaxVelocityX);
 			Velocity.Y = GfxUtils.Clamp(Velocity.Y, -MaxVelocityY, MaxVelocityY);
@@ -191,6 +201,9 @@ namespace Test {
 		//int CCounter;
 
 		public override void Draw() {
+			if (Dead)
+				return;
+
 			Sprite.Position = Position + Sprite.Center;
 			Sprite.Draw();
 		}
