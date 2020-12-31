@@ -99,6 +99,13 @@ namespace FishGfx {
 			return ((Vector3)A) * Val;
 		}
 
+		public static Color operator *(Color A, Color B) {
+			Vector3 AVect = A;
+			Vector3 BVect = B;
+
+			return new Color(AVect.X * BVect.X, AVect.Y * BVect.Y, AVect.Z * BVect.Z);
+		}
+
 		public static implicit operator System.Drawing.Color(Color Clr) {
 			return System.Drawing.Color.FromArgb(Clr.A, Clr.R, Clr.G, Clr.B);
 		}
