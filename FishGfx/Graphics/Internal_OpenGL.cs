@@ -1,6 +1,9 @@
 ﻿using FishGfx;
+
 using Glfw3;
+
 using OpenGL;
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -21,8 +24,12 @@ namespace FishGfx.Graphics {
 
 		//static bool LastFrontFace;
 
-		public static string[] Extensions { get; private set; }
-		public static string Version { get; private set; }
+		public static string[] Extensions {
+			get; private set;
+		}
+		public static string Version {
+			get; private set;
+		}
 
 		public static bool Is45OrAbove {
 			get; private set;
@@ -67,11 +74,12 @@ namespace FishGfx.Graphics {
 				File.Delete(LogName);
 
 			Gl.DebugMessageCallback((Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
-				Khronos.KhronosApi.LogComment(string.Format("OpenGL {0} {1} {2}, {3}: {4}", Src, DbgType, ID, Severity, Encoding.ASCII.GetString((byte*)Buffer, Len)));
+				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
+				Khronos.KhronosApi.LogComment(string.Format("OpenGL {0} {1} {2}, {3}: {4}", Src, DbgType, ID, Severity, Msg));
 
-				/*// Will use video memory blah blah
+				// Will use video memory blah blah
 				if (Src == DebugSource.DebugSourceApi && DbgType == DebugType.DebugTypeOther && ID == 131185)
-					return;*/
+					return;
 
 				if (Src == DebugSource.DebugSourceApplication) {
 					if (DbgType == DebugType.DebugTypeMarker)
@@ -81,7 +89,6 @@ namespace FishGfx.Graphics {
 						return;
 				}
 
-				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
 
 				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
 				Console.WriteLine(Msg);
