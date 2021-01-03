@@ -13,12 +13,15 @@ namespace FishGfx.Graphics {
 		public float Near {
 			get; private set;
 		}
+
 		public float Far {
 			get; private set;
 		}
+
 		public float VerticalFOV {
 			get; private set;
 		}
+
 		public float HorizontalFOV {
 			get; private set;
 		}
@@ -46,9 +49,11 @@ namespace FishGfx.Graphics {
 				_World = value;
 			}
 		}
+
 		public Matrix4x4 Projection {
 			get; private set;
 		}
+
 		public Vector3 Position {
 			get {
 				return _Position;
@@ -58,6 +63,7 @@ namespace FishGfx.Graphics {
 				_Position = value;
 			}
 		}
+
 		public Quaternion Rotation {
 			get {
 				return _Rotation;
@@ -69,6 +75,7 @@ namespace FishGfx.Graphics {
 		}
 
 		bool Dirty;
+
 		public Vector2 ViewportSize {
 			get; private set;
 		}
@@ -78,11 +85,13 @@ namespace FishGfx.Graphics {
 				return -Vector3.UnitZ;
 			}
 		}
+
 		public Vector3 RightNormal {
 			get {
 				return Vector3.UnitX;
 			}
 		}
+
 		public Vector3 UpNormal {
 			get {
 				return Vector3.UnitY;
@@ -99,6 +108,7 @@ namespace FishGfx.Graphics {
 				_WorldForwardNormal = value;
 			}
 		}
+
 		public Vector3 WorldRightNormal {
 			get {
 				Refresh();
@@ -108,6 +118,7 @@ namespace FishGfx.Graphics {
 				_WorldRightNormal = value;
 			}
 		}
+
 		public Vector3 WorldUpNormal {
 			get {
 				Refresh();
