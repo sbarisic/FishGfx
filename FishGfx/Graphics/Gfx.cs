@@ -269,7 +269,7 @@ namespace FishGfx.Graphics {
 			}
 
 			if (Mesh2D == null)
-				Mesh2D = new Mesh2D(BufferUsage.DynamicDraw);
+				Mesh2D = new Mesh2D(BufferUsage.StreamDraw);
 
 			Mesh2D.PrimitiveType = Primitive;
 		}

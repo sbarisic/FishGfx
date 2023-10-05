@@ -8,74 +8,76 @@ using FishGfx.Graphics;
 using System.Diagnostics;
 
 namespace FishGfx.Game {
-	public abstract class FishGfxGame {
-		protected RenderWindow Window;
-		protected int Framerate = 60;
+    public abstract class FishGfxGame {
+        protected RenderWindow Window;
+        protected int Framerate = 60;
 
-		Stopwatch GameStopwatch;
-		public float GameTime {
-			get {
-				return GameStopwatch.ElapsedMilliseconds / 1000.0f;
-			}
-		}
+        Stopwatch GameStopwatch;
+        public float GameTime {
+            get {
+                return GameStopwatch.ElapsedMilliseconds / 1000.0f;
+            }
+        }
 
-		public InputManager Input {
-			get;
-			private set;
-		}
+        public InputManager Input {
+            get;
+            private set;
+        }
 
-		protected virtual RenderWindow CreateWindow() {
-			return new RenderWindow(800, 600, nameof(FishGfxGame));
-		}
+        protected virtual RenderWindow CreateWindow() {
+            string CurTypeName = GetType().Name;
 
-		public ShaderProgram DefaultShader;
+            return new RenderWindow(800, 600, CurTypeName);
+        }
 
-		protected virtual void CreateShaders() {
-			DefaultShader = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/default3d.vert"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/default.frag"));
-		}
+        public ShaderProgram DefaultShader;
 
-		protected virtual void CreateResources() {
-			CreateShaders();
-		}
+        protected virtual void CreateShaders() {
+            DefaultShader = new ShaderProgram(new ShaderStage(ShaderType.VertexShader, "data/shaders/default3d.vert"), new ShaderStage(ShaderType.FragmentShader, "data/shaders/default.frag"));
+        }
 
-		protected abstract void Init();
+        protected virtual void CreateResources() {
+            CreateShaders();
+        }
 
-		protected abstract void Update(float Dt);
+        protected abstract void Init();
 
-		protected abstract void Draw(float Dt);
+        protected abstract void Update(float Dt);
 
-		public static void Run(FishGfxGame Game) {
-			Stopwatch SWatch = Stopwatch.StartNew();
-			float Dt;
+        protected abstract void Draw(float Dt);
 
-			Game.Window = Game.CreateWindow();
-			Game.GameStopwatch = Stopwatch.StartNew();
-			Game.Input = new InputManager(Game.Window);
+        public static void Run(FishGfxGame Game) {
+            Stopwatch SWatch = Stopwatch.StartNew();
+            float Dt;
 
-			ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
+            Game.Window = Game.CreateWindow();
+            Game.GameStopwatch = Stopwatch.StartNew();
+            Game.Input = new InputManager(Game.Window);
 
-			Game.CreateResources();
-			Game.Init();
-			SWatch.Restart();
+            ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
 
-			while (!Game.Window.ShouldClose) {
-				if (Game.Framerate > 0)
-					while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / Game.Framerate))
-						;
+            Game.CreateResources();
+            Game.Init();
+            SWatch.Restart();
 
-				Dt = SWatch.ElapsedMilliseconds / 1000.0f;
-				SWatch.Restart();
+            while (!Game.Window.ShouldClose) {
+                if (Game.Framerate > 0)
+                    while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / Game.Framerate))
+                        ;
 
-				Game.Input.BeginNewFrame();
-				Events.Poll();
+                Dt = SWatch.ElapsedMilliseconds / 1000.0f;
+                SWatch.Restart();
 
-				// TODO: Decouple draw and update
+                Game.Input.BeginNewFrame();
+                Events.Poll();
 
-				Game.Draw(Dt);
-				Game.Window.SwapBuffers();
+                // TODO: Decouple draw and update
 
-				Game.Update(Dt);
-			}
-		}
-	}
+                Game.Draw(Dt);
+                Game.Window.SwapBuffers();
+
+                Game.Update(Dt);
+            }
+        }
+    }
 }
