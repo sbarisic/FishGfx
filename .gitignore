@@ -27,6 +27,7 @@ bld/
 [Ll]og/
 bin_lite/
 bin_fishgfx/
+bin_test2/
 
 thirdparty/gmod/
 thirdparty/crowbar/
