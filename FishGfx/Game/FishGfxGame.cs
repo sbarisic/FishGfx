@@ -12,6 +12,9 @@ namespace FishGfx.Game {
         protected RenderWindow Window;
         protected int Framerate = 60;
 
+        private int WindowWidth;
+        private int WindowHeight;
+
         Stopwatch GameStopwatch;
         public float GameTime {
             get {
@@ -24,10 +27,18 @@ namespace FishGfx.Game {
             private set;
         }
 
+        public FishGfxGame() : this(1366, 768) {
+        }
+
+        public FishGfxGame(int Width, int Height) {
+            WindowWidth = Width;
+            WindowHeight = Height;
+        }
+
         protected virtual RenderWindow CreateWindow() {
             string CurTypeName = GetType().Name;
 
-            return new RenderWindow(800, 600, CurTypeName);
+            return new RenderWindow(WindowWidth, WindowHeight, CurTypeName);
         }
 
         public ShaderProgram DefaultShader;

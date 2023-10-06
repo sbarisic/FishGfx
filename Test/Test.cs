@@ -13,6 +13,7 @@ using System.Text;
 using System.Threading.Tasks;
 using FishGfx.Game;
 using Humper;
+using FishGfx.AdvGraphics;
 
 namespace Test {
 	[Flags]
@@ -30,14 +31,14 @@ namespace Test {
 		public World PhysWorld;
 		public GameLevel Lvl;
 
-		public Parallax Background;
+		public ParallaxSprite Background;
 		public ParticleSystem Particles;
 
 		List<Entity> Entities = new List<Entity>();
 
 
 		protected override RenderWindow CreateWindow() {
-			return new RenderWindow(800, 600, "Test");
+			return new RenderWindow(1920, 1080, "Test");
 		}
 
 		protected override void Init() {
@@ -148,18 +149,22 @@ namespace Test {
 				Spawn(E);
 
 			// Create background parallax
-			Background = new Parallax(this);
+			Background = new ParallaxSprite(this);
 
 			// Create particle system
 			Particles = new ParticleSystem(this);
 
-			string BackgroundFolder = "data/textures/background/" + Lvl.Background;
+            /*string BackgroundFolder = "data/textures/background/" + Lvl.Background;
 			string[] BackgroundImages = Directory.GetFiles(BackgroundFolder);
 			foreach (var Img in BackgroundImages)
-				Background.AddLayer(Texture.FromFile(Img));
+				Background.AddLayer(Texture.FromFile(Img));*/
 
-			// Spawn player
-			Player Ply = new Player();
+            Background.AddLayer(Texture.FromFile("data/textures/background/space1/1.png"));
+            Background.AddLayer(Texture.FromFile("data/textures/background/space1/2.png"));
+            Background.AddLayer(Texture.FromFile("data/textures/background/space1/3.png"));
+
+            // Spawn player
+            Player Ply = new Player();
 			Ply.Position = Lvl.GetEntitiesByName("spawn_player").First().Position;
 			Spawn(Ply);
 		}

@@ -296,5 +296,11 @@ namespace FishGfx {
 			Pitch = (float)Math.Asin(-Normal.Y);
 			Yaw = (float)Math.Atan2(Normal.X, Normal.Z);
 		}
-	}
+
+        public static T[] Add<T>(this T[] Arr, T New) {
+            Array.Resize(ref Arr, Arr.Length + 1);
+            Arr[Arr.Length - 1] = New;
+            return Arr;
+        }
+    }
 }

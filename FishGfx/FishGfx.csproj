@@ -128,6 +128,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AABB.cs" />
+    <Compile Include="AdvGraphics\ParallaxSprite.cs" />
     <Compile Include="BoundSphere.cs" />
     <Compile Include="Color.cs" />
     <Compile Include="Formats\BitmapFont.cs" />
@@ -298,6 +299,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\fonts\proggy_0.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\fonts\tileset\cheepicus16.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="data\fonts\tileset\cheepicus8.png">

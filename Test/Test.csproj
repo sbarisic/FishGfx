@@ -95,7 +95,6 @@
     <Compile Include="Humper\Responses\TouchResponse.cs" />
     <Compile Include="Humper\World.cs" />
     <Compile Include="Interfaces.cs" />
-    <Compile Include="Parallax.cs" />
     <Compile Include="ParticleSystem.cs" />
     <Compile Include="Entities\Pawn.cs" />
     <Compile Include="Entities\Player.cs" />
