@@ -68,6 +68,7 @@ namespace FishGfx.Game {
 		}
 
 		public Color TextColor;
+		public Color BackgroundColor;
 		public bool Enabled;
 
 		public DevConsole(Texture FontTileset, int Size, int Width, int Height, int BufferHeight, ShaderProgram DrawShader) {
@@ -88,6 +89,7 @@ namespace FishGfx.Game {
 			CharSize = Size;
 
 			TextColor = Color.White;
+			BackgroundColor = Color.Coal;
 
 			CharBuffer = new char[Width * BufferHeight];
 			ColorBuffer = new Color[CharBuffer.Length];
@@ -313,7 +315,7 @@ namespace FishGfx.Game {
 				Refresh();
 			}
 
-			Gfx.FilledRectangle(Position.X, Position.Y, CharSize * Width, CharSize * Height, Color.Coal);
+			Gfx.FilledRectangle(Position.X, Position.Y, CharSize * Width, CharSize * Height, BackgroundColor);
 			Tiles.Draw();
 		}
 	}

@@ -26,8 +26,14 @@ The other solutions and demo projects remain on .NET Framework pending separate 
 * 2D and 3D meshes
 * Cameras
 * Terrain, 3D mesh from heightmap
-* Basic drawing library (filled and outline [with thickness])
-	* Lines
+* Basic 2D drawing library
+	* Points and thick lines/line strips
+	* Filled, outlined, and textured rectangles
+	* Filled, outlined, and textured rounded rectangles with per-corner radii
+	* Stretched nine-patch textures with fixed source-pixel borders
+	* Filled, outlined, and textured circles and ellipses
+	* Filled and outlined complete rings and annular sectors
+	* Stroked quadratic and cubic Bézier curves
 	
 # TODO
 
@@ -37,11 +43,6 @@ The other solutions and demo projects remain on .NET Framework pending separate 
 	* Signed distance field
 	* Classic font atlas
 	* Loading glyphs with Freetype?
-* Basic drawing library (filled and outline [with thickness])
-	* Circles
-	* Rectangles
-	* Ellipses
-	* Curves (quadratic, bézier)
 * Scissoring
 * Stencil buffer
 * Command buffers

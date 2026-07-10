@@ -364,38 +364,178 @@ namespace FishGfx.Graphics {
 		}
 
 		public static void TexturedRectangle(float X, float Y, float W, float H, float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, Texture Texture = null, ShaderProgram Shader = null) {
+			DrawTexturedTriangles(EmitRectangleTris(new Vertex2[6], 0, X, Y, W, H, U0, V0, U1, V1, Color), Texture, Shader);
+		}
+
+		private static void DrawTexturedTriangles(Vertex2[] vertices, Texture texture, ShaderProgram shader) {
+			if (vertices.Length == 0)
+				return;
 			Init2D(PrimitiveType.Triangles);
-			Color C = Color ?? FishGfx.Color.White;
-
-			Mesh2D.SetVertices(EmitRectangleTris(new Vertex2[6], 0, X, Y, W, H, U0, V0, U1, V1, Color));
-
+			Mesh2D.SetVertices(vertices);
 			Start2D();
-			Texture?.BindTextureUnit();
+			texture?.BindTextureUnit();
 
-			if (Shader != null)
-				Shader.Bind(ShaderUniforms.Current);
+			if (shader != null)
+				shader.Bind(ShaderUniforms.Current);
 			else
 				Default2D.Bind(ShaderUniforms.Current);
 
 			Mesh2D.Draw();
 
-			if (Shader != null)
-				Shader.Unbind();
+			if (shader != null)
+				shader.Unbind();
 			else
 				Default2D.Unbind();
 
-			Texture?.UnbindTextureUnit();
+			texture?.UnbindTextureUnit();
 			End2D();
+		}
+
+		public static void NinePatch(float X, float Y, float W, float H, Texture Texture, NinePatchInsets Insets, Color? Color = null, ShaderProgram Shader = null) {
+			if (Texture == null)
+				throw new ArgumentNullException(nameof(Texture));
+			Vertex2[] vertices = NinePatchTessellator.Create(new Vector2(X, Y), new Vector2(W, H), Texture.Size, Insets, Color ?? FishGfx.Color.White);
+			DrawTexturedTriangles(vertices, Texture, Shader);
+		}
+
+		public static void NinePatch(Vector2 Position, Vector2 Size, Texture Texture, NinePatchInsets Insets, Color? Color = null, ShaderProgram Shader = null) {
+			NinePatch(Position.X, Position.Y, Size.X, Size.Y, Texture, Insets, Color, Shader);
 		}
 
 		public static void FilledRectangle(float X, float Y, float W, float H, Color? Clr = null) {
 			TexturedRectangle(X, Y, W, H, 0, 0, 1, 1, Clr, WhiteTex);
 		}
 
-		public static void Bezier(Vector2 Start, Vector2 End) {
-			Init2D(PrimitiveType.Lines);
+		public static void RoundedRectangle(float X, float Y, float W, float H, CornerRadii Radii, float Thickness = 1, Color? Color = null, int CornerSegments = 0) {
+			PrimitiveTessellator.ValidateThickness(Thickness);
+			Vector2[] positions = RoundedRectangleTessellator.Outline(new Vector2(X, Y), new Vector2(W, H), Radii, CornerSegments);
+			if (positions.Length == 0)
+				return;
+			LineStrip(ColorVertices(positions, Color ?? FishGfx.Color.White), Thickness);
+		}
 
-			// TODO
+		public static void RoundedRectangle(Vector2 Position, Vector2 Size, CornerRadii Radii, float Thickness = 1, Color? Color = null, int CornerSegments = 0) {
+			RoundedRectangle(Position.X, Position.Y, Size.X, Size.Y, Radii, Thickness, Color, CornerSegments);
+		}
+
+		public static void FilledRoundedRectangle(float X, float Y, float W, float H, CornerRadii Radii, Color? Color = null, int CornerSegments = 0) {
+			Vector2[] positions = RoundedRectangleTessellator.Filled(new Vector2(X, Y), new Vector2(W, H), Radii, CornerSegments);
+			FilledTriangles(positions, Color ?? FishGfx.Color.White);
+		}
+
+		public static void FilledRoundedRectangle(Vector2 Position, Vector2 Size, CornerRadii Radii, Color? Color = null, int CornerSegments = 0) {
+			FilledRoundedRectangle(Position.X, Position.Y, Size.X, Size.Y, Radii, Color, CornerSegments);
+		}
+
+		public static void TexturedRoundedRectangle(float X, float Y, float W, float H, CornerRadii Radii, Texture Texture,
+			float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, ShaderProgram Shader = null, int CornerSegments = 0) {
+			if (Texture == null)
+				throw new ArgumentNullException(nameof(Texture));
+			Vector2 position = new Vector2(X, Y);
+			Vector2 size = new Vector2(W, H);
+			Vector2[] positions = RoundedRectangleTessellator.Filled(position, size, Radii, CornerSegments);
+			Vertex2[] vertices = PrimitiveTessellator.TextureVertices(positions, position, size,
+				new Vector2(U0, V0), new Vector2(U1, V1), Color ?? FishGfx.Color.White);
+			DrawTexturedTriangles(vertices, Texture, Shader);
+		}
+
+		public static void TexturedRoundedRectangle(Vector2 Position, Vector2 Size, CornerRadii Radii, Texture Texture,
+			Vector2 UVMin, Vector2 UVMax, Color? Color = null, ShaderProgram Shader = null, int CornerSegments = 0) {
+			TexturedRoundedRectangle(Position.X, Position.Y, Size.X, Size.Y, Radii, Texture,
+				UVMin.X, UVMin.Y, UVMax.X, UVMax.Y, Color, Shader, CornerSegments);
+		}
+
+		private static Vertex2[] ColorVertices(Vector2[] positions, Color color) {
+			Vertex2[] vertices = new Vertex2[positions.Length];
+			for (int i = 0; i < positions.Length; i++)
+				vertices[i] = new Vertex2(positions[i], color);
+			return vertices;
+		}
+
+		private static void FilledTriangles(Vector2[] positions, Color color) {
+			if (positions.Length == 0)
+				return;
+
+			Init2D(PrimitiveType.Triangles);
+			Mesh2D.SetVertices(ColorVertices(positions, color));
+			Start2D();
+			WhiteTex.BindTextureUnit();
+			Default2D.Bind(ShaderUniforms.Current);
+			Mesh2D.Draw();
+			Default2D.Unbind();
+			WhiteTex.UnbindTextureUnit();
+			End2D();
+		}
+
+		public static void Circle(Vector2 Center, float Radius, float Thickness = 1, Color? Color = null, int Segments = 0) {
+			Ellipse(Center, new Vector2(Radius), Thickness, Color, Segments);
+		}
+
+		public static void Ring(Vector2 Center, float InnerRadius, float OuterRadius, Color? Color = null, int Segments = 0) {
+			Ring(Center, InnerRadius, OuterRadius, 0, MathF.Tau, Color, Segments);
+		}
+
+		public static void Ring(Vector2 Center, float InnerRadius, float OuterRadius, float StartAngle, float EndAngle, Color? Color = null, int Segments = 0) {
+			Vector2[] positions = RingTessellator.Filled(Center, InnerRadius, OuterRadius, StartAngle, EndAngle, Segments);
+			FilledTriangles(positions, Color ?? FishGfx.Color.White);
+		}
+
+		public static void RingLines(Vector2 Center, float InnerRadius, float OuterRadius, float Thickness = 1, Color? Color = null, int Segments = 0) {
+			RingLines(Center, InnerRadius, OuterRadius, 0, MathF.Tau, Thickness, Color, Segments);
+		}
+
+		public static void RingLines(Vector2 Center, float InnerRadius, float OuterRadius, float StartAngle, float EndAngle,
+			float Thickness = 1, Color? Color = null, int Segments = 0) {
+			PrimitiveTessellator.ValidateThickness(Thickness);
+			Vector2[][] paths = RingTessellator.Lines(Center, InnerRadius, OuterRadius, StartAngle, EndAngle, Segments);
+			foreach (Vector2[] path in paths)
+				LineStrip(ColorVertices(path, Color ?? FishGfx.Color.White), Thickness);
+		}
+
+		public static void FilledCircle(Vector2 Center, float Radius, Color? Color = null, int Segments = 0) {
+			FilledEllipse(Center, new Vector2(Radius), Color, Segments);
+		}
+
+		public static void Ellipse(Vector2 Center, Vector2 Radii, float Thickness = 1, Color? Color = null, int Segments = 0) {
+			PrimitiveTessellator.ValidateThickness(Thickness);
+			Vector2[] positions = PrimitiveTessellator.EllipseOutline(Center, Radii, Segments);
+			if (positions.Length == 0)
+				return;
+			LineStrip(ColorVertices(positions, Color ?? FishGfx.Color.White), Thickness);
+		}
+
+		public static void FilledEllipse(Vector2 Center, Vector2 Radii, Color? Color = null, int Segments = 0) {
+			Vector2[] positions = PrimitiveTessellator.FilledEllipse(Center, Radii, Segments);
+			FilledTriangles(positions, Color ?? FishGfx.Color.White);
+		}
+
+		public static void TexturedCircle(Vector2 Center, float Radius, Texture Texture,
+			float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, ShaderProgram Shader = null, int Segments = 0) {
+			TexturedEllipse(Center, new Vector2(Radius), Texture, U0, V0, U1, V1, Color, Shader, Segments);
+		}
+
+		public static void TexturedEllipse(Vector2 Center, Vector2 Radii, Texture Texture,
+			float U0 = 0, float V0 = 0, float U1 = 1, float V1 = 1, Color? Color = null, ShaderProgram Shader = null, int Segments = 0) {
+			if (Texture == null)
+				throw new ArgumentNullException(nameof(Texture));
+			Vector2[] positions = PrimitiveTessellator.FilledEllipse(Center, Radii, Segments);
+			Vector2 boundsMin = Center - Radii;
+			Vector2 boundsSize = Radii * 2;
+			Vertex2[] vertices = PrimitiveTessellator.TextureVertices(positions, boundsMin, boundsSize,
+				new Vector2(U0, V0), new Vector2(U1, V1), Color ?? FishGfx.Color.White);
+			DrawTexturedTriangles(vertices, Texture, Shader);
+		}
+
+		public static void QuadraticBezier(Vector2 Start, Vector2 Control, Vector2 End, float Thickness = 1, Color? Color = null, int Segments = 0) {
+			PrimitiveTessellator.ValidateThickness(Thickness);
+			Vector2[] positions = PrimitiveTessellator.QuadraticBezier(Start, Control, End, Segments);
+			LineStrip(ColorVertices(positions, Color ?? FishGfx.Color.White), Thickness);
+		}
+
+		public static void CubicBezier(Vector2 Start, Vector2 Control1, Vector2 Control2, Vector2 End, float Thickness = 1, Color? Color = null, int Segments = 0) {
+			PrimitiveTessellator.ValidateThickness(Thickness);
+			Vector2[] positions = PrimitiveTessellator.CubicBezier(Start, Control1, Control2, End, Segments);
+			LineStrip(ColorVertices(positions, Color ?? FishGfx.Color.White), Thickness);
 		}
 
 		public static Vector2 DrawText(GfxFont Font, Vector2 Pos, string Str, Color Clr, float FontSize = -1, bool DebugDraw = false) {
