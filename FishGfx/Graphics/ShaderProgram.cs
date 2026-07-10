@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -91,7 +91,7 @@ namespace FishGfx.Graphics {
 		Dictionary<string, int> UniformLocations;
 
 		public ShaderProgram(params ShaderStage[] Stages) {
-			ID = Gl.CreateProgram();
+			ID = Internal_OpenGL.GL.CreateProgram();
 
 			ShaderStages = new List<ShaderStage>();
 			UniformLocations = new Dictionary<string, int>();
@@ -104,21 +104,19 @@ namespace FishGfx.Graphics {
 		public void AttachShader(ShaderStage S) {
 			ShaderStages.Add(S);
 
-			Gl.AttachShader(ID, S.ID);
+			Internal_OpenGL.GL.AttachShader(ID, S.ID);
 		}
 
 		public bool Link(out string ErrorString) {
 #if DEBUG
-			SetLabel(ObjectIdentifier.Program, ToString());
+			SetLabel(ToString());
 #endif
 
-			Gl.LinkProgram(ID);
+			Internal_OpenGL.GL.LinkProgram(ID);
 
-			Gl.GetProgram(ID, ProgramProperty.LinkStatus, out int Linked);
-			if (Linked != Gl.TRUE) {
-				StringBuilder Log = new StringBuilder(4096);
-				Gl.GetProgramInfoLog(ID, Log.Capacity, out int Len, Log);
-				ErrorString = Log.ToString();
+			Internal_OpenGL.GL.GetProgram(ID, ProgramPropertyARB.LinkStatus, out int Linked);
+			if (Linked == 0) {
+				ErrorString = Internal_OpenGL.GL.GetProgramInfoLog(ID);
 				return false;
 			}
 
@@ -144,22 +142,22 @@ namespace FishGfx.Graphics {
 
 		public virtual void Bind(ShaderUniforms Uniforms) {
 			Uniforms.Bind(this);
-			Gl.UseProgram(ID);
+			Internal_OpenGL.GL.UseProgram(ID);
 		}
 
 		public override void Unbind() {
-			Gl.UseProgram(0);
+			Internal_OpenGL.GL.UseProgram(0);
 		}
 
 		public int GetAttribLocation(string Name) {
-			return Gl.GetAttribLocation(ID, Name);
+			return Internal_OpenGL.GL.GetAttribLocation(ID, Name);
 		}
 
 		public int GetUniformLocation(string Name) {
 			if (UniformLocations.ContainsKey(Name))
 				return UniformLocations[Name];
 
-			int Loc = Gl.GetUniformLocation(ID, Name);
+			int Loc = Internal_OpenGL.GL.GetUniformLocation(ID, Name);
 			if (Loc != -1)
 				UniformLocations.Add(Name, Loc);
 
@@ -167,7 +165,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public void UniformMatrix4f(string Uniform, Matrix4 M, bool Transpose = false) {
-			Gl.ProgramUniformMatrix4f(ID, GetUniformLocation(Uniform), 1, Transpose, M);
+			Internal_OpenGL.GL.ProgramUniformMatrix4(ID, GetUniformLocation(Uniform), 1, Transpose, (float*)&M);
 		}
 
 		public bool Uniform3f<T>(string Uniform, T Val) where T : struct {
@@ -175,7 +173,9 @@ namespace FishGfx.Graphics {
 			if (Loc == -1)
 				return false;
 
-			Gl.ProgramUniform3f(ID, Loc, 1, Val);
+			if (Val is Vector3 V)
+				Internal_OpenGL.GL.ProgramUniform3(ID, Loc, V);
+			else throw new NotSupportedException($"Uniform3f does not support {typeof(T)}");
 			return true;
 		}
 
@@ -184,7 +184,9 @@ namespace FishGfx.Graphics {
 			if (Loc == -1)
 				return false;
 
-			Gl.ProgramUniform4f(ID, Loc, 1, Val);
+			if (Val is System.Numerics.Vector4 V)
+				Internal_OpenGL.GL.ProgramUniform4(ID, Loc, V);
+			else throw new NotSupportedException($"Uniform4f does not support {typeof(T)}");
 			return true;
 		}
 
@@ -193,7 +195,9 @@ namespace FishGfx.Graphics {
 			if (Loc == -1)
 				return false;
 
-			Gl.ProgramUniform2f(ID, Loc, 1, Val);
+			if (Val is Vector2 V)
+				Internal_OpenGL.GL.ProgramUniform2(ID, Loc, V);
+			else throw new NotSupportedException($"Uniform2f does not support {typeof(T)}");
 			return true;
 		}
 
@@ -202,7 +206,9 @@ namespace FishGfx.Graphics {
 			if (Loc == -1)
 				return false;
 
-			Gl.ProgramUniform1f(ID, Loc, 1, Val);
+			if (Val is float V)
+				Internal_OpenGL.GL.ProgramUniform1(ID, Loc, V);
+			else throw new NotSupportedException($"Uniform1f does not support {typeof(T)}");
 			return true;
 		}
 
@@ -211,12 +217,12 @@ namespace FishGfx.Graphics {
 			if (Loc == -1)
 				return false;
 
-			Gl.ProgramUniform1(ID, Loc, 1, &Val);
+			Internal_OpenGL.GL.ProgramUniform1(ID, Loc, Val);
 			return true;
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteProgram(ID);
+			Internal_OpenGL.GL.DeleteProgram(ID);
 		}
 
 		public override string ToString() {
@@ -234,7 +240,7 @@ namespace FishGfx.Graphics {
 		ShaderType ShaderType;
 
 		public ShaderStage(ShaderType T, string SourceFile) {
-			ID = Gl.CreateShader((OpenGL.ShaderType)T);
+			ID = Internal_OpenGL.GL.CreateShader((Silk.NET.OpenGL.ShaderType)T);
 			ShaderType = T;
 
 			SetSourceFile(SourceFile);
@@ -257,7 +263,7 @@ namespace FishGfx.Graphics {
 
 		public bool Compile(out string ErrorString) {
 #if DEBUG
-			SetLabel(ObjectIdentifier.Shader, ToString());
+			SetLabel(ToString());
 #endif
 
 			// TODO: Find something better
@@ -279,18 +285,16 @@ namespace FishGfx.Graphics {
 				}
 			}
 
-			Gl.ShaderSource(ID, new string[] { Source });
-			Gl.CompileShader(ID);
+			Internal_OpenGL.GL.ShaderSource(ID, Source);
+			Internal_OpenGL.GL.CompileShader(ID);
 
-			Gl.GetShader(ID, ShaderParameterName.CompileStatus, out int Status);
-			if (Status != Gl.TRUE) {
-				StringBuilder Log = new StringBuilder(4096);
-				Gl.GetShaderInfoLog(ID, Log.Capacity, out int Len, Log);
-
+			Internal_OpenGL.GL.GetShader(ID, ShaderParameterName.CompileStatus, out int Status);
+			if (Status == 0) {
+				string Log = Internal_OpenGL.GL.GetShaderInfoLog(ID);
 				if (SrcFile != null)
-					ErrorString = SrcFile + "\n" + Log.ToString();
+					ErrorString = SrcFile + "\n" + Log;
 				else
-					ErrorString = Log.ToString();
+					ErrorString = Log;
 				return false;
 			}
 
@@ -306,7 +310,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteShader(ID);
+			Internal_OpenGL.GL.DeleteShader(ID);
 		}
 
 		public override string ToString() {

@@ -1,7 +1,7 @@
-﻿using FishGfx.Formats;
+using FishGfx.Formats;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
-using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -71,50 +71,50 @@ namespace FishGfx.Graphics {
 		// TODO: Cache state and only do delta-enable
 		static void SetRenderState(RenderState State) {
 			if (GlEnable(EnableCap.CullFace, State.EnableCullFace))
-				Gl.CullFace((CullFaceMode)State.CullFace);
+				Internal_OpenGL.GL.CullFace((TriangleFace)State.CullFace);
 
-			Gl.DepthMask(State.EnableDepthMask);
-			Gl.ColorMask(State.EnableColorMaskR, State.EnableColorMaskG, State.EnableColorMaskB, State.EnableColorMaskA);
+			Internal_OpenGL.GL.DepthMask(State.EnableDepthMask);
+			Internal_OpenGL.GL.ColorMask(State.EnableColorMaskR, State.EnableColorMaskG, State.EnableColorMaskB, State.EnableColorMaskA);
 
 			if (GlEnable(EnableCap.DepthTest, State.EnableDepthTest))
-				Gl.DepthFunc((DepthFunction)State.DepthFunc);
+				Internal_OpenGL.GL.DepthFunc((DepthFunction)State.DepthFunc);
 
-			Gl.FrontFace((FrontFaceDirection)State.FrontFace);
+			Internal_OpenGL.GL.FrontFace((FrontFaceDirection)State.FrontFace);
 
 			if (GlEnable(EnableCap.ScissorTest, State.EnableScissorTest)) {
 				AABB Reg = State.ScissorRegion;
-				Gl.Scissor((int)Reg.Position.X, (int)Reg.Position.Y, (int)Reg.Size.X, (int)Reg.Size.Y);
+				Internal_OpenGL.GL.Scissor((int)Reg.Position.X, (int)Reg.Position.Y, (uint)Reg.Size.X, (uint)Reg.Size.Y);
 			}
 
 			if (GlEnable(EnableCap.StencilTest, State.EnableStencilTest)) {
-				//Gl.StencilMask(State.StencilMask);
+				//Internal_OpenGL.GL.StencilMask(State.StencilMask);
 
 				if (State.StencilBackFunction != StencilFunction.Skip)
-					Gl.StencilFuncSeparate(StencilFaceDirection.Back, (OpenGL.StencilFunction)State.StencilBackFunction, State.StencilBackReference, State.StencilBackMask);
+					Internal_OpenGL.GL.StencilFuncSeparate(TriangleFace.Back, (GLEnum)State.StencilBackFunction, State.StencilBackReference, State.StencilBackMask);
 
 				if (State.StencilFrontFunction != StencilFunction.Skip)
-					Gl.StencilFuncSeparate(StencilFaceDirection.Front, (OpenGL.StencilFunction)State.StencilFrontFunction, State.StencilFrontReference, State.StencilFrontMask);
+					Internal_OpenGL.GL.StencilFuncSeparate(TriangleFace.Front, (GLEnum)State.StencilFrontFunction, State.StencilFrontReference, State.StencilFrontMask);
 
 				if (!(State.StencilBackSFail == StencilOperation.Skip || State.StencilBackDPFail == StencilOperation.Skip || State.StencilBackDPPass == StencilOperation.Skip))
-					Gl.StencilOpSeparate(StencilFaceDirection.Back, (StencilOp)State.StencilBackSFail, (StencilOp)State.StencilBackDPFail, (StencilOp)State.StencilBackDPPass);
+					Internal_OpenGL.GL.StencilOpSeparate(TriangleFace.Back, (GLEnum)State.StencilBackSFail, (GLEnum)State.StencilBackDPFail, (GLEnum)State.StencilBackDPPass);
 
 				if (!(State.StencilFrontSFail == StencilOperation.Skip || State.StencilFrontDPFail == StencilOperation.Skip || State.StencilFrontDPPass == StencilOperation.Skip))
-					Gl.StencilOpSeparate(StencilFaceDirection.Front, (StencilOp)State.StencilFrontSFail, (StencilOp)State.StencilFrontDPFail, (StencilOp)State.StencilFrontDPPass);
+					Internal_OpenGL.GL.StencilOpSeparate(TriangleFace.Front, (GLEnum)State.StencilFrontSFail, (GLEnum)State.StencilFrontDPFail, (GLEnum)State.StencilFrontDPPass);
 			}
 
 			if (GlEnable(EnableCap.Blend, State.EnableBlend))
-				Gl.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
+				Internal_OpenGL.GL.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
 
-			Gl.PointSize(State.PointSize);
+			Internal_OpenGL.GL.PointSize(State.PointSize);
 
-			GlEnable(Gl.DEPTH_CLAMP, State.EnableDepthClamp);
+			GlEnable((EnableCap)0x864F, State.EnableDepthClamp);
 		}
 
 		static bool GlEnable(EnableCap Cap, bool Enable) {
 			if (Enable)
-				Gl.Enable(Cap);
+				Internal_OpenGL.GL.Enable(Cap);
 			else
-				Gl.Disable(Cap);
+				Internal_OpenGL.GL.Disable(Cap);
 
 			return Enable;
 		}
@@ -144,8 +144,8 @@ namespace FishGfx.Graphics {
 				return;
 
 			if (Color) {
-				Gl.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
-				Gl.Clear(ClearBufferMask.ColorBufferBit);
+				Internal_OpenGL.GL.ClearColor(ClearColor.R / 255.0f, ClearColor.G / 255.0f, ClearColor.B / 255.0f, ClearColor.A / 255.0f);
+				Internal_OpenGL.GL.Clear(ClearBufferMask.ColorBufferBit);
 			}
 
 			if (Depth)
@@ -164,13 +164,13 @@ namespace FishGfx.Graphics {
 		}
 
 		public static void ClearDepth(float Value = 1) {
-			Gl.ClearDepth(Value);
-			Gl.Clear(ClearBufferMask.DepthBufferBit);
+			Internal_OpenGL.GL.ClearDepth(Value);
+			Internal_OpenGL.GL.Clear(ClearBufferMask.DepthBufferBit);
 		}
 
 		public static void ClearStencil(int S = 0) {
-			Gl.ClearStencil(S);
-			Gl.Clear(ClearBufferMask.StencilBufferBit);
+			Internal_OpenGL.GL.ClearStencil(S);
+			Internal_OpenGL.GL.Clear(ClearBufferMask.StencilBufferBit);
 		}
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

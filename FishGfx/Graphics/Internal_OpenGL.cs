@@ -1,17 +1,15 @@
-﻿using FishGfx;
+using FishGfx;
 
 using Glfw3;
 
-using OpenGL;
+using Silk.NET.OpenGL;
 
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace FishGfx.Graphics {
 	internal static class OpenGL_BODGES {
@@ -19,6 +17,10 @@ namespace FishGfx.Graphics {
 	}
 
 	internal static unsafe class Internal_OpenGL {
+		public static GL GL { get; private set; }
+#if DEBUG
+		static DebugProc DebugCallback;
+#endif
 		static bool GLFWInitialized = false;
 		static bool OpenGLInitialized = false;
 
@@ -55,10 +57,10 @@ namespace FishGfx.Graphics {
 		}
 
 		public static void InitOpenGL() {
-			if (OpenGLInitialized)
+			if (GL != null)
 				return;
 
-			Gl.Initialize();
+			GL = GL.GetApi(Glfw.GetProcAddress);
 		}
 
 		public static void SetupOpenGL() {
@@ -73,19 +75,18 @@ namespace FishGfx.Graphics {
 			if (File.Exists(LogName))
 				File.Delete(LogName);
 
-			Gl.DebugMessageCallback((Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
+			DebugCallback = (Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
 				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
-				Khronos.KhronosApi.LogComment(string.Format("OpenGL {0} {1} {2}, {3}: {4}", Src, DbgType, ID, Severity, Msg));
 
 				// Will use video memory blah blah
-				if (Src == DebugSource.DebugSourceApi && DbgType == DebugType.DebugTypeOther && ID == 131185)
+				if (Src == GLEnum.DebugSourceApi && DbgType == GLEnum.DebugTypeOther && ID == 131185)
 					return;
 
-				if (Src == DebugSource.DebugSourceApplication) {
-					if (DbgType == DebugType.DebugTypeMarker)
+				if (Src == GLEnum.DebugSourceApplication) {
+					if (DbgType == GLEnum.DebugTypeMarker)
 						return;
 
-					if (DbgType == DebugType.DebugTypePushGroup || DbgType == DebugType.DebugTypePopGroup)
+					if (DbgType == GLEnum.DebugTypePushGroup || DbgType == GLEnum.DebugTypePopGroup)
 						return;
 				}
 
@@ -93,69 +94,47 @@ namespace FishGfx.Graphics {
 				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
 				Console.WriteLine(Msg);
 
-				if ((Severity == DebugSeverity.DebugSeverityHigh) && Debugger.IsAttached) {
+				if ((Severity == GLEnum.DebugSeverityHigh) && Debugger.IsAttached) {
 					if (!Msg.Contains("GL_INVALID_OPERATION in BindTextureUnit"))
 						Debugger.Break();
 				}
 
-			}, IntPtr.Zero);
+			};
+			GL.DebugMessageCallback(DebugCallback, null);
 
-			Gl.Enable((EnableCap)Gl.DEBUG_OUTPUT);
-			Gl.Enable((EnableCap)Gl.DEBUG_OUTPUT_SYNCHRONOUS);
+			GL.Enable(EnableCap.DebugOutput);
+			GL.Enable(EnableCap.DebugOutputSynchronous);
 #endif
 
-			Khronos.KhronosVersion Ver = Gl.QueryContextVersion();
-			Is45OrAbove = ((Ver.Major == 4 && Ver.Minor >= 5) || Ver.Major > 4);
-			Version = Ver.ToString();
+			GL.GetInteger(GetPName.MajorVersion, out int Major);
+			GL.GetInteger(GetPName.MinorVersion, out int Minor);
+			Is45OrAbove = Major > 4 || (Major == 4 && Minor >= 5);
+			Version = $"{Major}.{Minor}";
 
-			Gl.Extensions Exts = new Gl.Extensions();
-			Exts.Query();
-
-			List<string> SupportedExtensions = new List<string>();
-			FieldInfo[] Fields = typeof(Gl.Extensions).GetFields();
-			foreach (var F in Fields) {
-				if ((bool)F.GetValue(Exts))
-					SupportedExtensions.Add(F.Name);
-			}
+			GL.GetInteger(GetPName.NumExtensions, out int ExtensionCount);
+			List<string> SupportedExtensions = new List<string>(ExtensionCount);
+			for (uint i = 0; i < ExtensionCount; i++)
+				SupportedExtensions.Add(GL.GetStringS(StringName.Extensions, i));
 
 			Extensions = SupportedExtensions.ToArray();
 
-			string Renderer = Gl.GetString(StringName.Renderer);
-			string GLSLVer = Gl.GetString(StringName.ShadingLanguageVersion);
-			string Vendor = Gl.GetString(StringName.Vendor);
-			string Vers = Gl.GetString(StringName.Version);
+			string Renderer = GL.GetStringS(StringName.Renderer);
+			string GLSLVer = GL.GetStringS(StringName.ShadingLanguageVersion);
+			string Vendor = GL.GetStringS(StringName.Vendor);
+			string Vers = GL.GetStringS(StringName.Version);
 
 			RenderAPI.Renderer = string.Format("{0} by {1}; GL {2}; GLSL {3}", Renderer, Vendor, Vers, GLSLVer);
-
-#if DEBUG
-			Khronos.KhronosApi.Log += (S, E) => {
-				if (E.Name == "glGetError")
-					return;
-
-				if (IS_GL_DEBUG) {
-					ConsoleColor Clr = Console.ForegroundColor;
-					Console.ForegroundColor = ConsoleColor.DarkYellow;
-
-					Console.WriteLine(E.ToString());
-					File.AppendAllText(LogName, E.ToString() + "\r\n");
-
-					Console.ForegroundColor = Clr;
-				}
-			};
-
-			Khronos.KhronosApi.LogEnabled = true;
-#endif
 
 			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 		}
 
 		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
-			Gl.Scissor(X, Y, W, H);
+			Internal_OpenGL.GL.Scissor(X, Y, (uint)W, (uint)H);
 
 			if (Enable)
-				Gl.Enable(EnableCap.ScissorTest);
+				Internal_OpenGL.GL.Enable(EnableCap.ScissorTest);
 			else
-				Gl.Disable(EnableCap.ScissorTest);
+				Internal_OpenGL.GL.Disable(EnableCap.ScissorTest);
 		}
 	}
 }

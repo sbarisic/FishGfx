@@ -1,6 +1,6 @@
-﻿using FishGfx;
+using FishGfx;
 using Glfw3;
-using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -349,8 +349,8 @@ namespace FishGfx.Graphics {
 		}
 
 		public void MakeCurrent() {
-			Internal_OpenGL.InitOpenGL();
 			Glfw.MakeContextCurrent(Wnd);
+			Internal_OpenGL.InitOpenGL();
 			Internal_OpenGL.SetupOpenGL();
 
 			Gfx.PopRenderState();
@@ -360,7 +360,7 @@ namespace FishGfx.Graphics {
 
 			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 
-			Gl.Enable(EnableCap.Multisample);
+			Internal_OpenGL.GL.Enable(EnableCap.Multisample);
 		}
 
 		public void SwapBuffers() {
@@ -378,7 +378,7 @@ namespace FishGfx.Graphics {
 				PixelData = new Color[W * H];
 
 			fixed (Color* ClrPtr = PixelData)
-				Gl.ReadPixels(0, 0, W, H, PixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrPtr);
+				Internal_OpenGL.GL.ReadPixels(0, 0, W, H, PixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrPtr);
 		}
 
 		public Color GetPixel(int X, int Y) {

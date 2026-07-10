@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Numerics;
-using OpenGL;
+using Silk.NET.OpenGL;
 using FishGfx.Formats;
 
 namespace FishGfx.Graphics.Drawables {
@@ -71,7 +71,7 @@ namespace FishGfx.Graphics.Drawables {
 
 		void SetColors(uint Size, IntPtr Data, int ElementCount, int RelativeOffset, int Stride) {
 			if (ColorBuffer == null) {
-				VAO.AttribFormat(COLOR_ATTRIB, Size: ElementCount, AttribType: VertexAttribType.UnsignedByte, Normalized: true);
+				VAO.AttribFormat(COLOR_ATTRIB, Size: ElementCount, AttribType: VertexElementType.UnsignedByte, Normalized: true);
 				VAO.AttribBinding(COLOR_ATTRIB, VAO.BindVertexBuffer(ColorBuffer = new BufferObject(), Offset: RelativeOffset, Stride: Stride));
 			}
 
@@ -142,8 +142,8 @@ namespace FishGfx.Graphics.Drawables {
 		}
 
 		public void Draw() {
-			Gl.PolygonMode(MaterialFace.FrontAndBack, (OpenGL.PolygonMode)PolygonMode);
-			//Gl.LineWidth(10);
+			Internal_OpenGL.GL.PolygonMode(TriangleFace.FrontAndBack, (Silk.NET.OpenGL.PolygonMode)PolygonMode);
+			//Internal_OpenGL.GL.LineWidth(10);
 
 			if (ColorBuffer == null)
 				VertexArray.VertexAttrib(COLOR_ATTRIB, DefaultColor);
@@ -151,7 +151,7 @@ namespace FishGfx.Graphics.Drawables {
 			if (!VAO.HasElementBuffer)
 				VAO.Draw(0, VertBuffer?.ElementCount ?? 0);
 			else
-				VAO.DrawElements(ElementType: DrawElementsType.UnsignedInt);
+				VAO.DrawElements(ElementType: IndexElementType.UnsignedInt);
 		}
 	}
 }

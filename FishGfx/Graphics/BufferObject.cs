@@ -1,11 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using OpenGL;
+using Silk.NET.OpenGL;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using BufferTarget = Silk.NET.OpenGL.BufferTargetARB;
 
 namespace FishGfx.Graphics {
 	public enum BufferUsage {
@@ -28,9 +29,9 @@ namespace FishGfx.Graphics {
 
 		public BufferObject() {
 			if (Internal_OpenGL.Is45OrAbove)
-				ID = Gl.CreateBuffer();
+				ID = Internal_OpenGL.GL.CreateBuffer();
 			else {
-				ID = Gl.GenBuffer();
+				ID = Internal_OpenGL.GL.GenBuffer();
 				Target = BufferTarget.ArrayBuffer;
 			}
 		}
@@ -39,14 +40,14 @@ namespace FishGfx.Graphics {
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
 
-			Gl.BindBuffer(Target, ID);
+			Internal_OpenGL.GL.BindBuffer(Target, ID);
 		}
 
 		public override void Unbind() {
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
 
-			Gl.BindBuffer(Target, 0);
+			Internal_OpenGL.GL.BindBuffer(Target, 0);
 		}
 
 		public void SetData(uint Size, IntPtr Data, int ElementCount, BufferUsage Usage = BufferUsage.DynamicDraw) {
@@ -55,13 +56,13 @@ namespace FishGfx.Graphics {
 			this.ElementCount = ElementCount;
 
 			if (Internal_OpenGL.Is45OrAbove) {
-				Gl.InvalidateBufferData(ID);
-				//Gl.NamedBufferData(ID, Size, IntPtr.Zero, (OpenGL.BufferUsage)Usage);
-				Gl.NamedBufferData(ID, Size, Data, (OpenGL.BufferUsage)Usage);
+				Internal_OpenGL.GL.InvalidateBufferData(ID);
+				//Internal_OpenGL.GL.NamedBufferData(ID, Size, IntPtr.Zero, (BufferUsageARB)Usage);
+				Internal_OpenGL.GL.NamedBufferData(ID, Size, (void*)Data, (BufferUsageARB)Usage);
 			} else {
 				Bind();
-				Gl.BufferData(Target, Size, IntPtr.Zero, (OpenGL.BufferUsage)Usage);
-				Gl.BufferData(Target, Size, Data, (OpenGL.BufferUsage)Usage);
+				Internal_OpenGL.GL.BufferData(Target, Size, null, (BufferUsageARB)Usage);
+				Internal_OpenGL.GL.BufferData(Target, Size, (void*)Data, (BufferUsageARB)Usage);
 				Unbind();
 			}
 		}
@@ -78,11 +79,11 @@ namespace FishGfx.Graphics {
 		public override void GraphicsDispose() {
 			// TODO
 			/*if (Internal_OpenGL.Is45OrAbove)
-				Gl.UnmapNamedBuffer(ID);
+				Internal_OpenGL.GL.UnmapNamedBuffer(ID);
 			else
-				Gl.UnmapBuffer(Target);*/
+				Internal_OpenGL.GL.UnmapBuffer(Target);*/
 
-			Gl.DeleteBuffers(new uint[] { ID });
+			Internal_OpenGL.GL.DeleteBuffers(new uint[] { ID });
 		}
 	}
 }

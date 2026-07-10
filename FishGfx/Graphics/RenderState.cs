@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics {
 	public enum CullFace {
-		Front = CullFaceMode.Front,
-		Back = CullFaceMode.Back,
-		FrontAndBack = CullFaceMode.FrontAndBack,
+		Front = TriangleFace.Front,
+		Back = TriangleFace.Back,
+		FrontAndBack = TriangleFace.FrontAndBack,
 	}
 
 	public enum DepthFunc {
@@ -24,7 +24,7 @@ namespace FishGfx.Graphics {
 	}
 
 	public enum FrontFace {
-		Clockwise = FrontFaceDirection.Cw,
+		Clockwise = FrontFaceDirection.CW,
 		CounterClockwise = FrontFaceDirection.Ccw
 	}
 
@@ -44,7 +44,7 @@ namespace FishGfx.Graphics {
 		OneMinusConstantColor = BlendingFactor.OneMinusConstantColor,
 		ConstantAlpha = BlendingFactor.ConstantAlpha,
 		OneMinusConstantAlpha = BlendingFactor.OneMinusConstantAlpha,
-		Source1Alpha = BlendingFactor.Source1Alpha,
+		Source1Alpha = BlendingFactor.Src1Alpha,
 		Src1Color = BlendingFactor.Src1Color,
 		OneMinusSrc1Color = BlendingFactor.OneMinusSrc1Color,
 		OneMinusSrc1Alpha = BlendingFactor.OneMinusSrc1Alpha
@@ -64,14 +64,14 @@ namespace FishGfx.Graphics {
 
 	public enum StencilOperation {
 		Skip = -1,
-		Zero = Gl.ZERO,
-		Invert = Gl.INVERT,
-		Keep = Gl.KEEP,
-		Replace = Gl.REPLACE,
-		Incr = Gl.INCR,
-		Decr = Gl.DECR,
-		IncrWrap = Gl.INCR_WRAP,
-		DecrWrap = Gl.DECR_WRAP,
+		Zero = 0,
+		Invert = 5386,
+		Keep = 7680,
+		Replace = 7681,
+		Incr = 7682,
+		Decr = 7683,
+		IncrWrap = 34055,
+		DecrWrap = 34056,
 	}
 
 	public enum StencilFace {
@@ -120,7 +120,7 @@ namespace FishGfx.Graphics {
 		public bool EnableColorMaskG;
 		public bool EnableColorMaskB;
 		public bool EnableColorMaskA;
-		//public bool EnableTexture2d;
+		//public bool EnableTexture2D;
 
 		public float PointSize;
 

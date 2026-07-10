@@ -1,5 +1,5 @@
-﻿using FishGfx;
-using OpenGL;
+using FishGfx;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -12,32 +12,32 @@ namespace FishGfx.Graphics {
 	public class Renderbuffer : GraphicsObject {
 		public Renderbuffer() {
 			if (Internal_OpenGL.Is45OrAbove)
-				ID = Gl.CreateRenderbuffer();
+				ID = Internal_OpenGL.GL.CreateRenderbuffer();
 			else
-				ID = Gl.GenRenderbuffer();
+				ID = Internal_OpenGL.GL.GenRenderbuffer();
 		}
 
-		public void Storage(InternalFormat Fmt, int W, int H, int Samples = 0) {
+		public void Storage(RenderbufferFormat Fmt, int W, int H, int Samples = 0) {
 			Bind();
 
 			if (Samples > 0)
-				Gl.NamedRenderbufferStorageMultisample(ID, Samples, Fmt, W, H);
+				Internal_OpenGL.GL.NamedRenderbufferStorageMultisample(ID, Samples, (InternalFormat)Fmt, W, H);
 			else
-				Gl.NamedRenderbufferStorage(ID, Fmt, W, H);
+				Internal_OpenGL.GL.NamedRenderbufferStorage(ID, (InternalFormat)Fmt, W, H);
 
 			Unbind();
 		}
 
 		public override void Bind() {
-			Gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, ID);
+			Internal_OpenGL.GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, ID);
 		}
 
 		public override void Unbind() {
-			Gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, 0);
+			Internal_OpenGL.GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, 0);
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteRenderbuffers(ID);
+			Internal_OpenGL.GL.DeleteRenderbuffers(ID);
 		}
 	}
 }

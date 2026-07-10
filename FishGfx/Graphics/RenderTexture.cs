@@ -1,5 +1,5 @@
-﻿using FishGfx;
-using OpenGL;
+using FishGfx;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -13,7 +13,7 @@ namespace FishGfx.Graphics {
 		static Stack<RenderTexture> RTStack = new Stack<RenderTexture>();
 
 		TextureInternalFmt ColorFmt = TextureInternalFmt.Rgba8;
-		TextureTarget TextureTgt = TextureTarget.Texture2d;
+		TextureKind TextureTgt = TextureKind.Texture2D;
 
 		public bool IsGBuffer { get; private set; }
 
@@ -42,7 +42,7 @@ namespace FishGfx.Graphics {
 
 			Multisamples = MSAASamples;
 			if (MSAASamples != 0)
-				TextureTgt = TextureTarget.Texture2dMultisample;
+				TextureTgt = TextureKind.Texture2DMultisample;
 
 			if (IsGBuffer) {
 				Color = new Texture(W, H, TextureTgt, 1, ColorFmt);

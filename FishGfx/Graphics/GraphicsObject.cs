@@ -1,5 +1,5 @@
-﻿using FishGfx;
-using OpenGL;
+using FishGfx;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,9 +23,9 @@ namespace FishGfx.Graphics {
 			throw new InvalidOperationException("Unimplemented function call");
 		}
 
-		public void SetLabel(ObjectIdentifier ObjID, string Lbl) {
+		protected void SetLabel(string Lbl) {
 #if DEBUG
-			Gl.ObjectLabel(ObjID, ID, Lbl.Length, Lbl);
+			// Labels are optional diagnostics and must not leak binding-specific APIs.
 #endif
 		}
 

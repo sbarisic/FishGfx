@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,7 +25,7 @@ namespace FishGfx.Graphics {
 		Patches = 14
 	}
 
-	public class VertexArray : GraphicsObject {
+	public unsafe class VertexArray : GraphicsObject {
 		public PrimitiveType PrimitiveType;
 
 		BufferObject ElementBuffer;
@@ -40,20 +40,20 @@ namespace FishGfx.Graphics {
 
 		public VertexArray() {
 			if (Internal_OpenGL.Is45OrAbove)
-				ID = Gl.CreateVertexArray();
+				ID = Internal_OpenGL.GL.CreateVertexArray();
 			else
-				ID = Gl.GenVertexArray();
+				ID = Internal_OpenGL.GL.GenVertexArray();
 
 			PrimitiveType = PrimitiveType.Triangles;
 			BufferObjects = new List<BufferObject>();
 		}
 
 		public override void Bind() {
-			Gl.BindVertexArray(ID);
+			Internal_OpenGL.GL.BindVertexArray(ID);
 		}
 
 		public override void Unbind() {
-			Gl.BindVertexArray(0);
+			Internal_OpenGL.GL.BindVertexArray(0);
 		}
 
 		public void Draw(int First, int Count) {
@@ -61,11 +61,11 @@ namespace FishGfx.Graphics {
 				return;
 
 			Bind();
-			Gl.DrawArrays((OpenGL.PrimitiveType)PrimitiveType, First, Count);
+			Internal_OpenGL.GL.DrawArrays((Silk.NET.OpenGL.PrimitiveType)PrimitiveType, First, (uint)Count);
 			Unbind();
 		}
 
-		public void DrawElements(int Offset = 0, int Count = -1, DrawElementsType ElementType = DrawElementsType.UnsignedShort) {
+		public void DrawElements(int Offset = 0, int Count = -1, IndexElementType ElementType = IndexElementType.UnsignedShort) {
 			if (ElementBuffer == null)
 				throw new Exception("Use Draw instead");
 
@@ -75,21 +75,21 @@ namespace FishGfx.Graphics {
 			int ElementSize = 1;
 
 			switch (ElementType) {
-				case DrawElementsType.UnsignedByte:
+				case IndexElementType.UnsignedByte:
 					ElementSize = sizeof(byte);
 					break;
-				case DrawElementsType.UnsignedShort:
+				case IndexElementType.UnsignedShort:
 					ElementSize = sizeof(ushort);
 					break;
-				case DrawElementsType.UnsignedInt:
+				case IndexElementType.UnsignedInt:
 					ElementSize = sizeof(uint);
 					break;
 				default:
-					throw new Exception("Unknown DrawElementsType " + ElementType);
+					throw new Exception("Unknown IndexElementType " + ElementType);
 			}
 
 			Bind();
-			Gl.DrawElements((OpenGL.PrimitiveType)PrimitiveType, Count, ElementType, (IntPtr)(Offset * ElementSize));
+			Internal_OpenGL.GL.DrawElements((Silk.NET.OpenGL.PrimitiveType)PrimitiveType, (uint)Count, (Silk.NET.OpenGL.DrawElementsType)ElementType, (void*)(Offset * ElementSize));
 			Unbind();
 		}
 
@@ -102,11 +102,11 @@ namespace FishGfx.Graphics {
 
 			if (Obj != null) {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.VertexArrayVertexBuffer(ID, (uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
+					Internal_OpenGL.GL.VertexArrayVertexBuffer(ID, (uint)BindingIndex, Obj.ID, Offset, (uint)Stride);
 				else {
 					Bind();
 					Obj.Bind();
-					Gl.BindVertexBuffer((uint)BindingIndex, Obj.ID, (IntPtr)Offset, Stride);
+					Internal_OpenGL.GL.BindVertexBuffer((uint)BindingIndex, Obj.ID, Offset, (uint)Stride);
 					Unbind();
 				}
 			}
@@ -120,10 +120,10 @@ namespace FishGfx.Graphics {
 			uint ObjID = Obj != null ? Obj.ID : 0;
 
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.VertexArrayElementBuffer(ID, ObjID);
+				Internal_OpenGL.GL.VertexArrayElementBuffer(ID, ObjID);
 			else {
 				Bind();
-				Gl.BindBuffer(BufferTarget.ElementArrayBuffer, ObjID);
+				Internal_OpenGL.GL.BindBuffer(BufferTargetARB.ElementArrayBuffer, ObjID);
 				Unbind();
 			}
 		}
@@ -131,29 +131,29 @@ namespace FishGfx.Graphics {
 		public void AttribEnable(uint AttribIdx, bool Enable = true) {
 			if (Enable) {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.EnableVertexArrayAttrib(ID, AttribIdx);
+					Internal_OpenGL.GL.EnableVertexArrayAttrib(ID, AttribIdx);
 				else {
 					Bind();
-					Gl.EnableVertexAttribArray(AttribIdx);
+					Internal_OpenGL.GL.EnableVertexAttribArray(AttribIdx);
 					Unbind();
 				}
 			} else {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.DisableVertexArrayAttrib(ID, AttribIdx);
+					Internal_OpenGL.GL.DisableVertexArrayAttrib(ID, AttribIdx);
 				else {
 					Bind();
-					Gl.DisableVertexAttribArray(AttribIdx);
+					Internal_OpenGL.GL.DisableVertexAttribArray(AttribIdx);
 					Unbind();
 				}
 			}
 		}
 
-		public void AttribFormat(uint AttribIdx, int Size = 3, VertexAttribType AttribType = VertexAttribType.Float, bool Normalized = false, uint RelativeOffset = 0) {
+		public void AttribFormat(uint AttribIdx, int Size = 3, VertexElementType AttribType = VertexElementType.Float, bool Normalized = false, uint RelativeOffset = 0) {
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.VertexArrayAttribFormat(ID, AttribIdx, Size, AttribType, Normalized, RelativeOffset);
+				Internal_OpenGL.GL.VertexArrayAttribFormat(ID, AttribIdx, Size, (Silk.NET.OpenGL.VertexAttribType)AttribType, Normalized, RelativeOffset);
 			else {
 				Bind();
-				Gl.VertexAttribFormat(AttribIdx, Size, (int)AttribType, Normalized, RelativeOffset);
+				Internal_OpenGL.GL.VertexAttribFormat(AttribIdx, Size, (GLEnum)AttribType, Normalized, RelativeOffset);
 				Unbind();
 			}
 		}
@@ -162,20 +162,20 @@ namespace FishGfx.Graphics {
 			AttribEnable(AttribIdx);
 
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.VertexArrayAttribBinding(ID, AttribIdx, BindingIdx);
+				Internal_OpenGL.GL.VertexArrayAttribBinding(ID, AttribIdx, BindingIdx);
 			else {
 				Bind();
-				Gl.VertexAttribBinding(AttribIdx, BindingIdx);
+				Internal_OpenGL.GL.VertexAttribBinding(AttribIdx, BindingIdx);
 				Unbind();
 			}
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteVertexArrays(new uint[] { ID });
+			Internal_OpenGL.GL.DeleteVertexArrays(new uint[] { ID });
 		}
 
 		public static void VertexAttrib(uint Attrib, Vector4 Vec) {
-			Gl.VertexAttrib4(Attrib, Vec.X, Vec.Y, Vec.Z, Vec.W);
+			Internal_OpenGL.GL.VertexAttrib4(Attrib, Vec.X, Vec.Y, Vec.Z, Vec.W);
 		}
 
 		public static void VertexAttrib(uint Attrib, Color Clr) {

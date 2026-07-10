@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,9 +25,9 @@ namespace FishGfx.Graphics {
 
 		public Framebuffer() {
 			if (Internal_OpenGL.Is45OrAbove)
-				ID = Gl.CreateFramebuffer();
+				ID = Internal_OpenGL.GL.CreateFramebuffer();
 			else
-				ID = Gl.GenFramebuffer();
+				ID = Internal_OpenGL.GL.GenFramebuffer();
 
 			Textures = new Dictionary<FramebufferAttachment, Texture>();
 			Renderbuffers = new Dictionary<FramebufferAttachment, Renderbuffer>();
@@ -45,10 +45,10 @@ namespace FishGfx.Graphics {
 			Textures.Add(Attachment, Tex);
 
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.NamedFramebufferTexture(ID, Attachment, Tex.ID, 0);
+				Internal_OpenGL.GL.NamedFramebufferTexture(ID, Attachment, Tex.ID, 0);
 			else {
 				Bind();
-				Gl.FramebufferTexture(FramebufferTarget.Framebuffer, Attachment, Tex.ID, 0);
+				Internal_OpenGL.GL.FramebufferTexture(FramebufferTarget.Framebuffer, Attachment, Tex.ID, 0);
 				Unbind();
 			}
 		}
@@ -57,10 +57,10 @@ namespace FishGfx.Graphics {
 			// TODO: Check MSAA
 
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.NamedFramebufferRenderbuffer(ID, Attachment, RenderbufferTarget.Renderbuffer, RBuf.ID);
+				Internal_OpenGL.GL.NamedFramebufferRenderbuffer(ID, Attachment, RenderbufferTarget.Renderbuffer, RBuf.ID);
 			else {
 				Bind();
-				Gl.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, Attachment, RenderbufferTarget.Renderbuffer, RBuf.ID);
+				Internal_OpenGL.GL.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, Attachment, RenderbufferTarget.Renderbuffer, RBuf.ID);
 				Unbind();
 			}
 		}
@@ -93,7 +93,7 @@ namespace FishGfx.Graphics {
 			FramebufferAttachment Attachment = FramebufferAttachment.DepthAttachment;
 
 			if (HasStencil)
-				Attachment = (FramebufferAttachment)Gl.DEPTH_STENCIL_ATTACHMENT;
+				Attachment = FramebufferAttachment.DepthStencilAttachment;
 
 			AddAttachment(Attachment, Tex);
 		}
@@ -103,36 +103,37 @@ namespace FishGfx.Graphics {
 		}
 
 		public void DrawBuffers(params int[] Indices) {
+			GLEnum[] Buffers = new GLEnum[Indices.Length];
 			for (int i = 0; i < Indices.Length; i++)
-				Indices[i] += (int)FramebufferAttachment.ColorAttachment0;
+				Buffers[i] = (GLEnum)(Indices[i] + (int)FramebufferAttachment.ColorAttachment0);
 
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.NamedFramebufferDrawBuffers(ID, Indices.Length, Indices);
+				Internal_OpenGL.GL.NamedFramebufferDrawBuffers(ID, Buffers);
 			else {
 				Bind();
-				Gl.DrawBuffers(Indices);
+				Internal_OpenGL.GL.DrawBuffers(Buffers);
 				Unbind();
 			}
 		}
 
 		public void Clear(Color? Color = null, int ColorAttachment = 0, float? Depth = null, int? Stencil = null) {
 			if (Color != null)
-				Gl.ClearNamedFramebuffer(ID, OpenGL.Buffer.Color, ColorAttachment, new float[] {
+				Internal_OpenGL.GL.ClearNamedFramebuffer(ID, GLEnum.Color, ColorAttachment, new float[] {
 					Color.Value.R / 255.0f, Color.Value.G / 255.0f, Color.Value.B / 255.0f, Color.Value.A / 255.0f });
 
 			if (Depth != null)
-				Gl.ClearNamedFramebuffer(ID, OpenGL.Buffer.Depth, 0, new float[] { Depth.Value });
+				Internal_OpenGL.GL.ClearNamedFramebuffer(ID, GLEnum.Depth, 0, new float[] { Depth.Value });
 
 			if (Stencil != null)
-				Gl.ClearNamedFramebuffer(ID, OpenGL.Buffer.Stencil, 0, new int[] { Stencil.Value });
+				Internal_OpenGL.GL.ClearNamedFramebuffer(ID, GLEnum.Stencil, 0, new int[] { Stencil.Value });
 		}
 
 		public void Blit(bool Color, bool Depth, bool Stencil, Framebuffer Destination = null, bool NearestFilter = true) {
 			// TODO: DSA check 'nd shit
 
 			BindRead();
-			Gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, Destination?.ID ?? 0);
-			//Gl.DrawBuffer(DrawBufferMode.Back);
+			Internal_OpenGL.GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, Destination?.ID ?? 0);
+			//Internal_OpenGL.GL.DrawBuffer(DrawBufferMode.Back);
 
 			ClearBufferMask BlitMask = 0;
 
@@ -151,8 +152,8 @@ namespace FishGfx.Graphics {
 			Texture Color0 = Textures.First().Value; //etTexture(FramebufferAttachment.ColorAttachment0);
 			BlitFramebufferFilter Filter = NearestFilter ? BlitFramebufferFilter.Nearest : BlitFramebufferFilter.Linear;
 
-			//Gl.BlitNamedFramebuffer(ID, Target?.ID ?? 0, 0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
-			Gl.BlitFramebuffer(0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, BlitMask, Filter);
+			//Internal_OpenGL.GL.BlitNamedFramebuffer(ID, Target?.ID ?? 0, 0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, ClearMask, Filter);
+			Internal_OpenGL.GL.BlitFramebuffer(0, 0, Color0.Width, Color0.Height, 0, 0, Color0.Width, Color0.Height, BlitMask, Filter);
 		}
 
 		void BindFramebuffer(FramebufferTarget Target) {
@@ -160,17 +161,17 @@ namespace FishGfx.Graphics {
 			FramebufferStatus S;
 
 			if (Internal_OpenGL.Is45OrAbove)
-				S = Gl.CheckNamedFramebufferStatus(ID, Target);
+				S = (FramebufferStatus)Internal_OpenGL.GL.CheckNamedFramebufferStatus(ID, Target);
 			else
-				S = Gl.CheckFramebufferStatus(Target);
+				S = (FramebufferStatus)Internal_OpenGL.GL.CheckFramebufferStatus(Target);
 
 
-			if (S != FramebufferStatus.FramebufferComplete)
+			if (S != FramebufferStatus.Complete)
 				throw new InvalidOperationException("Incomplete framebuffer " + S);
 #endif
 
 			this.Target = Target;
-			Gl.BindFramebuffer(Target, ID);
+			Internal_OpenGL.GL.BindFramebuffer(Target, ID);
 		}
 
 		public override void Bind() {
@@ -186,11 +187,11 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void Unbind() {
-			Gl.BindFramebuffer(Target, 0);
+			Internal_OpenGL.GL.BindFramebuffer(Target, 0);
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteFramebuffers(new uint[] { ID });
+			Internal_OpenGL.GL.DeleteFramebuffers(new uint[] { ID });
 		}
 	}
 }

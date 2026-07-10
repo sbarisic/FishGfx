@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,7 +9,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
-using GLPixelFormat = OpenGL.PixelFormat;
+using GLPixelFormat = Silk.NET.OpenGL.PixelFormat;
 using IPixFormat = System.Drawing.Imaging.PixelFormat;
 
 namespace FishGfx.Graphics {
@@ -165,19 +165,19 @@ namespace FishGfx.Graphics {
 	}
 
 	public enum TextureWrap : int {
-		Repeat = Gl.REPEAT,
-		MirroredRepeat = Gl.MIRRORED_REPEAT,
-		ClampToEdge = Gl.CLAMP_TO_EDGE,
-		ClampToBorder = Gl.CLAMP_TO_BORDER
+		Repeat = 10497,
+		MirroredRepeat = 33648,
+		ClampToEdge = 33071,
+		ClampToBorder = 33069
 	}
 
 	public enum TextureFilter : int {
-		Nearest = Gl.NEAREST,
-		Linear = Gl.LINEAR,
-		NearestMipmapNearest = Gl.NEAREST_MIPMAP_NEAREST,
-		LinearMipmapNearest = Gl.LINEAR_MIPMAP_NEAREST,
-		NearestMipmapLinear = Gl.NEAREST_MIPMAP_LINEAR,
-		LinearMipmapLinear = Gl.LINEAR_MIPMAP_LINEAR
+		Nearest = 9728,
+		Linear = 9729,
+		NearestMipmapNearest = 9984,
+		LinearMipmapNearest = 9985,
+		NearestMipmapLinear = 9986,
+		LinearMipmapLinear = 9987
 	}
 
 	public enum PixelFmt {
@@ -225,21 +225,21 @@ namespace FishGfx.Graphics {
 		InternalFormat InternalFormat;
 		bool FixedSampleLocations;
 
-		public Texture(int W, int H, TextureTarget Target = TextureTarget.Texture2d, int MipLevels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
-			this.Target = Target;
+		public Texture(int W, int H, TextureKind Kind = TextureKind.Texture2D, int MipLevels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
+			Target = (TextureTarget)Kind;
 
 			if (Internal_OpenGL.Is45OrAbove)
-				ID = Gl.CreateTexture(Target);
+				ID = Internal_OpenGL.GL.CreateTexture(Target);
 			else
-				ID = Gl.GenTexture();
+				ID = Internal_OpenGL.GL.GenTexture();
 
 			Multisampled = Samples != 0;
 			Multisamples = Samples;
 
-			if (Target == TextureTarget.Texture2dMultisample && !Multisampled)
+			if (Kind == TextureKind.Texture2DMultisample && !Multisampled)
 				throw new InvalidOperationException("Please specify sample size for multisampled textures");
 
-			if (Target == TextureTarget.TextureCubeMap)
+			if (Kind == TextureKind.TextureCubeMap)
 				IsCubeMap = true;
 
 			if (!Multisampled) {
@@ -255,20 +255,20 @@ namespace FishGfx.Graphics {
 			if (Val is int) {
 
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureParameter(ID, ParamName, (int)Val);
+					Internal_OpenGL.GL.TextureParameter(ID, ParamName, (int)Val);
 				else {
 					Bind();
-					Gl.TexParameter(Target, ParamName, (int)Val);
+					Internal_OpenGL.GL.TexParameter(Target, ParamName, (int)Val);
 					Unbind();
 				}
 
 			} else if (Val is float) {
 
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureParameter(ID, ParamName, (float)Val);
+					Internal_OpenGL.GL.TextureParameter(ID, ParamName, (float)Val);
 				else {
 					Bind();
-					Gl.TexParameter(Target, ParamName, (int)Val);
+					Internal_OpenGL.GL.TexParameter(Target, ParamName, (int)Val);
 					Unbind();
 				}
 
@@ -285,13 +285,13 @@ namespace FishGfx.Graphics {
 			TextureParam(TextureParameterName.TextureWrapT, (int)VWrap);
 		}
 
-		public void SetWrap(int Val = Gl.CLAMP_TO_EDGE) {
+		public void SetWrap(int Val = (int)TextureWrap.ClampToEdge) {
 			TextureParam(TextureParameterName.TextureWrapS, Val);
 			TextureParam(TextureParameterName.TextureWrapT, Val);
 			TextureParam(TextureParameterName.TextureWrapR, Val);
 		}
 
-		public void SetFilter(int Min = Gl.NEAREST, int Mag = Gl.NEAREST) {
+		public void SetFilter(int Min = (int)TextureFilter.Nearest, int Mag = (int)TextureFilter.Nearest) {
 			TextureParam(TextureParameterName.TextureMinFilter, Min);
 			TextureParam(TextureParameterName.TextureMagFilter, Mag);
 		}
@@ -316,12 +316,12 @@ namespace FishGfx.Graphics {
 			if (!Internal_OpenGL.Is45OrAbove)
 				return;
 
-			Gl.Get(Gl.MAX_TEXTURE_MAX_ANISOTROPY, out float Max);
+			Internal_OpenGL.GL.GetFloat((GLEnum)0x84FF, out float Max);
 			SetAnisotropy(Max);
 		}
 
 		public void SetAnisotropy(float Max) {
-			TextureParam((TextureParameterName)Gl.TEXTURE_MAX_ANISOTROPY, Max);
+			TextureParam((TextureParameterName)0x84FE, Max);
 		}
 
 		public void Storage2D(int W, int H, int Levels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba, bool FixedSampleLocations = false) {
@@ -333,18 +333,18 @@ namespace FishGfx.Graphics {
 
 			if (Multisampled) {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureStorage2DMultisample(ID, Multisamples, InternalFormat, W, H, FixedSampleLocations);
+					Internal_OpenGL.GL.TextureStorage2DMultisample(ID, Multisamples, InternalFormat, W, H, FixedSampleLocations);
 				else {
 					Bind();
-					Gl.TexStorage2DMultisample(Target, Multisamples, InternalFormat, W, H, FixedSampleLocations);
+					Internal_OpenGL.GL.TexStorage2DMultisample(Target, Multisamples, InternalFormat, W, H, FixedSampleLocations);
 					Unbind();
 				}
 			} else {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureStorage2D(ID, Levels, InternalFormat, W, H);
+					Internal_OpenGL.GL.TextureStorage2D(ID, Levels, InternalFormat, W, H);
 				else {
 					Bind();
-					Gl.TexStorage2D(Target, Levels, InternalFormat, W, H);
+					Internal_OpenGL.GL.TexStorage2D(Target, Levels, InternalFormat, W, H);
 					Unbind();
 				}
 			}
@@ -360,19 +360,19 @@ namespace FishGfx.Graphics {
 #endif
 
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureSubImage2D(ID, Level, X, Y, W, H, PFormat, PType, Pixels);
+					Internal_OpenGL.GL.TextureSubImage2D(ID, Level, X, Y, W, H, PFormat, PType, Pixels);
 				else {
 					Bind();
-					Gl.TexSubImage2D(Target, Level, X, Y, W, H, PFormat, PType, Pixels);
+					Internal_OpenGL.GL.TexSubImage2D(Target, Level, X, Y, W, H, PFormat, PType, Pixels);
 					Unbind();
 				}
 
 			} else {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.TextureSubImage3D(ID, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
+					Internal_OpenGL.GL.TextureSubImage3D(ID, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
 				else {
 					Bind();
-					Gl.TexSubImage3D(Target, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
+					Internal_OpenGL.GL.TexSubImage3D(Target, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
 					Unbind();
 				}
 			}
@@ -399,10 +399,10 @@ namespace FishGfx.Graphics {
 			// TODO: Older OpenGL way?
 			fixed (Color* ClrsPtr = Clrs) {
 				if (Internal_OpenGL.Is45OrAbove)
-					Gl.GetTextureImage(ID, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, Clrs.Length * sizeof(Color), (IntPtr)ClrsPtr);
+					Internal_OpenGL.GL.GetTextureImage(ID, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, Clrs.Length * sizeof(Color), (IntPtr)ClrsPtr);
 				else {
 					Bind();
-					Gl.GetTexImage(TextureTarget.Texture2d, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrsPtr);
+					Internal_OpenGL.GL.GetTexImage(TextureTarget.Texture2D, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrsPtr);
 					Unbind();
 				}
 			}
@@ -464,9 +464,9 @@ namespace FishGfx.Graphics {
 
 		public void BindTextureUnit(uint Unit = 0) {
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.BindTextureUnit(Unit, ID);
+				Internal_OpenGL.GL.BindTextureUnit(Unit, ID);
 			else {
-				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
+				Internal_OpenGL.GL.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
 				Bind();
 			}
 		}
@@ -477,13 +477,13 @@ namespace FishGfx.Graphics {
 					// TODO: Do something?
 				} else {
 					try {
-						Gl.BindTextureUnit(Unit, 0);
-					} catch (GlException) {
+						Internal_OpenGL.GL.BindTextureUnit(Unit, 0);
+				} catch (Exception) {
 						OpenGL_BODGES.INTEL_BIND_ZERO_TEXTURE_BUG = true;
 					}
 				}
 			} else {
-				Gl.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
+				Internal_OpenGL.GL.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
 				Unbind();
 			}
 		}
@@ -492,21 +492,21 @@ namespace FishGfx.Graphics {
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new InvalidOperationException("This function is not used in OpenGL 4.5");
 
-			Gl.BindTexture(TextureTarget.Texture2d, ID);
+			Internal_OpenGL.GL.BindTexture(TextureTarget.Texture2D, ID);
 		}
 
 		public override void Unbind() {
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new InvalidOperationException("This function is not used in OpenGL 4.5");
 
-			Gl.BindTexture(TextureTarget.Texture2d, 0);
+			Internal_OpenGL.GL.BindTexture(TextureTarget.Texture2D, 0);
 		}
 
 		public void GenerateMipmap() {
 			if (Internal_OpenGL.Is45OrAbove)
-				Gl.GenerateTextureMipmap(ID);
+				Internal_OpenGL.GL.GenerateTextureMipmap(ID);
 			else
-				Gl.GenerateMipmap(Target);
+				Internal_OpenGL.GL.GenerateMipmap(Target);
 		}
 
 		public void GenerateMipmap(int NewMipLevels) {
@@ -515,7 +515,7 @@ namespace FishGfx.Graphics {
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteTextures(new uint[] { ID });
+			Internal_OpenGL.GL.DeleteTextures(new uint[] { ID });
 		}
 
 		// Static
@@ -633,7 +633,7 @@ namespace FishGfx.Graphics {
 			int W = Lt.Width;
 			int H = Lt.Height;
 
-			Texture CubeTex = new Texture(W, H, TextureTarget.TextureCubeMap);
+			Texture CubeTex = new Texture(W, H, TextureKind.TextureCubeMap);
 			CubeTex.SetFilter(TextureFilter.Linear);
 
 			CubeTex.SubImage3D(Lt, Z: LEFT);

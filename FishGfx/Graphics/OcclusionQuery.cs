@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,30 +25,30 @@ namespace FishGfx.Graphics {
 		public OcclusionQuery(QueryTgt Target) {
 			IsOcclusionTest = false;
 			QueryTarget = Target;
-			ID = Gl.CreateQuery((QueryTarget)QueryTarget);
+			ID = Internal_OpenGL.GL.CreateQuery((QueryTarget)QueryTarget);
 		}
 
 		public override void Bind() {
 			ResetQuery = CurrentQuery;
 			CurrentQuery = this;
-			Gl.BeginQuery((QueryTarget)QueryTarget, ID);
+			Internal_OpenGL.GL.BeginQuery((QueryTarget)QueryTarget, ID);
 		}
 
 		public override void Unbind() {
 			CurrentQuery = ResetQuery;
-			Gl.EndQuery((QueryTarget)QueryTarget);
+			Internal_OpenGL.GL.EndQuery((QueryTarget)QueryTarget);
 		}
 
 		public void BeginConditional(bool Wait = true) {
-			Gl.BeginConditionalRender(ID, Wait ? ConditionalQueryMode.QueryByRegionWait : ConditionalQueryMode.QueryByRegionNoWait);
+			Internal_OpenGL.GL.BeginConditionalRender(ID, Wait ? GLEnum.QueryByRegionWait : GLEnum.QueryByRegionNoWait);
 		}
 
 		public void EndConditional() {
-			Gl.EndConditionalRender();
+			Internal_OpenGL.GL.EndConditionalRender();
 		}
 
 		public override void GraphicsDispose() {
-			Gl.DeleteQueries(ID);
+			Internal_OpenGL.GL.DeleteQueries(ID);
 		}
 	}
 }

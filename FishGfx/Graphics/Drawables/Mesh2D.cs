@@ -1,4 +1,4 @@
-﻿using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -47,7 +47,7 @@ namespace FishGfx.Graphics.Drawables {
 
 		public void SetColors(Color[] Colors) {
 			if (ColorBuffer == null) {
-				VAO.AttribFormat(COLOR_ATTRIB, Size: 4, AttribType: VertexAttribType.UnsignedByte, Normalized: true);
+				VAO.AttribFormat(COLOR_ATTRIB, Size: 4, AttribType: VertexElementType.UnsignedByte, Normalized: true);
 				VAO.AttribBinding(COLOR_ATTRIB, VAO.BindVertexBuffer(ColorBuffer = new BufferObject(), Stride: 4 * sizeof(byte)));
 			}
 
@@ -96,12 +96,12 @@ namespace FishGfx.Graphics.Drawables {
 			if (!VAO.HasElementBuffer)
 				throw new Exception("Use Draw when you don't supply element buffer");
 
-			VAO.DrawElements(Offset, Count, ElementType: DrawElementsType.UnsignedInt);
+			VAO.DrawElements(Offset, Count, ElementType: IndexElementType.UnsignedInt);
 		}*/
 
 		public void DrawEx(int First, int Count) {
-			Gl.PolygonMode(MaterialFace.FrontAndBack, (OpenGL.PolygonMode)PolygonMode);
-			//Gl.LineWidth(10);
+			Internal_OpenGL.GL.PolygonMode(TriangleFace.FrontAndBack, (Silk.NET.OpenGL.PolygonMode)PolygonMode);
+			//Internal_OpenGL.GL.LineWidth(10);
 
 			if (ColorBuffer == null)
 				VertexArray.VertexAttrib(COLOR_ATTRIB, DefaultColor);
@@ -120,7 +120,7 @@ namespace FishGfx.Graphics.Drawables {
 				VAO.Draw(First, Count);
 				// Draw(First, Count);
 			} else {
-				VAO.DrawElements(First, Count, ElementType: DrawElementsType.UnsignedInt);
+				VAO.DrawElements(First, Count, ElementType: IndexElementType.UnsignedInt);
 				//DrawElements(First, Count);
 			}
 		}

@@ -1,6 +1,6 @@
-﻿using FishGfx.Graphics;
+using FishGfx.Graphics;
 using Glfw3;
-using OpenGL;
+using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,15 +56,15 @@ namespace FishGfx {
 		}
 
 		public static void DbgPushGroup(string Name) {
-			Gl.PushDebugGroup(DebugSource.DebugSourceApplication, 0, Name.Length, Name);
+			// Optional diagnostic marker; intentionally binding-independent.
 		}
 
 		public static void DbgPopGroup() {
-			Gl.PopDebugGroup();
+			// Optional diagnostic marker; intentionally binding-independent.
 		}
 
 		public static void DbgMessage(string Msg) {
-			Gl.DebugMessageInsert(DebugSource.DebugSourceApplication, DebugType.DebugTypeOther, 0, DebugSeverity.DebugSeverityLow, Msg.Length, Msg);
+			// Optional diagnostic marker; intentionally binding-independent.
 		}
 
 		public static void DbgMessage(string Fmt, params object[] Args) {

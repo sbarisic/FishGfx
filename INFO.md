@@ -1,5 +1,7 @@
 # FishGfx Project Information
 
+> Migration note (2026-07-10): the core project now targets .NET 10 for Windows x64 and uses Silk.NET.OpenGL. `FishGfx.Modern.sln` contains the supported core, smoke test, and compatibility tests. The remainder of this document describes the pre-migration repository snapshot and may mention removed OpenGL.Net and RealSense components.
+
 > Consolidated from the authenticated Devin Wiki for `sbarisic/FishGfx`, branch `master`, on 2026-07-10. Wiki claims are generated documentation and should be verified against source before making critical changes.
 
 ## Project summary
