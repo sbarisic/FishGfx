@@ -165,6 +165,7 @@ namespace FishGfx.Graphics {
 	public delegate void OnMouseMoveFunc(RenderWindow Wnd, float X, float Y);
 	public delegate void OnKeyFunc(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods);
 	public delegate void OnCharFunc(RenderWindow Wnd, string Char, uint Unicode);
+	public delegate void OnScrollFunc(RenderWindow Wnd, float XOffset, float YOffset);
 	public delegate void OnWindowResizeFunc(RenderWindow Wnd, int W, int H);
 
 	public unsafe class RenderWindow {
@@ -177,12 +178,14 @@ namespace FishGfx.Graphics {
 		Glfw.KeyFunc GlfwOnKey;
 		Glfw.MouseButtonFunc GlfwOnMouseButton;
 		Glfw.CharFunc GlfwOnChar;
+		Glfw.ScrollFunc GlfwOnScroll;
 		Glfw.WindowSizeFunc GlfwOnWindowResize;
 
 		public event OnMouseMoveFunc OnMouseMove;
 		public event OnMouseMoveFunc OnMouseMoveDelta;
 		public event OnKeyFunc OnKey;
 		public event OnCharFunc OnChar;
+		public event OnScrollFunc OnScroll;
 		public event OnWindowResizeFunc OnWindowResize;
 
 		public Color[] PixelData;
@@ -335,6 +338,10 @@ namespace FishGfx.Graphics {
 
 			Glfw.SetCharCallback(Wnd, GlfwOnChar = (Wnd, Unicode) => {
 				OnChar?.Invoke(this, ((char)Unicode).ToString(), Unicode);
+			});
+
+			Glfw.SetScrollCallback(Wnd, GlfwOnScroll = (Wnd, XOffset, YOffset) => {
+				OnScroll?.Invoke(this, (float)XOffset, (float)YOffset);
 			});
 
 			Glfw.SetWindowSizeCallback(Wnd, GlfwOnWindowResize = (Wnd, W, H) => {

@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FishGfx.SmokeTest", "FishGf
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FishGfx.Tests", "FishGfx.Tests\FishGfx.Tests.csproj", "{01245513-5581-440D-89EE-B1BC646A1E8B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FishGfx.NodeEditor", "FishGfx.NodeEditor\FishGfx.NodeEditor.csproj", "{3959AE53-B244-4F73-ACBC-6B23BB8E685B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{01245513-5581-440D-89EE-B1BC646A1E8B}.Release|x64.Build.0 = Release|Any CPU
 		{01245513-5581-440D-89EE-B1BC646A1E8B}.Release|x86.ActiveCfg = Release|Any CPU
 		{01245513-5581-440D-89EE-B1BC646A1E8B}.Release|x86.Build.0 = Release|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Debug|x64.Build.0 = Debug|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Debug|x86.Build.0 = Debug|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Release|x64.ActiveCfg = Release|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Release|x64.Build.0 = Release|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Release|x86.ActiveCfg = Release|Any CPU
+		{3959AE53-B244-4F73-ACBC-6B23BB8E685B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
