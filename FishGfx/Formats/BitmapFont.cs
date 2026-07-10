@@ -53,11 +53,19 @@ namespace FishGfx.Formats {
 			public byte Channel;
 		}
 
+		[StructLayout(LayoutKind.Sequential, Pack = 1)]
+		public struct KerningBlock {
+			public uint First;
+			public uint Second;
+			public short Amount;
+		}
+
 		public InfoBlock Info;
 		public string FntName;
 		public CommonBlock Common;
 		public Dictionary<string, Texture> PageNames;
 		Dictionary<char, CharBlock> Chars;
+		Dictionary<ulong, short> KerningPairs = new Dictionary<ulong, short>();
 
 		public BMFont(string FntFile = null, float FontSize = -1, bool DoLoadTextures = true) {
 			if (FntFile != null) {
@@ -142,7 +150,12 @@ namespace FishGfx.Formats {
 							}
 
 						case 5: {
-								throw new NotImplementedException("Kerning pairs not implemented");
+								int pairCount = Len / sizeof(KerningBlock);
+								for (int i = 0; i < pairCount; i++) {
+									KerningBlock pair = BR.ReadStruct<KerningBlock>();
+									KerningPairs[((ulong)pair.First << 32) | pair.Second] = pair.Amount;
+								}
+								break;
 							}
 
 						default:
@@ -158,6 +171,8 @@ namespace FishGfx.Formats {
 
 			return default(CharBlock);
 		}
+
+		public override int GetKerning(char First, char Second) => KerningPairs.TryGetValue(((ulong)First << 32) | Second, out short amount) ? amount : 0;
 
 		public override string FontName => FntName;
 

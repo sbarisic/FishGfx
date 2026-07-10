@@ -53,6 +53,7 @@ namespace FishGfx {
 		}
 
 		public abstract CharOrigin? GetCharInfo(char C);
+		public virtual int GetKerning(char First, char Second) => 0;
 
 		public virtual Vector2 MeasureString(string Str) {
 			return MeasureString(LayoutString(Str));
@@ -87,6 +88,7 @@ namespace FishGfx {
 			int X = 0;
 			int Y = 0;
 			int LineCount = 1;
+			char Previous = '\0';
 
 			for (int i = 0; i < Str.Length; i++) {
 				char Chr = Str[i];
@@ -97,6 +99,7 @@ namespace FishGfx {
 				//throw new NotImplementedException();
 
 				CharOrigin ChrOrigin = MaybeCharInfo.Value;
+				if (Previous != '\0') X += GetKerning(Previous, Chr);
 
 				CharDest CurChar = new CharDest();
 				CurChar.CharOrigin = ChrOrigin;
@@ -111,6 +114,7 @@ namespace FishGfx {
 
 				if (Chr == '\n') {
 					X = 0;
+					Previous = '\0';
 					LineCount++;
 
 					Y -= LineHeight;
@@ -123,6 +127,7 @@ namespace FishGfx {
 				}
 
 				X += ChrOrigin.XAdvance;
+				Previous = Chr;
 
 				CurChar.X = (CurChar.X * Scale);
 				CurChar.Y = (CurChar.Y * Scale);

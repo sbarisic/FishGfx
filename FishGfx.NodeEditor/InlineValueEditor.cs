@@ -1,23 +1,24 @@
 using System;
 using System.Globalization;
+using FishGfx.NodeGraph;
 
 namespace FishGfx.NodeEditor {
 	internal sealed class InlineValueEditor {
-		internal NodeValue Target { get; private set; }
+		internal NodeBodyValue Target { get; private set; }
 		internal string Text { get; private set; } = "";
 		internal bool IsActive => Target != null;
 
-		internal void Begin(NodeValue value) { Target = value; Text = value.Value.ToString("0.###", CultureInfo.InvariantCulture); }
+		internal void Begin(NodeBodyValue value) { Target = value; Text = value.Text; }
 		internal void Append(string value) {
 			if (!IsActive) return;
-			foreach (char c in value)
-				if (char.IsDigit(c) || c == '-' || c == '+' || c == '.') Text += c;
+			Text += value;
 		}
 		internal void Backspace() { if (IsActive && Text.Length > 0) Text = Text.Substring(0, Text.Length - 1); }
 		internal bool Commit() {
 			if (!IsActive) return false;
-			if (!float.TryParse(Text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value)) return false;
-			Target.Value = value; Cancel(); return true;
+			Target.Text = Text;
+			if (!Target.Parse()) return false;
+			Cancel(); return true;
 		}
 		internal void Cancel() { Target = null; Text = ""; }
 	}

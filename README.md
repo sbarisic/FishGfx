@@ -1,4 +1,25 @@
 # FishGfx
+
+## Function node graphs
+
+FishGfx can expose explicitly marked methods on a static class as strongly typed nodes:
+
+```csharp
+using FishGfx.NodeGraph;
+
+static class MathNodes {
+    [NodeFunction("Constant")]
+    public static float Constant([NodeBody] float value = 1) => value;
+
+    [NodeFunction]
+    public static float Add(float a, float b) => a + b;
+}
+
+var registry = new NodeFunctionRegistry();
+registry.Register(typeof(MathNodes));
+```
+
+Ordinary parameters become typed input ports, `[NodeBody]` parameters become editable node values, and return values become outputs. Named `ValueTuple` returns produce multiple output ports. `FunctionNodeEvaluator` evaluates a connected `FunctionNodeGraph` on demand while reporting cycles and per-node errors.
 SFML but better. OpenGL 4, GLFW, .NET 10, and Silk.NET.
 
 https://github.com/Chman/Glfw.Net

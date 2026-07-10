@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using FishGfx.NodeGraph;
 
 namespace FishGfx.NodeEditor {
 	internal sealed class NodeCanvas {
@@ -26,18 +27,19 @@ namespace FishGfx.NodeEditor {
 	internal static class NodeGeometry {
 		internal const float HeaderHeight = 42;
 		internal const float PortRadius = 8;
-		internal static Bounds BoundsOf(Node node) => new Bounds(node.Position.X, node.Position.Y, node.Width, node.Height);
-		internal static Bounds HeaderOf(Node node) => new Bounds(node.Position.X, node.Position.Y + node.Height - HeaderHeight, node.Width, HeaderHeight);
-		internal static Bounds CloseOf(Node node) => new Bounds(node.Position.X + node.Width - 35, node.Position.Y + node.Height - 35, 26, 26);
+		internal static float HeightOf(FunctionNode node) => 66 + Math.Max(node.Inputs.Count + node.Outputs.Count, node.BodyValues.Count) * 30 + (node.Outputs.Count > 0 ? 25 : 0);
+		internal static Bounds BoundsOf(FunctionNode node) => new Bounds(node.Position.X, node.Position.Y, node.Width, HeightOf(node));
+		internal static Bounds HeaderOf(FunctionNode node) => new Bounds(node.Position.X, node.Position.Y + HeightOf(node) - HeaderHeight, node.Width, HeaderHeight);
+		internal static Bounds CloseOf(FunctionNode node) => new Bounds(node.Position.X + node.Width - 35, node.Position.Y + HeightOf(node) - 35, 26, 26);
 
 		internal static Vector2 PortPosition(NodePort port) {
-			int index = port.Direction == PortDirection.Input ? port.Node.Inputs.IndexOf(port) : port.Node.Outputs.IndexOf(port);
-			float y = port.Node.Position.Y + port.Node.Height - HeaderHeight - 21 - index * 30;
-			float x = port.Direction == PortDirection.Input ? port.Node.Position.X : port.Node.Position.X + port.Node.Width;
+			int index = port.Direction == NodePortDirection.Input ? port.Node.Inputs.IndexOf(port) : port.Node.Outputs.IndexOf(port);
+			float y = port.Node.Position.Y + HeightOf(port.Node) - HeaderHeight - 21 - index * 30;
+			float x = port.Direction == NodePortDirection.Input ? port.Node.Position.X : port.Node.Position.X + port.Node.Width;
 			return new Vector2(x, y);
 		}
 
-		internal static Bounds ValueBounds(Node node, int index) => new Bounds(node.Position.X + 75, node.Position.Y + node.Height - HeaderHeight - 33 - index * 30, 92, 25);
+		internal static Bounds ValueBounds(FunctionNode node, int index) => new Bounds(node.Position.X + 82, node.Position.Y + HeightOf(node) - HeaderHeight - 33 - index * 30, node.Width - 98, 25);
 
 		internal static bool NearConnection(Vector2 point, Vector2 start, Vector2 end, float tolerance = 10) {
 			Vector2 c1 = start + new Vector2(Math.Max(60, Math.Abs(end.X - start.X) * .45f), 0);
