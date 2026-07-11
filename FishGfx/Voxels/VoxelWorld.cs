@@ -1,0 +1,330 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+
+namespace FishGfx.Voxels
+{
+	public sealed class VoxelChunk
+	{
+		private readonly VoxelCell[] cells = new VoxelCell[VoxelWorld.ChunkVolume];
+
+		internal VoxelChunk(ChunkCoordinate coordinate)
+		{
+			Coordinate = coordinate;
+			Revision = 1;
+		}
+
+		public ChunkCoordinate Coordinate { get; }
+		public long Revision { get; internal set; }
+		public int NonAirCount { get; internal set; }
+		public bool IsEmpty => NonAirCount == 0;
+
+		public VoxelCell GetLocal(int x, int y, int z)
+		{
+			ValidateLocal(x, y, z);
+			return cells[Index(x, y, z)];
+		}
+
+		internal VoxelCell GetLocalUnchecked(int x, int y, int z) => cells[Index(x, y, z)];
+
+		internal bool SetLocalUnchecked(int x, int y, int z, VoxelCell value)
+		{
+			int index = Index(x, y, z);
+			VoxelCell previous = cells[index];
+
+			if (previous == value)
+				return false;
+
+			cells[index] = value;
+
+			if (previous.IsAir && !value.IsAir)
+				NonAirCount++;
+			else if (!previous.IsAir && value.IsAir)
+				NonAirCount--;
+
+			return true;
+		}
+
+		internal void FillUnchecked(VoxelCell value)
+		{
+			Array.Fill(cells, value);
+			NonAirCount = value.IsAir ? 0 : cells.Length;
+		}
+
+		private static int Index(int x, int y, int z) => x + VoxelWorld.ChunkSize * (y + VoxelWorld.ChunkSize * z);
+
+		private static void ValidateLocal(int x, int y, int z)
+		{
+			if ((uint)x >= VoxelWorld.ChunkSize)
+				throw new ArgumentOutOfRangeException(nameof(x));
+			if ((uint)y >= VoxelWorld.ChunkSize)
+				throw new ArgumentOutOfRangeException(nameof(y));
+			if ((uint)z >= VoxelWorld.ChunkSize)
+				throw new ArgumentOutOfRangeException(nameof(z));
+		}
+	}
+
+	public sealed class VoxelChunkSnapshot
+	{
+		internal const int PaddedSize = VoxelWorld.ChunkSize + 2;
+		private readonly ushort[] paddedMaterials;
+
+		internal VoxelChunkSnapshot(ChunkCoordinate coordinate, long revision, ushort[] paddedMaterials)
+		{
+			Coordinate = coordinate;
+			Revision = revision;
+			this.paddedMaterials = paddedMaterials;
+		}
+
+		public ChunkCoordinate Coordinate { get; }
+		public long Revision { get; }
+
+		public ushort GetMaterial(int localX, int localY, int localZ)
+		{
+			if (localX < -1 || localX > VoxelWorld.ChunkSize)
+				throw new ArgumentOutOfRangeException(nameof(localX));
+			if (localY < -1 || localY > VoxelWorld.ChunkSize)
+				throw new ArgumentOutOfRangeException(nameof(localY));
+			if (localZ < -1 || localZ > VoxelWorld.ChunkSize)
+				throw new ArgumentOutOfRangeException(nameof(localZ));
+
+			return GetMaterialUnchecked(localX, localY, localZ);
+		}
+
+		internal ushort GetMaterialUnchecked(int localX, int localY, int localZ)
+		{
+			return paddedMaterials[
+				(localX + 1) + PaddedSize * ((localY + 1) + PaddedSize * (localZ + 1))
+			];
+		}
+	}
+
+	public sealed class VoxelWorld
+	{
+		public const int ChunkSize = 16;
+		public const int ChunkVolume = ChunkSize * ChunkSize * ChunkSize;
+
+		private readonly object sync = new object();
+		private readonly Dictionary<ChunkCoordinate, VoxelChunk> chunks =
+			new Dictionary<ChunkCoordinate, VoxelChunk>();
+
+		public event Action<ChunkCoordinate, long> ChunkInvalidated;
+		public event Action<ChunkCoordinate> ChunkRemoved;
+
+		public IReadOnlyList<VoxelChunk> LoadedChunks
+		{
+			get
+			{
+				lock (sync)
+					return Array.AsReadOnly(chunks.Values.ToArray());
+			}
+		}
+
+		public bool TryGetChunk(ChunkCoordinate coordinate, out VoxelChunk chunk)
+		{
+			lock (sync)
+				return chunks.TryGetValue(coordinate, out chunk);
+		}
+
+		public VoxelCell GetVoxel(int x, int y, int z)
+		{
+			ChunkCoordinate coordinate = ChunkCoordinate.FromWorld(x, y, z, out int localX, out int localY, out int localZ);
+
+			lock (sync)
+				return GetVoxelUnchecked(coordinate, localX, localY, localZ);
+		}
+
+		public bool SetVoxel(int x, int y, int z, VoxelCell value)
+		{
+			ChunkCoordinate coordinate = ChunkCoordinate.FromWorld(x, y, z, out int localX, out int localY, out int localZ);
+			List<(ChunkCoordinate Coordinate, long Revision)> invalidated;
+
+			lock (sync)
+			{
+				if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
+				{
+					if (value.IsAir)
+						return false;
+
+					chunk = new VoxelChunk(coordinate);
+					chunks.Add(coordinate, chunk);
+				}
+
+				if (!chunk.SetLocalUnchecked(localX, localY, localZ, value))
+					return false;
+
+				invalidated = InvalidateBoundaryNeighborhood(coordinate, localX, localY, localZ);
+			}
+
+			RaiseInvalidated(invalidated);
+			return true;
+		}
+
+		public void FillChunk(ChunkCoordinate coordinate, VoxelCell value)
+		{
+			List<(ChunkCoordinate Coordinate, long Revision)> invalidated;
+
+			lock (sync)
+			{
+				if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
+				{
+					if (value.IsAir)
+						return;
+
+					chunk = new VoxelChunk(coordinate);
+					chunks.Add(coordinate, chunk);
+				}
+
+				chunk.FillUnchecked(value);
+				invalidated = InvalidateAllNeighbors(coordinate, includeCenter: true);
+			}
+
+			RaiseInvalidated(invalidated);
+		}
+
+		public bool RemoveChunk(ChunkCoordinate coordinate)
+		{
+			List<(ChunkCoordinate Coordinate, long Revision)> invalidated;
+
+			lock (sync)
+			{
+				if (!chunks.Remove(coordinate))
+					return false;
+
+				invalidated = InvalidateAllNeighbors(coordinate, includeCenter: false);
+			}
+
+			RaiseInvalidated(invalidated);
+			ChunkRemoved?.Invoke(coordinate);
+			return true;
+		}
+
+		public int RemoveEmptyChunks()
+		{
+			ChunkCoordinate[] empty;
+
+			lock (sync)
+				empty = chunks.Where(pair => pair.Value.IsEmpty).Select(pair => pair.Key).ToArray();
+
+			foreach (ChunkCoordinate coordinate in empty)
+				RemoveChunk(coordinate);
+
+			return empty.Length;
+		}
+
+		public VoxelChunkSnapshot CreateSnapshot(ChunkCoordinate coordinate)
+		{
+			lock (sync)
+			{
+				if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
+					return null;
+
+				ushort[] padded = new ushort[VoxelChunkSnapshot.PaddedSize * VoxelChunkSnapshot.PaddedSize * VoxelChunkSnapshot.PaddedSize];
+				Vector3Int origin = new Vector3Int(
+					coordinate.X * ChunkSize,
+					coordinate.Y * ChunkSize,
+					coordinate.Z * ChunkSize
+				);
+
+				for (int z = -1; z <= ChunkSize; z++)
+					for (int y = -1; y <= ChunkSize; y++)
+						for (int x = -1; x <= ChunkSize; x++)
+						{
+							VoxelCell cell = GetVoxelWorldUnchecked(origin.X + x, origin.Y + y, origin.Z + z);
+							padded[(x + 1) + VoxelChunkSnapshot.PaddedSize * ((y + 1) + VoxelChunkSnapshot.PaddedSize * (z + 1))] = cell.MaterialId;
+						}
+
+				return new VoxelChunkSnapshot(coordinate, chunk.Revision, padded);
+			}
+		}
+
+		private VoxelCell GetVoxelWorldUnchecked(int x, int y, int z)
+		{
+			ChunkCoordinate coordinate = ChunkCoordinate.FromWorld(x, y, z, out int localX, out int localY, out int localZ);
+			return GetVoxelUnchecked(coordinate, localX, localY, localZ);
+		}
+
+		private VoxelCell GetVoxelUnchecked(ChunkCoordinate coordinate, int localX, int localY, int localZ)
+		{
+			return chunks.TryGetValue(coordinate, out VoxelChunk chunk)
+				? chunk.GetLocalUnchecked(localX, localY, localZ)
+				: VoxelCell.Air;
+		}
+
+		private List<(ChunkCoordinate Coordinate, long Revision)> InvalidateBoundaryNeighborhood(
+			ChunkCoordinate coordinate,
+			int localX,
+			int localY,
+			int localZ
+		)
+		{
+			int minX = localX == 0 ? -1 : 0;
+			int maxX = localX == ChunkSize - 1 ? 1 : 0;
+			int minY = localY == 0 ? -1 : 0;
+			int maxY = localY == ChunkSize - 1 ? 1 : 0;
+			int minZ = localZ == 0 ? -1 : 0;
+			int maxZ = localZ == ChunkSize - 1 ? 1 : 0;
+			List<(ChunkCoordinate Coordinate, long Revision)> result = new List<(ChunkCoordinate, long)>();
+
+			for (int z = minZ; z <= maxZ; z++)
+				for (int y = minY; y <= maxY; y++)
+					for (int x = minX; x <= maxX; x++)
+						InvalidateExisting(coordinate + new ChunkCoordinate(x, y, z), result);
+
+			return result;
+		}
+
+		private List<(ChunkCoordinate Coordinate, long Revision)> InvalidateAllNeighbors(
+			ChunkCoordinate coordinate,
+			bool includeCenter
+		)
+		{
+			List<(ChunkCoordinate Coordinate, long Revision)> result = new List<(ChunkCoordinate, long)>();
+
+			for (int z = -1; z <= 1; z++)
+				for (int y = -1; y <= 1; y++)
+					for (int x = -1; x <= 1; x++)
+					{
+						if (!includeCenter && x == 0 && y == 0 && z == 0)
+							continue;
+
+						InvalidateExisting(coordinate + new ChunkCoordinate(x, y, z), result);
+					}
+
+			return result;
+		}
+
+		private void InvalidateExisting(
+			ChunkCoordinate coordinate,
+			List<(ChunkCoordinate Coordinate, long Revision)> result
+		)
+		{
+			if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
+				return;
+
+			chunk.Revision++;
+			result.Add((coordinate, chunk.Revision));
+		}
+
+		private void RaiseInvalidated(List<(ChunkCoordinate Coordinate, long Revision)> invalidated)
+		{
+			foreach ((ChunkCoordinate coordinate, long revision) in invalidated)
+				ChunkInvalidated?.Invoke(coordinate, revision);
+		}
+
+		private readonly struct Vector3Int
+		{
+			public Vector3Int(int x, int y, int z)
+			{
+				X = x;
+				Y = y;
+				Z = z;
+			}
+
+			public int X { get; }
+			public int Y { get; }
+			public int Z { get; }
+		}
+	}
+}

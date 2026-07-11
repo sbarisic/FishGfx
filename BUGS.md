@@ -19,6 +19,7 @@ No open defects are currently recorded here. This does not imply that the projec
 | BUG-007 | Low | Initialize every node-port ID with a unique GUID. | `NodesUseExactTypesReplaceInputsAndFanOut`. |
 | BUG-008 | Low | Return a structured load failure for null JSON content. | `NullJsonReturnsStructuredFailure`. |
 | BUG-009 | Medium | Preserve floating-point texture parameters on the pre-4.5 OpenGL path. | Typed code path, Debug/Release builds, and smoke validation. |
+| BUG-010 | Medium | Correct 3D AABB center, bounds, maximum, union, and overlap calculations. | `AabbUsesThreeDimensionalSizeAndUnion` and `FrustumRejectsDistantBounds`. |
 
 ## Resolution notes
 
@@ -57,3 +58,7 @@ The internal SDF-border diagnostic now returns zero when width, height, or bitma
 ### BUG-009: Truncated fallback texture parameters
 
 The legacy bind-to-edit branch of `Texture.TextureParam` converted a boxed floating-point value to `int` before calling `glTexParameter`, truncating values such as anisotropy. The fallback now calls the floating-point overload and preserves the requested value.
+
+### BUG-010: Incorrect 3D AABB operations
+
+`AABB.Bounds` returned the absolute maximum rather than the box size, `Center` added the full size instead of half, and `Maxs` mixed incorrect center/bounds values. Union delegated to a two-dimensional `System.Drawing` rectangle and lost the Z extent, while collision could report intersection when only selected corners overlapped. The implementation now uses component-wise three-dimensional minima/maxima and interval overlap on all axes. Frustum culling and voxel chunk bounds rely on these corrected operations.

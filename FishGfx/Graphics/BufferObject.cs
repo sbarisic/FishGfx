@@ -94,6 +94,48 @@ namespace FishGfx.Graphics
 			PinHandle.Free();
 		}
 
+		public void SetSubData<T>(T[] Data, int Count = -1, int ElementOffset = 0)
+			where T : struct
+		{
+			if (Data == null)
+				throw new ArgumentNullException(nameof(Data));
+			if (Count < 0)
+				Count = Data.Length;
+			if (Count < 0 || Count > Data.Length)
+				throw new ArgumentOutOfRangeException(nameof(Count));
+			if (ElementOffset < 0)
+				throw new ArgumentOutOfRangeException(nameof(ElementOffset));
+
+			int elementSize = Marshal.SizeOf<T>();
+			int byteOffset = ElementOffset * elementSize;
+			int byteCount = Count * elementSize;
+
+			if (byteOffset + byteCount > Size)
+				throw new ArgumentOutOfRangeException(nameof(Count), "Sub-data exceeds the allocated buffer size.");
+			if (byteCount == 0)
+				return;
+
+			GCHandle pinHandle = GCHandle.Alloc(Data, GCHandleType.Pinned);
+
+			try
+			{
+				void* data = (void*)pinHandle.AddrOfPinnedObject();
+
+				if (Internal_OpenGL.Is45OrAbove)
+					Internal_OpenGL.GL.NamedBufferSubData(ID, byteOffset, (nuint)byteCount, data);
+				else
+				{
+					Bind();
+					Internal_OpenGL.GL.BufferSubData(Target, byteOffset, (nuint)byteCount, data);
+					Unbind();
+				}
+			}
+			finally
+			{
+				pinHandle.Free();
+			}
+		}
+
 		public override void GraphicsDispose()
 		{
 			// TODO

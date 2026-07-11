@@ -1,6 +1,6 @@
 # FishGfx
 
-FishGfx is a Windows-first C# graphics and game-framework library built on OpenGL 4, GLFW, and Silk.NET. The modern core targets .NET 10 and includes immediate 2D primitives, GPU resource abstractions, bitmap and SDF text, retained drawables, reflected function-node graphs, and interactive validation applications.
+FishGfx is a Windows-first C# graphics and game-framework library built on OpenGL 4, GLFW, and Silk.NET. The modern core targets .NET 10 and includes immediate 2D primitives, GPU resource abstractions, bitmap and SDF text, retained drawables, editable voxel chunks, reflected function-node graphs, and interactive validation applications.
 
 - [Architecture and project information](INFO.md)
 - [Bug history](BUGS.md)
@@ -24,6 +24,7 @@ dotnet build FishGfx.Modern.sln -c Debug
 dotnet test FishGfx.Modern.sln -c Debug
 dotnet run --project FishGfx.SmokeTest/FishGfx.SmokeTest.csproj
 dotnet run --project FishGfx.NodeEditor/FishGfx.NodeEditor.csproj
+dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj
 ```
 
 `FishGfx.Modern.sln` contains the supported modern projects:
@@ -31,6 +32,7 @@ dotnet run --project FishGfx.NodeEditor/FishGfx.NodeEditor.csproj
 - `FishGfx`: core rendering, windowing, input, formats, fonts, and node-graph APIs.
 - `FishGfx.SmokeTest`: interactive primitive gallery and automated screenshot validation.
 - `FishGfx.NodeEditor`: reflected C# function-node editor with evaluation and JSON persistence.
+- `FishGfx.VoxelTest`: editable, multi-chunk voxel-rendering validation application.
 - `FishGfx.Tests`: context-free geometry, font, node-graph, persistence, and compatibility tests.
 
 The older demos, tools, LiteTest, and Nuklear projects remain outside the modern solution pending separate migrations. Intel RealSense support and its test project have been removed.
@@ -97,6 +99,43 @@ foreach (RenderSubmission item in queue.GetSorted(
 ```
 
 Opaque front-to-back, opaque state-first, and transparent back-to-front comparers are stable and respect explicit layers. Custom `RenderBucket` values and comparers support passes such as shadows, selection, or overlays. Submission snapshots copy command references, while textures, shaders, fonts, meshes, and models remain caller-owned. The model transform is restored after every item; camera and other shared uniforms are taken from the active render pass.
+
+### Voxel chunks
+
+`FishGfx.Voxels` provides editable 16³ chunks, negative-coordinate-safe world addressing, immutable material palettes, and asynchronous culled-face meshing. Each worker consumes an 18³ padded snapshot instead of mutable world data. Revisions prevent stale results from replacing newer edits, while accepted meshes are uploaded under a configurable context-thread budget.
+
+```csharp
+VoxelPaletteBuilder paletteBuilder = new VoxelPaletteBuilder();
+ushort stone = paletteBuilder.Add(
+	new VoxelMaterial("Stone", VoxelRenderMode.Opaque, new VoxelFaceTiles(0))
+);
+VoxelPalette palette = paletteBuilder.Build();
+
+VoxelWorld world = new VoxelWorld();
+world.SetVoxel(-1, 0, -1, new VoxelCell(stone));
+
+using VoxelRenderer renderer = new VoxelRenderer(
+	world,
+	palette,
+	atlasTexture,
+	new VoxelAtlasLayout(columns: 8, rows: 8, textureWidth: 512, textureHeight: 512)
+);
+
+renderer.UpdateMeshing();
+queue.BeginFrame();
+renderer.SubmitVisible(queue, camera);
+queue.Execute(RenderBucket.Opaque, RenderSubmissionComparers.OpaqueFrontToBack(camera));
+queue.Execute(VoxelRenderBuckets.Cutout, RenderSubmissionComparers.OpaqueFrontToBack(camera));
+queue.Execute(RenderBucket.Transparent, RenderSubmissionComparers.TransparentBackToFront(camera));
+```
+
+The renderer owns its worker scheduler, shaders, per-chunk GPU meshes, and global transparent stream. The application retains ownership of the atlas texture and must keep it alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted separately. Transparent faces are gathered across all visible chunks, stably sorted back-to-front in camera space, and uploaded as one world-space stream. Face occlusion, per-face atlas tiles, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
+
+Run `FishGfx.VoxelTest` to inspect a deterministic world spanning positive and negative chunks. Use WASD and the mouse to fly, Space/Ctrl to move vertically, Shift to accelerate, E to edit a boundary voxel, and C to toggle culling. The unattended validation mode is:
+
+```powershell
+dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -- --auto -debug
+```
 
 ### Fonts and console
 
@@ -166,6 +205,7 @@ Automatic mode uses a fixed animation time, captures each complete 1920×1080 sc
 - Add advanced text shaping, combining-mark handling, right-to-left layout, and supplementary Unicode support.
 - Add a general 2D path/stroke API with configurable joins, caps, arcs, and filled paths.
 - Add node-editor undo/redo, grouping, clipboard operations, and multi-selection.
+- Add greedy voxel meshing, propagated block lighting, custom block models, generation, collision, and world serialization.
 - Replace Windows-only bitmap dependencies as part of broader platform support.
 
 ### Deferred migrations

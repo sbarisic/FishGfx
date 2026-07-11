@@ -1,0 +1,430 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using System.Threading;
+using FishGfx.Graphics;
+using FishGfx.Voxels;
+using Xunit;
+
+namespace FishGfx.Tests;
+
+public class VoxelTests
+{
+	[Theory]
+	[InlineData(0, 0, 0)]
+	[InlineData(15, 0, 15)]
+	[InlineData(16, 1, 0)]
+	[InlineData(-1, -1, 15)]
+	[InlineData(-16, -1, 0)]
+	[InlineData(-17, -2, 15)]
+	public void ChunkCoordinatesUseFloorDivision(int worldX, int chunkX, int localX)
+	{
+		ChunkCoordinate coordinate = ChunkCoordinate.FromWorld(worldX, 0, worldX, out int x, out int y, out int z);
+
+		Assert.Equal(chunkX, coordinate.X);
+		Assert.Equal(chunkX, coordinate.Z);
+		Assert.Equal(localX, x);
+		Assert.Equal(0, y);
+		Assert.Equal(localX, z);
+	}
+
+	[Fact]
+	public void WorldEditsAndRemovesEmptyChunks()
+	{
+		VoxelWorld world = new();
+		VoxelCell stone = new(1);
+
+		Assert.True(world.SetVoxel(-1, 3, -17, stone));
+		Assert.Equal(stone, world.GetVoxel(-1, 3, -17));
+		Assert.Equal(VoxelCell.Air, world.GetVoxel(100, 100, 100));
+		Assert.Single(world.LoadedChunks);
+
+		Assert.True(world.SetVoxel(-1, 3, -17, VoxelCell.Air));
+		Assert.Equal(1, world.RemoveEmptyChunks());
+		Assert.Empty(world.LoadedChunks);
+	}
+
+	[Fact]
+	public void BoundaryEditInvalidatesOwningAndDiagonalNeighborChunks()
+	{
+		VoxelWorld world = new();
+		VoxelCell stone = new(1);
+		world.SetVoxel(15, 15, 15, stone);
+		world.SetVoxel(16, 16, 16, stone);
+		List<ChunkCoordinate> invalidated = new();
+		world.ChunkInvalidated += (coordinate, _) => invalidated.Add(coordinate);
+
+		world.SetVoxel(15, 15, 15, VoxelCell.Air);
+
+		Assert.Contains(new ChunkCoordinate(0, 0, 0), invalidated);
+		Assert.Contains(new ChunkCoordinate(1, 1, 1), invalidated);
+	}
+
+	[Fact]
+	public void PaletteReservesAirAndBecomesImmutable()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort stone = builder.Add(new VoxelMaterial("Stone", VoxelRenderMode.Opaque, new VoxelFaceTiles(2)));
+		VoxelPalette palette = builder.Build();
+
+		Assert.Equal(1, stone);
+		Assert.Null(palette[0]);
+		Assert.Equal("Stone", palette[stone].Name);
+		Assert.True(palette[stone].OccludesFaces);
+		Assert.Throws<InvalidOperationException>(
+			() => builder.Add(new VoxelMaterial("Later", VoxelRenderMode.Opaque, new VoxelFaceTiles(0)))
+		);
+		Assert.Throws<ArgumentException>(() => new VoxelMaterial("", VoxelRenderMode.Opaque, new VoxelFaceTiles(0)));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelFaceTiles(-1));
+	}
+
+	[Fact]
+	public void IsolatedOpaqueCubeEmitsSixFaces()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(36, mesh.OpaqueVertices.Length);
+		Assert.Empty(mesh.CutoutVertices);
+		Assert.Empty(mesh.TransparentFaces);
+		Assert.Equal(new Vector3(1), mesh.Bounds.Position);
+		Assert.Equal(Vector3.One, mesh.Bounds.Size);
+	}
+
+	[Fact]
+	public void AdjacentOpaqueCubesRemoveSharedFaces()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+		world.SetVoxel(2, 1, 1, new VoxelCell(opaque));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(60, mesh.OpaqueVertices.Length);
+	}
+
+	[Fact]
+	public void PaddedSnapshotsCullFacesAcrossChunkBoundaries()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(15, 1, 1, new VoxelCell(opaque));
+		world.SetVoxel(16, 1, 1, new VoxelCell(opaque));
+
+		VoxelMeshData left = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+		VoxelMeshData right = Build(world, palette, new ChunkCoordinate(1, 0, 0));
+
+		Assert.Equal(30, left.OpaqueVertices.Length);
+		Assert.Equal(30, right.OpaqueVertices.Length);
+	}
+
+	[Fact]
+	public void SeparatesCutoutAndTransparentGeometry()
+	{
+		(VoxelWorld world, VoxelPalette palette, _, ushort cutout, ushort transparent) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(cutout));
+		world.SetVoxel(4, 1, 1, new VoxelCell(transparent));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Empty(mesh.OpaqueVertices);
+		Assert.Equal(36, mesh.CutoutVertices.Length);
+		Assert.Equal(6, mesh.TransparentFaces.Length);
+		Assert.Equal(36, mesh.TransparentVertexCount);
+	}
+
+	[Fact]
+	public void AdjacentMatchingTransparentBlocksRemoveInternalFaces()
+	{
+		(VoxelWorld world, VoxelPalette palette, _, _, ushort transparent) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(transparent));
+		world.SetVoxel(2, 1, 1, new VoxelCell(transparent));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(10, mesh.TransparentFaces.Length);
+	}
+
+	[Fact]
+	public void DoubleSidedMaterialsEmitReversedTriangles()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort glass = builder.Add(
+			new VoxelMaterial(
+				"Glass",
+				VoxelRenderMode.Transparent,
+				new VoxelFaceTiles(0),
+				doubleSided: true
+			)
+		);
+		VoxelPalette palette = builder.Build();
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(glass));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(6, mesh.TransparentFaces.Length);
+		Assert.All(mesh.TransparentFaces, face => Assert.Equal(12, face.Vertices.Count));
+		Assert.Equal(-mesh.TransparentFaces[0].Vertices[0].Normal, mesh.TransparentFaces[0].Vertices[6].Normal);
+	}
+
+	[Fact]
+	public void FaceWindingMatchesOutwardNormals()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		for (int i = 0; i < mesh.OpaqueVertices.Length; i += 3)
+		{
+			VoxelVertex a = mesh.OpaqueVertices[i];
+			VoxelVertex b = mesh.OpaqueVertices[i + 1];
+			VoxelVertex c = mesh.OpaqueVertices[i + 2];
+			Vector3 triangleNormal = Vector3.Cross(b.Position - a.Position, c.Position - a.Position);
+
+			Assert.True(Vector3.Dot(triangleNormal, a.Normal) > 0);
+		}
+	}
+
+	[Fact]
+	public void AtlasUvsUseSelectedTileAndHalfTexelInset()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort material = builder.Add(new VoxelMaterial("Tile", VoxelRenderMode.Opaque, new VoxelFaceTiles(1)));
+		VoxelPalette palette = builder.Build();
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(material));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+		float minU = mesh.OpaqueVertices.Min(vertex => vertex.UV.X);
+		float maxU = mesh.OpaqueVertices.Max(vertex => vertex.UV.X);
+		float minV = mesh.OpaqueVertices.Min(vertex => vertex.UV.Y);
+		float maxV = mesh.OpaqueVertices.Max(vertex => vertex.UV.Y);
+
+		Assert.Equal(0.515625f, minU, 6);
+		Assert.Equal(0.984375f, maxU, 6);
+		Assert.Equal(0.515625f, minV, 6);
+		Assert.Equal(0.984375f, maxV, 6);
+	}
+
+	[Fact]
+	public void AmbientOcclusionDarkensBlockedCorners()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		VoxelCell stone = new(opaque);
+		world.SetVoxel(1, 1, 1, stone);
+		world.SetVoxel(2, 2, 1, stone);
+		world.SetVoxel(2, 1, 2, stone);
+		world.SetVoxel(2, 2, 2, stone);
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+		VoxelVertex[] corner = mesh.OpaqueVertices
+			.Where(vertex => vertex.Normal == Vector3.UnitX && vertex.Position == new Vector3(2, 2, 2))
+			.ToArray();
+
+		Assert.NotEmpty(corner);
+		Assert.All(corner, vertex => Assert.Equal(125, vertex.Color.R));
+	}
+
+	[Fact]
+	public void RejectsUnknownMaterialsAndOutOfRangeTiles()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort invalidTile = builder.Add(new VoxelMaterial("Bad tile", VoxelRenderMode.Opaque, new VoxelFaceTiles(4)));
+		VoxelPalette palette = builder.Build();
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(invalidTile));
+
+		Assert.Throws<InvalidOperationException>(
+			() => VoxelMesher.Build(
+				world.CreateSnapshot(new ChunkCoordinate(0, 0, 0)),
+				palette,
+				new VoxelAtlasLayout(2, 2, 32, 32)
+			)
+		);
+
+		VoxelPalette emptyPalette = new VoxelPaletteBuilder().Build();
+		Assert.Throws<InvalidOperationException>(
+			() => VoxelMesher.Build(
+				world.CreateSnapshot(new ChunkCoordinate(0, 0, 0)),
+				emptyPalette,
+				new VoxelAtlasLayout(2, 2, 32, 32)
+			)
+		);
+	}
+
+	[Fact]
+	public void AabbUsesThreeDimensionalSizeAndUnion()
+	{
+		AABB first = new(new Vector3(10, 20, 30), new Vector3(4, 6, 8));
+		AABB second = new(new Vector3(5, 24, 35), new Vector3(8, 10, 12));
+		AABB union = first.Union(second);
+
+		Assert.Equal(new Vector3(4, 6, 8), first.Bounds);
+		Assert.Equal(new Vector3(12, 23, 34), first.Center);
+		Assert.Equal(new Vector3(14, 26, 38), first.Maxs);
+		Assert.Equal(new Vector3(5, 20, 30), union.Position);
+		Assert.Equal(new Vector3(9, 14, 17), union.Size);
+		Assert.True(
+			new AABB(new Vector3(0, 4, 4), new Vector3(10, 2, 2)).Collide(
+				new AABB(new Vector3(4, 0, 4), new Vector3(2, 10, 2))
+			)
+		);
+		Assert.False(
+			new AABB(new Vector3(0, 0, 0), new Vector3(10)).Collide(
+				new AABB(new Vector3(2, 2, 20), new Vector3(2))
+			)
+		);
+	}
+
+	[Fact]
+	public void FrustumRejectsDistantBounds()
+	{
+		Camera camera = new();
+		camera.SetPerspective(1920, 1080, MathF.PI / 2, 0.1f, 100);
+		ViewFrustum frustum = ViewFrustum.FromCamera(camera);
+
+		Assert.True(frustum.Intersects(new AABB(new Vector3(-1, -1, -6), new Vector3(2))));
+		Assert.False(frustum.Intersects(new AABB(new Vector3(100, 100, -6), new Vector3(2))));
+		Assert.False(frustum.Intersects(AABB.Empty));
+	}
+
+	[Fact]
+	public void MeshingSchedulerProducesRevisionedResultsAndReschedulesEdits()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+		using VoxelMeshingScheduler scheduler = new VoxelMeshingScheduler(
+			world,
+			palette,
+			new VoxelAtlasLayout(2, 2, 32, 32),
+			maxWorkers: 1
+		);
+		ChunkCoordinate coordinate = new(0, 0, 0);
+
+		Assert.Equal(1, scheduler.SchedulePending());
+		world.SetVoxel(2, 1, 1, new VoxelCell(opaque));
+		VoxelMeshData stale = WaitForResult(scheduler);
+
+		Assert.True(world.TryGetChunk(coordinate, out VoxelChunk chunk));
+		Assert.True(stale.Revision < chunk.Revision);
+		SpinWait.SpinUntil(() => scheduler.InFlightCount == 0, 5000);
+		Assert.Equal(1, scheduler.SchedulePending());
+		VoxelMeshData current = WaitForResult(scheduler);
+
+		Assert.Equal(chunk.Revision, current.Revision);
+		Assert.Equal(60, current.OpaqueVertices.Length);
+	}
+
+	[Fact]
+	public void SchedulerHonorsWorkerLimitAndRejectsUseAfterDisposal()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+		world.SetVoxel(17, 1, 1, new VoxelCell(opaque));
+		VoxelMeshingScheduler scheduler = new VoxelMeshingScheduler(
+			world,
+			palette,
+			new VoxelAtlasLayout(2, 2, 32, 32),
+			maxWorkers: 1
+		);
+
+		Assert.Equal(1, scheduler.SchedulePending());
+		Assert.InRange(scheduler.InFlightCount, 0, 1);
+		scheduler.Dispose();
+		Assert.Throws<ObjectDisposedException>(() => scheduler.SchedulePending());
+	}
+
+	[Fact]
+	public void SchedulerReportsWorkerMeshingFailures()
+	{
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(99));
+		using VoxelMeshingScheduler scheduler = new VoxelMeshingScheduler(
+			world,
+			new VoxelPaletteBuilder().Build(),
+			new VoxelAtlasLayout(1, 1, 16, 16),
+			maxWorkers: 1
+		);
+		scheduler.SchedulePending();
+		Exception failure = null;
+
+		bool completed = SpinWait.SpinUntil(() => scheduler.TryDequeueFailure(out failure), 5000);
+
+		Assert.True(completed);
+		Assert.Contains("(0, 0, 0)", failure.Message);
+		Assert.IsType<InvalidOperationException>(failure.InnerException);
+	}
+
+	[Fact]
+	public void TransparentStreamSortsBackToFrontAndAppliesChunkOrigins()
+	{
+		VoxelVertex[] nearVertices =
+		{
+			new VoxelVertex(new Vector3(1, 0, 0), Color.Red, Vector2.Zero, Vector3.UnitZ),
+		};
+		VoxelVertex[] farVertices =
+		{
+			new VoxelVertex(new Vector3(2, 0, 0), Color.Blue, Vector2.Zero, Vector3.UnitZ),
+		};
+		VoxelTransparentFace near = new VoxelTransparentFace(new Vector3(0, 0, -2), nearVertices);
+		VoxelTransparentFace far = new VoxelTransparentFace(new Vector3(0, 0, -10), farVertices);
+		List<VoxelTransparentFaceInstance> faces = new()
+		{
+			new VoxelTransparentFaceInstance(new ChunkCoordinate(0, 0, 0), 0, new Vector3(10, 0, 0), near),
+			new VoxelTransparentFaceInstance(new ChunkCoordinate(1, 0, 0), 0, new Vector3(20, 0, 0), far),
+		};
+
+		VoxelVertex[] stream = VoxelTransparentStreamBuilder.Build(Vector3.Zero, -Vector3.UnitZ, faces);
+
+		Assert.Equal(Color.Blue, stream[0].Color);
+		Assert.Equal(new Vector3(22, 0, 0), stream[0].Position);
+		Assert.Equal(Color.Red, stream[1].Color);
+		Assert.Equal(new Vector3(11, 0, 0), stream[1].Position);
+	}
+
+	[Theory]
+	[InlineData(0, 1, 64)]
+	[InlineData(64, 64, 64)]
+	[InlineData(64, 65, 128)]
+	[InlineData(128, 1000, 1024)]
+	public void VoxelBufferCapacityGrowsByPowersOfTwo(int current, int required, int expected)
+	{
+		Assert.Equal(expected, VoxelMesh.CalculateCapacity(current, required));
+	}
+
+	private static (VoxelWorld World, VoxelPalette Palette, ushort Opaque, ushort Cutout, ushort Transparent)
+		CreateWorldAndPalette()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort opaque = builder.Add(new VoxelMaterial("Opaque", VoxelRenderMode.Opaque, new VoxelFaceTiles(0)));
+		ushort cutout = builder.Add(
+			new VoxelMaterial("Cutout", VoxelRenderMode.Cutout, new VoxelFaceTiles(0), occludesFaces: false)
+		);
+		ushort transparent = builder.Add(
+			new VoxelMaterial("Transparent", VoxelRenderMode.Transparent, new VoxelFaceTiles(0), occludesFaces: false)
+		);
+
+		return (new VoxelWorld(), builder.Build(), opaque, cutout, transparent);
+	}
+
+	private static VoxelMeshData Build(VoxelWorld world, VoxelPalette palette, ChunkCoordinate coordinate)
+	{
+		return VoxelMesher.Build(
+			world.CreateSnapshot(coordinate),
+			palette,
+			new VoxelAtlasLayout(2, 2, 32, 32)
+		);
+	}
+
+	private static VoxelMeshData WaitForResult(VoxelMeshingScheduler scheduler)
+	{
+		VoxelMeshData result = null;
+		bool completed = SpinWait.SpinUntil(() => scheduler.TryDequeue(out result), 5000);
+
+		Assert.True(completed, "Timed out waiting for voxel meshing worker.");
+		return result;
+	}
+}

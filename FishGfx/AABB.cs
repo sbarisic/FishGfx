@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-// TODO: REMOVE!
-using System.Drawing;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -23,12 +21,12 @@ namespace FishGfx
 
 		public Vector3 Bounds
 		{
-			get { return Size - Position; }
+			get { return Size; }
 		}
 
 		public Vector3 Center
 		{
-			get { return Position + Bounds / 2; }
+			get { return Position + Size / 2; }
 		}
 
 		public Vector3 Mins
@@ -38,7 +36,7 @@ namespace FishGfx
 
 		public Vector3 Maxs
 		{
-			get { return Position + Bounds; }
+			get { return Position + Size; }
 		}
 
 		public AABB(Vector3 Position, Vector3 Size)
@@ -80,15 +78,12 @@ namespace FishGfx
 
 		public bool Collide(AABB Other)
 		{
-			foreach (var BoxVert in Other.GetVertices())
-				if (IsInside(BoxVert))
-					return true;
-
-			foreach (var Vert in GetVertices())
-				if (Other.IsInside(Vert))
-					return true;
-
-			return false;
+			return Mins.X <= Other.Maxs.X
+				&& Maxs.X >= Other.Mins.X
+				&& Mins.Y <= Other.Maxs.Y
+				&& Maxs.Y >= Other.Mins.Y
+				&& Mins.Z <= Other.Maxs.Z
+				&& Maxs.Z >= Other.Mins.Z;
 		}
 
 		public bool IsInside(Vector3 Point)
@@ -161,18 +156,10 @@ namespace FishGfx
 
 		public AABB Union(AABB Other)
 		{
-			Rectangle A = new Rectangle((int)Position.X, (int)Position.Y, (int)Size.X, (int)Size.Y);
-			Rectangle B = new Rectangle(
-				(int)Other.Position.X,
-				(int)Other.Position.Y,
-				(int)Other.Size.X,
-				(int)Other.Size.Y
-			);
+			Vector3 min = Vector3.Min(Mins, Other.Mins);
+			Vector3 max = Vector3.Max(Maxs, Other.Maxs);
 
-			Rectangle C = Rectangle.Union(A, B);
-			return new AABB(C.X, C.Y, C.Width, C.Height);
-
-			//RectangleConverter.
+			return new AABB(min, max - min);
 		}
 
 		public override string ToString()

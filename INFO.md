@@ -19,11 +19,12 @@ Intel RealSense support has been removed. Linux and macOS are not supported by t
 
 ## Modern solution
 
-`FishGfx.Modern.sln` is the supported entry point and contains four projects:
+`FishGfx.Modern.sln` is the supported entry point and contains five projects:
 
 - `FishGfx`: the core library.
 - `FishGfx.SmokeTest`: interactive primitive gallery, developer console, and automated screenshot validation.
 - `FishGfx.NodeEditor`: reflected function-node editor and headless JSON graph runner.
+- `FishGfx.VoxelTest`: interactive and automated voxel chunk renderer validation.
 - `FishGfx.Tests`: xUnit tests for geometry, fonts, graphs, persistence, UI models, and compatibility mappings.
 
 The older demos, tools, LiteTest, and Nuklear projects are intentionally outside this solution. They remain migration candidates and are not part of modern build acceptance.
@@ -62,6 +63,8 @@ Standard interleaved vertex attributes are:
 - Location 1: color.
 - Location 2: texture coordinates.
 
+`VoxelVertex` additionally uses location 3 for its normal and intentionally does not alter the established `Vertex3` layout.
+
 ## Immediate 2D API
 
 `Gfx` provides an immediate-style 2D API backed by a reusable streaming mesh. Available primitives include:
@@ -87,6 +90,16 @@ Arrays are cloned during command construction, while textures, shaders, and font
 `CommandList.Snapshot` creates an immutable `GraphicsCommandBatch`. `DeferredRenderQueue` groups those batches into built-in opaque/transparent or custom render buckets. A submission captures its model matrix, representative world position, layer, sort key, owner tag, and stable sequence while retaining caller ownership of referenced resources. Typed mesh and render-model commands extend deferred submission to retained 3D geometry.
 
 Render passes can query buckets in insertion order or request stable opaque front-to-back, opaque state-first, and transparent back-to-front sorting using camera-space depth. Custom comparers support bounds-aware or application-specific policies. Executing a submission temporarily applies its captured model matrix and restores the previous matrix through `finally`; the camera and remaining shared uniforms stay controlled by the render pass. Queues retain submissions until `BeginFrame` or `Clear` and require external synchronization.
+
+## Voxel rendering
+
+The `FishGfx.Voxels` namespace implements an editable chunk-rendering core with fixed 16³ chunks. `ChunkCoordinate` uses floor division and positive modulo so negative world coordinates map correctly. `VoxelWorld` synchronizes individual reads and edits, maintains monotonically increasing chunk revisions, and invalidates the owning chunk plus relevant Cartesian and diagonal neighbors when boundary voxels change.
+
+`VoxelPaletteBuilder` reserves material ID zero for air and freezes immutable render metadata for worker access. Materials select opaque, alpha-cutout, or transparent rendering; uniform or per-face atlas tiles; tint; face occlusion; and double-sided output. The first mesher emits exposed cube faces rather than greedy quads. It reads an immutable 18³ neighborhood, produces normals and inset atlas UVs, bakes classic three-neighbor ambient occlusion into vertex color, and separates opaque, cutout, and transparent geometry.
+
+`VoxelMeshingScheduler` snapshots on the calling thread and performs CPU meshing on bounded workers. Every job carries the source revision. The context thread accepts only current results and uploads at most the configured budget per update; stale results are discarded and the newest revision is rescheduled. Workers never create or destroy OpenGL resources.
+
+`VoxelRenderer` distance- and frustum-culls chunk AABBs. Opaque chunks enter `RenderBucket.Opaque`, cutout chunks enter `VoxelRenderBuckets.Cutout`, and both retain captured chunk translations. Transparent faces from all visible chunks are transformed to world space, stably sorted by camera-space depth, streamed into one persistent growable `VoxelMesh`, and submitted once with depth writes disabled. Applications execute opaque front-to-back, cutout front-to-back, then transparent back-to-front. The atlas texture is caller-owned; the renderer owns workers, shaders, GPU meshes, and its transparent stream.
 
 ## Retained drawables and formats
 
@@ -148,7 +161,9 @@ The smoke gallery contains one scene per immediate primitive plus reusable comma
 
 Automatic mode captures the complete 1920×1080 frame before buffer swap, writes an atomic full-size PNG, and generates a 640×360 thumbnail. The files under `FishGfx/pictures` are used directly by the README gallery.
 
-The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
+`FishGfx.VoxelTest` generates deterministic multi-chunk terrain spanning negative coordinates and demonstrates opaque blocks, cutout foliage, glass/water transparency, ambient occlusion, neighbor culling, and boundary edits. Interactive controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, E boundary editing, and C culling disable/enable. `--auto -debug` forces stale revisions and neighbor rebuilds, waits for accepted GPU meshes, renders all three passes, and exits without user input.
+
+The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, voxel coordinates/palettes/meshing/revisions/culling/sorting, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
 
 ## Roadmap and known defects
 
