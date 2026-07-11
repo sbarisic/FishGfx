@@ -10,7 +10,7 @@ namespace FishGfx.NodeGraph {
 	public enum NodeEvaluationState { NotEvaluated, Success, Error, Skipped }
 
 	public sealed class NodePort {
-		public Guid Id { get; } = Guid.NewGuid();
+		public Guid Id { get; }
 		public string Name { get; }
 		public Type Type { get; }
 		public NodePortDirection Direction { get; }
@@ -50,8 +50,8 @@ namespace FishGfx.NodeGraph {
 		public NodeEvaluationState EvaluationState { get; internal set; }
 		public string EvaluationMessage { get; internal set; }
 
-		internal FunctionNode(NodeFunctionDescriptor function, Vector2 position) {
-			Function = function; Position = position;
+		internal FunctionNode(NodeFunctionDescriptor function, Vector2 position, Guid? id = null) {
+			Id = id ?? Guid.NewGuid(); Function = function; Position = position;
 			foreach (NodeParameterDescriptor parameter in function.Parameters) {
 				if (parameter.IsBody) BodyValues.Add(new NodeBodyValue(parameter));
 				else Inputs.Add(NewPort(parameter.Name, parameter.Type, NodePortDirection.Input));
@@ -73,6 +73,7 @@ namespace FishGfx.NodeGraph {
 		public List<FunctionNode> Nodes { get; } = new List<FunctionNode>();
 		public List<NodeConnection> Connections { get; } = new List<NodeConnection>();
 		public FunctionNode CreateNode(NodeFunctionDescriptor descriptor, Vector2 position) { FunctionNode node = new FunctionNode(descriptor ?? throw new ArgumentNullException(nameof(descriptor)), position); Nodes.Add(node); InvalidateEvaluation(); return node; }
+		internal FunctionNode CreateNode(NodeFunctionDescriptor descriptor, Vector2 position, Guid id) { FunctionNode node = new FunctionNode(descriptor ?? throw new ArgumentNullException(nameof(descriptor)), position, id); Nodes.Add(node); return node; }
 
 		public NodeConnection Connect(NodePort a, NodePort b) {
 			if (a == null) throw new ArgumentNullException(nameof(a)); if (b == null) throw new ArgumentNullException(nameof(b));

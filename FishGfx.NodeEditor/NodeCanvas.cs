@@ -10,6 +10,8 @@ namespace FishGfx.NodeEditor {
 		internal Vector2 WorldToScreen(Vector2 world) => world * Zoom + Pan;
 		internal Vector2 ScreenToWorld(Vector2 screen) => (screen - Pan) / Zoom;
 		internal void PanBy(Vector2 screenDelta) => Pan += screenDelta;
+		internal NodeGraphViewState Capture() => new NodeGraphViewState(Pan, Zoom);
+		internal void Apply(NodeGraphViewState state) { Pan = state.Pan; Zoom = Math.Clamp(state.Zoom, .35f, 2.5f); }
 
 		internal void ZoomAt(Vector2 screenPoint, float wheelDelta) {
 			Vector2 before = ScreenToWorld(screenPoint);

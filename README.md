@@ -20,6 +20,14 @@ registry.Register(typeof(MathNodes));
 ```
 
 Ordinary parameters become typed input ports, `[NodeBody]` parameters become editable node values, and return values become outputs. Named `ValueTuple` returns produce multiple output ports. `FunctionNodeEvaluator` evaluates a connected `FunctionNodeGraph` on demand while reporting cycles and per-node errors.
+
+Layouts can be persisted with `NodeGraphJson.Serialize` / `SaveFile` and restored against an existing registry with `Deserialize` / `LoadFile`. `DeserializeAndEvaluate` and `LoadAndEvaluateFile` validate and execute layouts directly without loading functions that were not explicitly registered by the host.
+
+The node editor stores its interactive layout as `node-layout.json` beside the executable. Use Ctrl+S to save, Ctrl+O to reload, or execute a saved layout without opening a window:
+
+```powershell
+dotnet FishGfx.NodeEditor.dll --execute node-layout.json
+```
 SFML but better. OpenGL 4, GLFW, .NET 10, and Silk.NET.
 
 https://github.com/Chman/Glfw.Net

@@ -30,9 +30,10 @@ namespace FishGfx.NodeEditor
 		public static void Display(float value, [NodeBody] string label = "Result") => LastOutput = $"{label}: {value:0.###}";
 
 		[NodeFunction("Console", Category = "Output")]
-		public static void Console(float value, [NodeBody] string label = "Result")
+		public static float Console(float value, [NodeBody] string label = "Result")
 		{
 			System.Console.WriteLine($"{label}: {value}");
+			return value;
 		}
 
 		[NodeFunction("Fail", Category = "Debug")]

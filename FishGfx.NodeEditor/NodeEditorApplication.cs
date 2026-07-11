@@ -16,7 +16,7 @@ namespace FishGfx.NodeEditor {
 		private const int InitialHeight = 1080;
 		private RenderWindow window;
 		private InputManager input;
-		private readonly FunctionNodeGraph graph = new FunctionNodeGraph();
+		private FunctionNodeGraph graph = new FunctionNodeGraph();
 		private readonly NodeFunctionRegistry registry = new NodeFunctionRegistry();
 		private readonly FunctionNodeEvaluator evaluator = new FunctionNodeEvaluator();
 		private readonly NodeCanvas canvas = new NodeCanvas();
@@ -33,6 +33,9 @@ namespace FishGfx.NodeEditor {
 		private float scrollDelta;
 		private readonly bool autoMode;
 		private NodeEvaluationResult evaluationResult;
+		private readonly string layoutPath = Path.Combine(AppContext.BaseDirectory, "node-layout.json");
+		private string fileStatus;
+		private bool fileStatusError;
 
 		internal NodeEditorApplication(string[] args) {
 			autoMode = args.Any(a => string.Equals(a, "--auto", StringComparison.OrdinalIgnoreCase));
@@ -49,7 +52,10 @@ namespace FishGfx.NodeEditor {
 			window.OnScroll += OnScroll;
 			window.OnChar += OnChar;
 			window.OnWindowResize += OnResize;
-			SeedGraph();
+			if (!autoMode && File.Exists(layoutPath)) {
+				SeedGraph();
+				if (!LoadLayout()) { graph = new FunctionNodeGraph(); SeedGraph(); }
+			} else SeedGraph();
 			ConfigureProjection();
 			previousMouse = input.GetMousePos();
 			if (autoMode) {
@@ -70,7 +76,7 @@ namespace FishGfx.NodeEditor {
 				editorState.EnableCullFace = false;
 				Gfx.PushRenderState(editorState);
 				try {
-					renderer.Draw(graph, canvas, selected, hoverPort, draggedPort, canvas.ScreenToWorld(input.GetMousePos()), menu, editor, evaluationResult, window.WindowWidth, window.WindowHeight);
+					renderer.Draw(graph, canvas, selected, hoverPort, draggedPort, canvas.ScreenToWorld(input.GetMousePos()), menu, editor, evaluationResult, fileStatus, fileStatusError, window.WindowWidth, window.WindowHeight);
 				} finally {
 					Gfx.PopRenderState();
 				}
@@ -126,6 +132,9 @@ namespace FishGfx.NodeEditor {
 			}
 
 			if (input.GetKeyPressed(Key.Delete)) DeleteSelected();
+			bool control = input.GetKeyDown(Key.LeftControl) || input.GetKeyDown(Key.RightControl);
+			if (control && input.GetKeyPressed(Key.S)) SaveLayout();
+			if (control && input.GetKeyPressed(Key.O)) LoadLayout();
 			if (input.GetKeyPressed(Key.F5)) evaluationResult = evaluator.Evaluate(graph);
 			if (input.GetKeyPressed(Key.MouseRight)) { menu.Open(mouse, world, window.WindowWidth, window.WindowHeight); selected = null; }
 
@@ -199,6 +208,18 @@ namespace FishGfx.NodeEditor {
 			else if (selected is NodeConnection connection) graph.Remove(connection);
 			evaluationResult = null;
 			selected = null;
+		}
+
+		private void SaveLayout() {
+			try { NodeGraphJson.SaveFile(layoutPath, graph, canvas.Capture()); fileStatus = "Saved node-layout.json"; fileStatusError = false; }
+			catch (Exception ex) { fileStatus = "Save failed: " + ex.Message; fileStatusError = true; }
+		}
+
+		private bool LoadLayout() {
+			NodeGraphLoadResult load = NodeGraphJson.LoadFile(layoutPath, registry);
+			if (!load.Success) { fileStatus = "Load failed: " + string.Join(" | ", load.Errors); fileStatusError = true; return false; }
+			graph = load.Graph; canvas.Apply(load.View); selected = null; draggedNode = null; draggedPort = null; evaluationResult = null;
+			fileStatus = "Loaded node-layout.json"; fileStatusError = false; return true;
 		}
 
 		private void SeedGraph() {

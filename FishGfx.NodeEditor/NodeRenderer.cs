@@ -25,7 +25,7 @@ namespace FishGfx.NodeEditor {
 		private Vector2 S(NodeCanvas canvas, Vector2 world) => canvas.WorldToScreen(world);
 
 		internal void Draw(FunctionNodeGraph graph, NodeCanvas canvas, object selected, NodePort hoverPort, NodePort dragPort, Vector2 mouseWorld,
-			ContextMenu menu, InlineValueEditor editor, NodeEvaluationResult result, int width, int height) {
+			ContextMenu menu, InlineValueEditor editor, NodeEvaluationResult result, string fileStatus, bool fileStatusError, int width, int height) {
 			Gfx.Clear(CanvasColor);
 			DrawGrid(canvas, width, height);
 			foreach (NodeConnection connection in graph.Connections) DrawConnection(connection, canvas, selected == connection);
@@ -41,6 +41,7 @@ namespace FishGfx.NodeEditor {
 			Gfx.FilledRoundedRectangle(220, height - 58, 132, 38, new CornerRadii(5), evaluateColor, 3);
 			Gfx.DrawText(font, new Vector2(240, height - 49), "Evaluate  F5", Color.White, 17);
 			if (result != null) Gfx.DrawText(font, new Vector2(370, height - 48), result.Summary, evaluateColor, 18);
+			if (!string.IsNullOrEmpty(fileStatus)) Gfx.DrawText(font, new Vector2(700, height - 48), fileStatus, fileStatusError ? new Color(235, 110, 110) : new Color(115, 205, 145), 18);
 			Gfx.DrawText(font, new Vector2(22, 22), "Right click: add node   Middle drag: pan   Wheel: zoom   Delete: remove", new Color(115, 120, 128), 18);
 			if (menu.IsOpen) DrawMenu(menu);
 		}
