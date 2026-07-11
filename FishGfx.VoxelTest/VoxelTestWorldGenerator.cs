@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using FishGfx.Voxels;
 
 namespace FishGfx.VoxelTest
@@ -35,12 +36,14 @@ namespace FishGfx.VoxelTest
 			LakeCount = lakeCount;
 			WaterColumnCount = waterColumnCount;
 			this.treeBases = treeBases;
+			UnderwaterCameraPosition = FindUnderwaterCameraPosition();
 		}
 
 		internal VoxelWorld World { get; }
 		internal int LakeCount { get; }
 		internal int WaterColumnCount { get; }
 		internal IReadOnlyList<(int X, int Y, int Z)> TreeBases => treeBases;
+		internal Vector3 UnderwaterCameraPosition { get; }
 
 		internal int GetSurfaceHeight(int worldX, int worldZ)
 		{
@@ -59,6 +62,38 @@ namespace FishGfx.VoxelTest
 				throw new ArgumentOutOfRangeException(nameof(coordinate));
 
 			return coordinate - VoxelTestWorldGenerator.WorldMinimum;
+		}
+
+		private Vector3 FindUnderwaterCameraPosition()
+		{
+			int bestDepth = 0;
+			Vector3 result = default;
+
+			for (int z = 0; z < VoxelTestWorldGenerator.WorldSize; z++)
+				for (int x = 0; x < VoxelTestWorldGenerator.WorldSize; x++)
+				{
+					int waterSurface = waterSurfaces[x, z];
+
+					if (waterSurface == int.MinValue)
+						continue;
+
+					int depth = waterSurface - surfaceHeights[x, z];
+
+					if (depth <= bestDepth)
+						continue;
+
+					bestDepth = depth;
+					result = new Vector3(
+						x + VoxelTestWorldGenerator.WorldMinimum + 0.5f,
+						surfaceHeights[x, z] + 1.5f,
+						z + VoxelTestWorldGenerator.WorldMinimum + 0.5f
+					);
+				}
+
+			if (bestDepth == 0)
+				throw new InvalidOperationException("The validation world does not contain an underwater camera position.");
+
+			return result;
 		}
 	}
 

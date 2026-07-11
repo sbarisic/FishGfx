@@ -425,6 +425,63 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void VoxelFogSettingsValidateAndCalculateExponentialFog()
+	{
+		Assert.False(VoxelFogSettings.Disabled.Enabled);
+		Assert.Equal(0, VoxelFogSettings.Disabled.CalculateFactor(100));
+
+		VoxelFogSettings fog = new(new Color(30, 111, 145), 0.06f, 0.7f);
+		VoxelFogSettings equivalent = new(new Color(30, 111, 145), 0.06f, 0.7f);
+
+		Assert.True(fog.Enabled);
+		Assert.Equal(equivalent, fog);
+		Assert.Equal(0, fog.CalculateFactor(0));
+		Assert.InRange(fog.CalculateFactor(10), 0.45f, 0.46f);
+		Assert.True(fog.CalculateFactor(100) > fog.CalculateFactor(10));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelFogSettings(Color.Blue, float.NaN));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelFogSettings(Color.Blue, -0.1f));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelFogSettings(Color.Blue, 0.1f, 1.1f));
+		Assert.Throws<ArgumentOutOfRangeException>(() => fog.CalculateFactor(float.PositiveInfinity));
+	}
+
+	[Fact]
+	public void VoxelMediumQueryUsesFlooredNegativeCoordinatesAndExactSurfaces()
+	{
+		VoxelWorld world = new();
+		world.SetVoxel(-1, 2, -1, new VoxelCell(2));
+		world.SetVoxel(0, 2, 0, new VoxelCell(3));
+
+		Assert.True(VoxelMediumQuery.IsInsideMaterial(world, new Vector3(-0.5f, 2.5f, -0.5f), 2));
+		Assert.True(VoxelMediumQuery.IsInsideMaterial(world, new Vector3(-0.001f, 2.999f, -0.001f), 2));
+		Assert.False(VoxelMediumQuery.IsInsideMaterial(world, new Vector3(-0.5f, 3, -0.5f), 2));
+		Assert.True(VoxelMediumQuery.IsInsideMaterial(world, new Vector3(-0.5f, 3, -0.5f), 0));
+		Assert.False(VoxelMediumQuery.IsInsideMaterial(world, new Vector3(0.5f, 2.5f, 0.5f), 2));
+		Assert.Equal(new VoxelCell(3), VoxelMediumQuery.GetVoxel(world, new Vector3(0.5f, 2.5f, 0.5f)));
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => VoxelMediumQuery.GetVoxel(world, new Vector3(float.NaN, 0, 0))
+		);
+	}
+
+	[Fact]
+	public void DrawVoxelMeshCommandRetainsCompatibilityAndFogOverloads()
+	{
+		Type[] compatibilityParameters =
+		{
+			typeof(VoxelMesh),
+			typeof(Texture),
+			typeof(ShaderProgram),
+			typeof(Vector3),
+			typeof(float),
+			typeof(float),
+		};
+		Type[] fogParameters = compatibilityParameters.Append(typeof(VoxelFogSettings)).ToArray();
+
+		Assert.NotNull(typeof(DrawVoxelMeshCommand).GetConstructor(compatibilityParameters));
+		Assert.NotNull(typeof(DrawVoxelMeshCommand).GetConstructor(fogParameters));
+		Assert.Equal(typeof(VoxelFogSettings), typeof(DrawVoxelMeshCommand).GetProperty(nameof(DrawVoxelMeshCommand.Fog))?.PropertyType);
+	}
+
+	[Fact]
 	public void MeshingSchedulerProducesRevisionedResultsAndReschedulesEdits()
 	{
 		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();

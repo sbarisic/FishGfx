@@ -75,7 +75,7 @@ namespace FishGfx.Voxels
 		private readonly ShaderProgram voxelShader;
 		private readonly ShaderStage vertexShader;
 		private readonly ShaderStage fragmentShader;
-		private readonly GraphicsCommandBatch transparentBatch;
+		private GraphicsCommandBatch transparentBatch;
 		private readonly RenderState opaqueState;
 		private readonly RenderState transparentState;
 		private bool disposed;
@@ -85,6 +85,7 @@ namespace FishGfx.Voxels
 		private int visibleTransparentFaces;
 		private int visibleTransparentVertices;
 		private bool cullingEnabled = true;
+		private VoxelFogSettings fog = VoxelFogSettings.Disabled;
 
 		public VoxelRenderer(
 			VoxelWorld world,
@@ -132,6 +133,21 @@ namespace FishGfx.Voxels
 			{
 				ThrowIfDisposed();
 				cullingEnabled = value;
+			}
+		}
+
+		public VoxelFogSettings Fog
+		{
+			get => fog;
+			set
+			{
+				ThrowIfDisposed();
+
+				if (fog == value)
+					return;
+
+				fog = value;
+				RebuildCommandBatches();
 			}
 		}
 
@@ -323,11 +339,26 @@ namespace FishGfx.Voxels
 						voxelShader,
 						options.LightDirection,
 						options.AmbientLight,
-						alphaCutoff
+						alphaCutoff,
+						fog
 					),
 					new PopRenderStateCommand(),
 				}
 			);
+		}
+
+		private void RebuildCommandBatches()
+		{
+			transparentBatch = CreateBatch(transparentMesh, transparentState, alphaCutoff: -1);
+
+			foreach (GpuChunk chunk in gpuChunks.Values)
+			{
+				if (chunk.Opaque != null)
+					chunk.OpaqueBatch = CreateBatch(chunk.Opaque, opaqueState, alphaCutoff: -1);
+
+				if (chunk.Cutout != null)
+					chunk.CutoutBatch = CreateBatch(chunk.Cutout, opaqueState, options.AlphaCutoff);
+			}
 		}
 
 		private void BuildTransparentStream(Camera camera, List<VoxelTransparentFaceInstance> faces)

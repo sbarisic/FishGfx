@@ -14,6 +14,27 @@ namespace FishGfx.Voxels
 			float ambientLight,
 			float alphaCutoff
 		)
+			: this(
+				mesh,
+				atlas,
+				shader,
+				lightDirection,
+				ambientLight,
+				alphaCutoff,
+				VoxelFogSettings.Disabled
+			)
+		{
+		}
+
+		public DrawVoxelMeshCommand(
+			VoxelMesh mesh,
+			Texture atlas,
+			ShaderProgram shader,
+			Vector3 lightDirection,
+			float ambientLight,
+			float alphaCutoff,
+			VoxelFogSettings fog
+		)
 		{
 			Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
 			Atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
@@ -29,6 +50,7 @@ namespace FishGfx.Voxels
 			LightDirection = Vector3.Normalize(lightDirection);
 			AmbientLight = ambientLight;
 			AlphaCutoff = alphaCutoff;
+			Fog = fog;
 		}
 
 		public VoxelMesh Mesh { get; }
@@ -37,6 +59,7 @@ namespace FishGfx.Voxels
 		public Vector3 LightDirection { get; }
 		public float AmbientLight { get; }
 		public float AlphaCutoff { get; }
+		public VoxelFogSettings Fog { get; }
 
 		public override void Execute()
 		{
@@ -48,6 +71,10 @@ namespace FishGfx.Voxels
 				Shader.Uniform3f("LightDirection", LightDirection);
 				Shader.Uniform1f("AmbientLight", AmbientLight);
 				Shader.Uniform1f("AlphaCutoff", AlphaCutoff);
+				Shader.Uniform1("FogEnabled", Fog.Enabled ? 1 : 0);
+				Shader.Uniform3f("FogColor", (Vector3)Fog.Color);
+				Shader.Uniform1f("FogDensity", Fog.Density);
+				Shader.Uniform1f("LightMultiplier", Fog.Enabled ? Fog.LightMultiplier : 1);
 				Shader.Bind(ShaderUniforms.Current);
 				shaderBound = true;
 				Atlas.BindTextureUnit();

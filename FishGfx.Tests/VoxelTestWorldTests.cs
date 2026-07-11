@@ -43,6 +43,13 @@ public class VoxelTestWorldTests
 			}
 
 		Assert.True(waterChunks.Count > 1);
+		Assert.True(
+			VoxelMediumQuery.IsInsideMaterial(
+				data.World,
+				data.UnderwaterCameraPosition,
+				materials.Water
+			)
+		);
 
 		foreach ((int x, _, int z) in data.TreeBases)
 			Assert.Null(data.GetWaterSurface(x, z));

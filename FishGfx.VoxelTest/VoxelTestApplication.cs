@@ -18,6 +18,14 @@ namespace FishGfx.VoxelTest
 		private const int Width = 1920;
 		private const int Height = 1080;
 		private const float EditReach = 12;
+		private static readonly VoxelFogSettings UnderwaterFog = new VoxelFogSettings(
+			new Color(30, 111, 145),
+			0.06f,
+			0.70f
+		);
+		private static readonly Color AirClearColor = new Color(14, 19, 30);
+		private static readonly Color UnderwaterClearColor = new Color(7, 32, 48);
+		private static readonly Color UnderwaterTint = new Color(20, 101, 140, 48);
 		private readonly bool autoMode;
 		private Vector2 mouseDelta;
 		private bool boundaryBlockEnabled = true;
@@ -64,6 +72,9 @@ namespace FishGfx.VoxelTest
 			Stopwatch timer = Stopwatch.StartNew();
 			double previousTime = timer.Elapsed.TotalSeconds;
 			VoxelRendererStatistics finalStatistics = default;
+			int autoValidationStage = 0;
+			int autoGpuChunkCount = 0;
+			bool underwaterValidated = false;
 
 			if (autoMode)
 			{
@@ -107,9 +118,11 @@ namespace FishGfx.VoxelTest
 					if (window.ShouldClose)
 						break;
 
+					bool underwater = VoxelMediumQuery.IsInsideMaterial(world, camera.Position, materials.Water);
+					renderer.Fog = underwater ? UnderwaterFog : VoxelFogSettings.Disabled;
 					renderer.UpdateMeshing();
 					renderQueue.BeginFrame();
-					Gfx.Clear(new Color(14, 19, 30));
+					Gfx.Clear(underwater ? UnderwaterClearColor : AirClearColor);
 
 					if (!autoMode || renderer.IsIdle)
 					{
@@ -129,6 +142,9 @@ namespace FishGfx.VoxelTest
 						);
 					}
 
+					if (underwater)
+						DrawUnderwaterTint(uiCamera, camera, overlayState);
+
 					DrawOverlay(
 						font,
 						uiCamera,
@@ -141,17 +157,42 @@ namespace FishGfx.VoxelTest
 
 					VoxelRendererStatistics statistics = renderer.Statistics;
 
-					if (
-						autoMode
-						&& renderer.IsIdle
+					bool renderValidationReady = renderer.IsIdle
 						&& statistics.AcceptedMeshes > 0
 						&& statistics.DiscardedMeshes > 0
 						&& statistics.VisibleChunks > 0
 						&& statistics.OpaqueVertices > 0
 						&& statistics.CutoutVertices > 0
-						&& statistics.TransparentFaces > 0
+						&& statistics.TransparentFaces > 0;
+
+					if (
+						autoMode
+						&& autoValidationStage == 0
+						&& renderValidationReady
 					)
+					{
+						if (underwater || renderer.Fog.Enabled)
+							throw new InvalidOperationException("The normal voxel validation frame unexpectedly used underwater fog.");
+
+						autoGpuChunkCount = statistics.GpuChunks;
+						camera.Position = worldData.UnderwaterCameraPosition;
+						camera.LookAt(camera.Position + Vector3.UnitX);
+						autoValidationStage = 1;
+					}
+					else if (
+						autoMode
+						&& autoValidationStage == 1
+						&& renderValidationReady
+						&& underwater
+						&& renderer.Fog == UnderwaterFog
+					)
+					{
+						if (statistics.GpuChunks != autoGpuChunkCount)
+							throw new InvalidOperationException("Changing voxel fog unexpectedly recreated GPU chunk meshes.");
+
+						underwaterValidated = true;
 						window.ShouldClose = true;
+					}
 					else if (autoMode && timer.Elapsed.TotalSeconds > 30)
 						throw new TimeoutException(
 							$"Voxel renderer did not become idle within 30 seconds; pending={statistics.PendingJobs}, "
@@ -171,8 +212,29 @@ namespace FishGfx.VoxelTest
 			}
 
 			Console.WriteLine(
-				$"Voxel test completed using {RenderAPI.Renderer}; accepted={finalStatistics.AcceptedMeshes}; discarded={finalStatistics.DiscardedMeshes}"
+				$"Voxel test completed using {RenderAPI.Renderer}; accepted={finalStatistics.AcceptedMeshes}; "
+					+ $"discarded={finalStatistics.DiscardedMeshes}; underwater={(underwaterValidated ? "validated" : "interactive")}"
 			);
+		}
+
+		private static void DrawUnderwaterTint(
+			Camera uiCamera,
+			Camera worldCamera,
+			RenderState overlayState
+		)
+		{
+			Gfx.PushRenderState(overlayState);
+
+			try
+			{
+				ShaderUniforms.Current.Camera = uiCamera;
+				Gfx.FilledRectangle(0, 0, Width, Height, UnderwaterTint);
+			}
+			finally
+			{
+				ShaderUniforms.Current.Camera = worldCamera;
+				Gfx.PopRenderState();
+			}
 		}
 
 		private void UpdateCamera(Camera camera, InputManager input, float deltaTime)
