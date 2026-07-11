@@ -12,6 +12,7 @@ namespace FishGfx.SmokeTest
 		private const int Height = PrimitiveGallery.Height;
 		private static TTFFont proportionalFont;
 		private static TTFFont monoFont;
+		private static CommandList commandListScene;
 
 		internal static void InitializeFonts()
 		{
@@ -21,6 +22,8 @@ namespace FishGfx.SmokeTest
 
 		internal static void DisposeFonts()
 		{
+			commandListScene?.Clear();
+			commandListScene = null;
 			proportionalFont?.Dispose();
 			monoFont?.Dispose();
 			proportionalFont = monoFont = null;
@@ -51,7 +54,78 @@ namespace FishGfx.SmokeTest
 				new GalleryScene("Gfx.QuadraticBezier", DrawQuadraticBeziers),
 				new GalleryScene("Gfx.CubicBezier", DrawCubicBeziers),
 				new GalleryScene("Gfx.DrawText (TTF/SDF)", DrawTrueTypeText),
+				new GalleryScene("CommandList", DrawCommandList),
 			};
+		}
+
+		private static void DrawCommandList(float _, Texture texture)
+		{
+			if (commandListScene == null)
+				commandListScene = CreateCommandListScene(texture);
+
+			commandListScene.Execute();
+		}
+
+		private static CommandList CreateCommandListScene(Texture texture)
+		{
+			CommandList commands = new CommandList();
+			RenderState state = Gfx.PeekRenderState();
+
+			commands.RecordPushRenderState(state);
+			commands.RecordDrawText(
+				proportionalFont,
+				new Vector2(500, 875),
+				"Typed commands, recorded once and replayed every frame",
+				new Color(110, 205, 255),
+				42
+			);
+			commands.RecordFilledRoundedRectangle(
+				new Vector2(500, 575),
+				new Vector2(420, 220),
+				new CornerRadii(55, 18, 55, 18),
+				new Color(60, 115, 205, 210)
+			);
+			commands.RecordTexturedRoundedRectangle(
+				new Vector2(1030, 575),
+				new Vector2(420, 220),
+				new CornerRadii(48),
+				texture,
+				Vector2.Zero,
+				Vector2.One,
+				new Color(235, 245, 255, 225)
+			);
+			commands.RecordRing(
+				new Vector2(610, 330),
+				55,
+				110,
+				-MathF.PI / 5,
+				MathF.PI * 1.45f,
+				new Color(255, 170, 80, 225)
+			);
+			commands.RecordCircle(new Vector2(940, 330), 105, 9, new Color(90, 225, 160));
+			commands.RecordCubicBezier(
+				new Vector2(1120, 260),
+				new Vector2(1260, 500),
+				new Vector2(1480, 120),
+				new Vector2(1660, 365),
+				12,
+				new Color(225, 125, 245)
+			);
+			commands.RecordLine(
+				new Vertex2(new Vector2(490, 145), new Color(90, 205, 255)),
+				new Vertex2(new Vector2(1680, 145), new Color(255, 110, 155)),
+				7
+			);
+			commands.RecordDrawText(
+				monoFont,
+				new Vector2(500, 95),
+				$"{commands.Count + 2} immutable commands | caller-owned resources | execution-time camera",
+				new Color(195, 205, 220),
+				25
+			);
+			commands.RecordPopRenderState();
+
+			return commands;
 		}
 
 		private static void DrawTrueTypeText(float time, Texture _)

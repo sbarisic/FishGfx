@@ -58,6 +58,22 @@ The older demos, tools, LiteTest, and Nuklear projects remain outside the modern
 
 All filled tessellated primitives use a single streaming-mesh upload and draw call per shape. Adaptive segment counts are available where appropriate, with explicit overrides for visual testing.
 
+### Typed command lists
+
+`CommandList` records inspectable, immutable `GraphicsCommand` objects and can replay them repeatedly on the active graphics-context thread. Mutable point and vertex arrays are copied at record time. Textures, shaders, and fonts are retained as caller-owned references and must remain valid through every replay. Camera, model transform, and `ShaderUniforms.Current` values are resolved when `Execute` runs.
+
+```csharp
+CommandList commands = new CommandList();
+commands.RecordPushRenderState(Gfx.PeekRenderState());
+commands.RecordFilledCircle(new Vector2(320, 240), 80, Color.CornflowerBlue);
+commands.RecordDrawText(font, new Vector2(230, 120), "replay me", Color.White, 32);
+commands.RecordPopRenderState();
+
+commands.Execute();
+```
+
+Successful execution preserves every command. Replay stops at the first exception and resets `IsExecuting`, but earlier graphics or render-stack changes are not rolled back. Lists do not provide internal synchronization and cannot be mutated or executed recursively during replay.
+
 ### Fonts and console
 
 FishGfx supports binary AngelCode BMFont atlases and scalable SDF text generated from TrueType files:
@@ -117,7 +133,6 @@ Automatic mode uses a fixed animation time, captures each complete 1920×1080 sc
 
 ### Near term
 
-- Implement the currently empty `CommandList` recording and execution API.
 - Complete stencil write-mask support and add focused scissor/stencil gallery scenes and tests.
 - Implement SMD saving and define graceful handling for unsupported SMD parser segments.
 - Expand OpenGL 4.0 fallback and render-state compatibility coverage.
@@ -153,3 +168,5 @@ The 640×360 thumbnails below include the selected scene in the left-side menu. 
 | [![Gfx.RingLines primitive gallery scene](FishGfx/pictures/thumbnails/gfx-ringlines.png)](FishGfx/pictures/gfx-ringlines.png) | [![Gfx.Ellipse primitive gallery scene](FishGfx/pictures/thumbnails/gfx-ellipse.png)](FishGfx/pictures/gfx-ellipse.png) | [![Gfx.FilledEllipse primitive gallery scene](FishGfx/pictures/thumbnails/gfx-filledellipse.png)](FishGfx/pictures/gfx-filledellipse.png) |
 | **Gfx.QuadraticBezier** | **Gfx.CubicBezier** | **Gfx.DrawText (TTF/SDF)** |
 | [![Gfx.QuadraticBezier primitive gallery scene](FishGfx/pictures/thumbnails/gfx-quadraticbezier.png)](FishGfx/pictures/gfx-quadraticbezier.png) | [![Gfx.CubicBezier primitive gallery scene](FishGfx/pictures/thumbnails/gfx-cubicbezier.png)](FishGfx/pictures/gfx-cubicbezier.png) | [![Gfx.DrawText TTF SDF primitive gallery scene](FishGfx/pictures/thumbnails/gfx-drawtext-ttf-sdf.png)](FishGfx/pictures/gfx-drawtext-ttf-sdf.png) |
+| **CommandList** |  |  |
+| [![Typed CommandList gallery scene](FishGfx/pictures/thumbnails/commandlist.png)](FishGfx/pictures/commandlist.png) |  |  |

@@ -78,6 +78,12 @@ Standard interleaved vertex attributes are:
 
 CPU tessellators are context-free and independently tested. Adaptive circle, ellipse, curve, rounded-corner, and ring segment counts are bounded, while explicit segment counts support debugging and low-poly rendering.
 
+## Typed command lists
+
+`CommandList` is an explicit command buffer for every current `Gfx` clear, state, 2D, 3D, textured-shape, and text operation. Its public `GraphicsCommand` objects expose immutable recorded parameters for inspection. Convenience `Record*` methods canonicalize equivalent overloads, such as circles to ellipse commands and single points to array-backed point commands.
+
+Arrays are cloned during command construction, while textures, shaders, and fonts remain caller-owned references. Recording performs no OpenGL work. `Execute` must run on the active context thread and uses the camera, model transform, and shared uniforms active at replay time. Lists are reusable and retain all commands after success or failure; replay stops on the first exception, prevents concurrent mutation or recursive execution, and does not roll back state changed by earlier commands. Callers are responsible for synchronization, live resources, and balanced render-state commands.
+
 ## Retained drawables and formats
 
 The core retains higher-level drawables for sprites, tile maps, terrain, parallax backgrounds, and multi-mesh models. `Camera` supports perspective and orthographic projection, orientation vectors, lazy matrix updates, and screen/world conversion.
@@ -134,7 +140,7 @@ The editor registers bundled sample functions for values, math, vectors, outputs
 
 ## Validation applications
 
-The smoke gallery contains one scene per immediate primitive. Space and Backspace navigate interactively; automatic mode visits every scene sequentially with a fixed animation time.
+The smoke gallery contains one scene per immediate primitive plus a reusable mixed-command-list scene. Space and Backspace navigate interactively; automatic mode visits every scene sequentially with a fixed animation time.
 
 Automatic mode captures the complete 1920×1080 frame before buffer swap, writes an atomic full-size PNG, and generates a 640×360 thumbnail. The files under `FishGfx/pictures` are used directly by the README gallery.
 
