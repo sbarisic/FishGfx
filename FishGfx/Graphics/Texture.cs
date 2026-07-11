@@ -254,32 +254,28 @@ namespace FishGfx.Graphics
 			Storage2D(W, H, MipLevels, IntFormat, FixedSampleLocations);
 		}
 
-		private void TextureParam(TextureParameterName ParamName, object Val)
+		private void TextureParam(TextureParameterName ParamName, int Val)
 		{
-			if (Val is int)
-			{
-				if (Internal_OpenGL.Is45OrAbove)
-					Internal_OpenGL.GL.TextureParameter(ID, ParamName, (int)Val);
-				else
-				{
-					Bind();
-					Internal_OpenGL.GL.TexParameter(Target, ParamName, (int)Val);
-					Unbind();
-				}
-			}
-			else if (Val is float)
-			{
-				if (Internal_OpenGL.Is45OrAbove)
-					Internal_OpenGL.GL.TextureParameter(ID, ParamName, (float)Val);
-				else
-				{
-					Bind();
-					Internal_OpenGL.GL.TexParameter(Target, ParamName, (int)Val);
-					Unbind();
-				}
-			}
+			if (Internal_OpenGL.Is45OrAbove)
+				Internal_OpenGL.GL.TextureParameter(ID, ParamName, Val);
 			else
-				throw new NotImplementedException();
+			{
+				Bind();
+				Internal_OpenGL.GL.TexParameter(Target, ParamName, Val);
+				Unbind();
+			}
+		}
+
+		private void TextureParam(TextureParameterName ParamName, float Val)
+		{
+			if (Internal_OpenGL.Is45OrAbove)
+				Internal_OpenGL.GL.TextureParameter(ID, ParamName, Val);
+			else
+			{
+				Bind();
+				Internal_OpenGL.GL.TexParameter(Target, ParamName, Val);
+				Unbind();
+			}
 		}
 
 		public void SetWrap(TextureWrap Wrap)

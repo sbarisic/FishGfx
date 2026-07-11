@@ -52,6 +52,9 @@ namespace FishGfx.SmokeTest
 			ShaderUniforms.Current.Resolution = new Vector2(Width, Height);
 			ShaderUniforms.Current.TextureSize = texture.Size;
 
+			if (autoMode)
+				RunTextPreflight(titleFont);
+
 			sceneIndex = 0;
 			double autoSceneStartedAt = 0;
 			int autoFramesRendered = 0;
@@ -149,6 +152,13 @@ namespace FishGfx.SmokeTest
 		internal void PreviousScene() => SelectScene(sceneIndex - 1);
 
 		internal void RequestClose() => window.ShouldClose = true;
+
+		private static void RunTextPreflight(TTFFont font)
+		{
+			Gfx.Clear(new Color(18, 23, 36));
+			Gfx.DrawText(font, new Vector2(20, 20), "Text-first preflight", Color.Transparent, 16);
+			Gfx.DrawText(font, new Vector2(20, 20), "\n\t", Color.Transparent, 16, DebugDraw: true);
+		}
 
 		private static Texture LoadGridTexture()
 		{

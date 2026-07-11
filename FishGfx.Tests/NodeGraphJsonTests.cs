@@ -13,6 +13,15 @@ namespace FishGfx.Tests;
 public class NodeGraphJsonTests
 {
 	[Fact]
+	public void NullJsonReturnsStructuredFailure()
+	{
+		NodeGraphLoadResult result = NodeGraphJson.Deserialize(null, Registry());
+
+		Assert.False(result.Success);
+		Assert.Contains(result.Errors, error => error.Contains("JSON content", StringComparison.OrdinalIgnoreCase));
+	}
+
+	[Fact]
 	public void RoundTripPreservesGraphIdsBodyLayoutConnectionsAndView()
 	{
 		NodeFunctionRegistry registry = Registry();

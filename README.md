@@ -1,104 +1,142 @@
 # FishGfx
 
-## TrueType fonts
+FishGfx is a Windows-first C# graphics and game-framework library built on OpenGL 4, GLFW, and Silk.NET. The modern core targets .NET 10 and includes immediate 2D primitives, GPU resource abstractions, bitmap and SDF text, retained drawables, reflected function-node graphs, and interactive validation applications.
 
-FishGfx supports scalable signed-distance-field text directly from `.ttf` files:
+- [Architecture and project information](INFO.md)
+- [Bug history](BUGS.md)
+
+## Supported configuration
+
+- Windows x64
+- .NET 10 SDK
+- OpenGL 4.0–4.6 core profile
+- Silk.NET.OpenGL 2.23.0
+- The bundled native `glfw3.dll`
+- `System.Drawing.Common` for the current Windows bitmap APIs
+
+The core tries OpenGL 4.6 first and falls back version-by-version to 4.0. OpenGL 4.5 and newer use Direct State Access where available; older contexts use bind-to-edit fallbacks.
+
+## Build and run
+
+```powershell
+dotnet restore FishGfx.Modern.sln
+dotnet build FishGfx.Modern.sln -c Debug
+dotnet test FishGfx.Modern.sln -c Debug
+dotnet run --project FishGfx.SmokeTest/FishGfx.SmokeTest.csproj
+dotnet run --project FishGfx.NodeEditor/FishGfx.NodeEditor.csproj
+```
+
+`FishGfx.Modern.sln` contains the supported modern projects:
+
+- `FishGfx`: core rendering, windowing, input, formats, fonts, and node-graph APIs.
+- `FishGfx.SmokeTest`: interactive primitive gallery and automated screenshot validation.
+- `FishGfx.NodeEditor`: reflected C# function-node editor with evaluation and JSON persistence.
+- `FishGfx.Tests`: context-free geometry, font, node-graph, persistence, and compatibility tests.
+
+The older demos, tools, LiteTest, and Nuklear projects remain outside the modern solution pending separate migrations. Intel RealSense support and its test project have been removed.
+
+## Capabilities
+
+### Rendering and resources
+
+- Automatic OpenGL 4.0–4.6 context creation through the custom GLFW binding.
+- Silk.NET-backed shaders, buffers, vertex arrays, textures, framebuffers, render textures, queries, and render state.
+- Context-thread GPU creation and deferred destruction of finalizer-released resources.
+- Cameras, 2D and 3D meshes, terrain, models, sprites, tile maps, and parallax sprites.
+- Alpha blending, depth/cull/color state, scissor regions, stencil functions/operations, and framebuffer depth-stencil attachments.
+- Windows bitmap texture loading, readback, and deterministic gallery screenshots.
+
+### Immediate 2D primitives
+
+- Points, thick lines, and line strips.
+- Filled, outlined, and textured rectangles.
+- Filled, outlined, and textured rounded rectangles with asymmetric corner radii.
+- Stretched nine-patch textures with source-pixel borders.
+- Filled, outlined, and textured circles and ellipses.
+- Filled rings and outlined annular sectors.
+- Stroked quadratic and cubic Bézier curves.
+
+All filled tessellated primitives use a single streaming-mesh upload and draw call per shape. Adaptive segment counts are available where appropriate, with explicit overrides for visual testing.
+
+### Fonts and console
+
+FishGfx supports binary AngelCode BMFont atlases and scalable SDF text generated from TrueType files:
 
 ```csharp
+using FishGfx;
+using FishGfx.Formats;
+using FishGfx.Graphics;
+
 using TTFFont font = new TTFFont("data/fonts/Aaargh.ttf");
 Gfx.DrawText(font, new Vector2(100, 100), "Smooth SDF text", Color.White, 64);
 ```
 
-`TTFFont` preloads printable ASCII and lazily adds Unicode BMP glyphs to a growable atlas. Multiline text, tabs, pair kerning, color, alpha, measurement, and different draw sizes use the existing `GfxFont` APIs. Complex-script shaping, supplementary Unicode planes, outlines, and shadows are not currently supported.
+`TTFFont` preloads printable ASCII and lazily adds Unicode BMP glyphs to a growable atlas. Layout supports multiline text, tabs, pair kerning, scaling, measurement, color, and alpha. Complex shaping, combining-mark handling, right-to-left layout, and supplementary Unicode planes are not supported yet.
 
-## Function node graphs
+The smoke gallery also integrates the tile/text-based developer console. Press F1 to toggle it and use `help` to list gallery commands.
 
-FishGfx can expose explicitly marked methods on a static class as strongly typed nodes:
+### Function node graphs
+
+Public static methods marked with `[NodeFunction]` become placeable, strongly typed graph nodes. Ordinary parameters become input ports, return values become outputs, and `[NodeBody]` parameters become inline editable values.
 
 ```csharp
 using FishGfx.NodeGraph;
 
-static class MathNodes {
-    [NodeFunction("Constant")]
-    public static float Constant([NodeBody] float value = 1) => value;
+static class MathNodes
+{
+	[NodeFunction("Constant", Category = "Values")]
+	public static float Constant([NodeBody] float value = 1) => value;
 
-    [NodeFunction]
-    public static float Add(float a, float b) => a + b;
+	[NodeFunction(Category = "Math")]
+	public static float Add(float a, float b) => a + b;
 }
 
-var registry = new NodeFunctionRegistry();
+NodeFunctionRegistry registry = new NodeFunctionRegistry();
 registry.Register(typeof(MathNodes));
 ```
 
-Ordinary parameters become typed input ports, `[NodeBody]` parameters become editable node values, and return values become outputs. Named `ValueTuple` returns produce multiple output ports. `FunctionNodeEvaluator` evaluates a connected `FunctionNodeGraph` on demand while reporting cycles and per-node errors.
+Connections require exact CLR type equality. Inputs accept one connection, outputs support fan-out, and evaluation runs in topological order while reporting cycles, invocation errors, and skipped dependents. Named `ValueTuple` returns are expanded into multiple outputs.
 
-Layouts can be persisted with `NodeGraphJson.Serialize` / `SaveFile` and restored against an existing registry with `Deserialize` / `LoadFile`. `DeserializeAndEvaluate` and `LoadAndEvaluateFile` validate and execute layouts directly without loading functions that were not explicitly registered by the host.
-
-The node editor stores its interactive layout as `node-layout.json` beside the executable. Use Ctrl+S to save, Ctrl+O to reload, or execute a saved layout without opening a window:
+Layouts and canvas state can be saved and loaded through `NodeGraphJson`. The bundled editor uses Ctrl+S and Ctrl+O with `node-layout.json` beside the executable. A saved graph can also execute without creating an OpenGL window:
 
 ```powershell
 dotnet FishGfx.NodeEditor.dll --execute node-layout.json
 ```
-SFML but better. OpenGL 4, GLFW, .NET 10, and Silk.NET.
 
-https://github.com/Chman/Glfw.Net
-https://github.com/dotnet/Silk.NET
+## Automated gallery screenshots
 
-## Modern build
-
-The supported modern configuration is Windows x64 with the .NET 10 SDK:
-
-```powershell
-dotnet build FishGfx.Modern.sln
-dotnet test FishGfx.Tests/FishGfx.Tests.csproj
-dotnet run --project FishGfx.SmokeTest/FishGfx.SmokeTest.csproj
-```
-
-The complete primitive gallery can also run unattended and refresh its reference screenshots:
+Run the complete primitive gallery unattended with:
 
 ```powershell
 dotnet run --project FishGfx.SmokeTest/FishGfx.SmokeTest.csproj -- --auto
 ```
 
-Automatic mode renders every scene with a fixed animation time and overwrites its corresponding 1920×1080 PNG in `FishGfx/pictures`. These stable filenames make the images useful for documentation and visual comparisons between runs.
+Automatic mode uses a fixed animation time, captures each complete 1920×1080 scene, and atomically overwrites its PNG under `FishGfx/pictures`. It also generates 640×360 documentation thumbnails under `FishGfx/pictures/thumbnails`.
 
-The other solutions and demo projects remain on .NET Framework pending separate migrations. Intel RealSense support has been removed.
+## Roadmap
 
-# Completed
+### Near term
 
-* Automatic OpenGL context creation from 4.6 down to 4.0
-* Textures, RenderTextures
-* Vertex arrays
-* Shaders
-* Framebuffers
-* 2D and 3D meshes
-* Cameras
-* Terrain, 3D mesh from heightmap
-* Basic 2D drawing library
-	* Points and thick lines/line strips
-	* Filled, outlined, and textured rectangles
-	* Filled, outlined, and textured rounded rectangles with per-corner radii
-	* Stretched nine-patch textures with fixed source-pixel borders
-	* Filled, outlined, and textured circles and ellipses
-	* Filled and outlined complete rings and annular sectors
-	* Stroked quadratic and cubic Bézier curves
-	
-# TODO
+- Implement the currently empty `CommandList` recording and execution API.
+- Complete stencil write-mask support and add focused scissor/stencil gallery scenes and tests.
+- Implement SMD saving and define graceful handling for unsupported SMD parser segments.
+- Expand OpenGL 4.0 fallback and render-state compatibility coverage.
 
-* Sprites
-* Tile maps
-* Text
-	* Signed distance field
-	* Classic font atlas
-	* Loading glyphs with Freetype?
-* Scissoring
-* Stencil buffer
-* Command buffers
-* Examples
+### Later
 
-# Examples
+- Add advanced text shaping, combining-mark handling, right-to-left layout, and supplementary Unicode support.
+- Add a general 2D path/stroke API with configurable joins, caps, arcs, and filled paths.
+- Add node-editor undo/redo, grouping, clipboard operations, and multi-selection.
+- Replace Windows-only bitmap dependencies as part of broader platform support.
 
-The 640×360 thumbnails below are generated by the automatic primitive gallery and include the selected scene in the left-side menu. Select a thumbnail to open its full 1920×1080 capture.
+### Deferred migrations
+
+- Migrate the legacy demos, model converter, VectorPFM, LiteTest, and Nuklear integration to .NET 10.
+- Re-evaluate retained legacy APIs and remove obsolete compatibility code after those migrations.
+
+## Gallery
+
+The 640×360 thumbnails below include the selected scene in the left-side menu. Select a thumbnail to open its full 1920×1080 capture.
 
 | **Gfx.Line** | **Gfx.Rectangle** | **Gfx.FilledRectangle** |
 |:---:|:---:|:---:|

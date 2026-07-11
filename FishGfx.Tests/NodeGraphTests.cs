@@ -44,12 +44,32 @@ public class NodeGraphTests
 		FunctionNode b = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
 		FunctionNode add = graph.CreateNode(Find(registry, nameof(Functions.Add)), Vector2.Zero);
 		FunctionNode floatSink = graph.CreateNode(Find(registry, nameof(Functions.FloatIdentity)), Vector2.Zero);
+		Guid[] portIds = graph.Nodes.SelectMany(node => node.Inputs.Concat(node.Outputs)).Select(port => port.Id).ToArray();
+		Assert.DoesNotContain(Guid.Empty, portIds);
+		Assert.Equal(portIds.Length, portIds.Distinct().Count());
 		Assert.Null(graph.Connect(a.Outputs[0], floatSink.Inputs[0]));
 		graph.Connect(a.Outputs[0], add.Inputs[0]);
 		NodeConnection replacement = graph.Connect(b.Outputs[0], add.Inputs[0]);
 		graph.Connect(b.Outputs[0], add.Inputs[1]);
 		Assert.Equal(2, graph.Connections.Count);
 		Assert.Same(replacement, graph.ConnectionAtInput(add.Inputs[0]));
+	}
+
+	[Fact]
+	public void ConnectionsRejectForeignPortsWithoutReplacingExistingInput()
+	{
+		NodeFunctionRegistry registry = Registry();
+		FunctionNodeGraph graph = new FunctionNodeGraph();
+		FunctionNode source = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		FunctionNode sink = graph.CreateNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
+		NodeConnection existing = graph.Connect(source.Outputs[0], sink.Inputs[0]);
+
+		FunctionNodeGraph foreignGraph = new FunctionNodeGraph();
+		FunctionNode foreign = foreignGraph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+
+		Assert.Null(graph.Connect(foreign.Outputs[0], sink.Inputs[0]));
+		Assert.Single(graph.Connections);
+		Assert.Same(existing, graph.ConnectionAtInput(sink.Inputs[0]));
 	}
 
 	[Fact]

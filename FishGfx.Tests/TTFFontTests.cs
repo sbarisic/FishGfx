@@ -44,6 +44,7 @@ public class TTFFontTests
 		Assert.InRange(added.X, 0, font.AtlasSize);
 		Assert.InRange(added.Y, 0, font.AtlasSize);
 		Assert.Equal(0, font.GetGlyphBorderMaximum('M'));
+		Assert.Equal(0, font.GetGlyphBorderMaximum(' '));
 	}
 
 	[Fact]

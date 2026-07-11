@@ -124,24 +124,6 @@ namespace FishGfx
 			for (int i = 0; i < Str.Length; i++)
 			{
 				char Chr = Str[i];
-				CharOrigin? MaybeCharInfo = GetCharInfo(Chr);
-
-				if (!MaybeCharInfo.HasValue)
-					MaybeCharInfo = GetCharInfo('?');
-				//throw new NotImplementedException();
-
-				CharOrigin ChrOrigin = MaybeCharInfo.Value;
-
-				if (Previous != '\0')
-					X += GetKerning(Previous, Chr);
-
-				CharDest CurChar = new CharDest();
-				CurChar.CharOrigin = ChrOrigin;
-				CurChar.X = (X + ChrOrigin.XOffset);
-				CurChar.W = ChrOrigin.W;
-				CurChar.H = ChrOrigin.H;
-
-				CurChar.Y = (Y - ChrOrigin.YOffset - CurChar.H);
 
 				if (Chr == '\r')
 					continue;
@@ -159,8 +141,26 @@ namespace FishGfx
 				if (Chr == '\t')
 				{
 					X += TabSize;
+					Previous = '\0';
 					continue;
 				}
+
+				CharOrigin? MaybeCharInfo = GetCharInfo(Chr);
+
+				if (!MaybeCharInfo.HasValue)
+					MaybeCharInfo = GetCharInfo('?');
+
+				CharOrigin ChrOrigin = MaybeCharInfo.Value;
+
+				if (Previous != '\0')
+					X += GetKerning(Previous, Chr);
+
+				CharDest CurChar = new CharDest();
+				CurChar.CharOrigin = ChrOrigin;
+				CurChar.X = X + ChrOrigin.XOffset;
+				CurChar.W = ChrOrigin.W;
+				CurChar.H = ChrOrigin.H;
+				CurChar.Y = Y - ChrOrigin.YOffset - CurChar.H;
 
 				X += ChrOrigin.XAdvance;
 				Previous = Chr;

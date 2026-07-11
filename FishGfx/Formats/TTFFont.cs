@@ -137,6 +137,10 @@ namespace FishGfx.Formats
 		internal byte GetGlyphBorderMaximum(char c)
 		{
 			Glyph glyph = GetGlyph(c);
+
+			if (glyph.Width <= 0 || glyph.Height <= 0 || glyph.Bitmap == null || glyph.Bitmap.Length == 0)
+				return 0;
+
 			byte maximum = 0;
 
 			for (int x = 0; x < glyph.Width; x++)

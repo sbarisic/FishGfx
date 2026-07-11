@@ -1,75 +1,59 @@
-# Known Bugs
+# Bug History
 
-This file tracks bugs discovered during the source-formatting review. All entries are open. The formatting pass that added this document intentionally does not change runtime behavior.
+This document tracks defects found during the .NET 10 migration and source review. Feature work and known limitations belong in the [README roadmap](README.md#roadmap).
 
-## BUG-001: Text shaders may be read before initialization
+## Open issues
 
-- **Status:** Open
-- **Severity:** Medium
-- **Affected code:** `Gfx.DrawText`, `Gfx.Init2D`
-- **Reproduction:** Initialize the rendering context and call `Gfx.DrawText` before any other 2D primitive has initialized the shared 2D shaders.
-- **Impact:** `DrawText` selects `Default2D` or `SdfText2D` before calling `Init2D`, so the selected shader may be `null` and the first text draw can throw `NullReferenceException`.
-- **Recommended resolution:** Call `Init2D(PrimitiveType.Triangles)` before selecting or configuring the text shader.
+No open defects are currently recorded here. This does not imply that the project is defect-free; newly confirmed bugs should receive the next `BUG-NNN` identifier and include a reproduction, impact, and verification plan.
 
-## BUG-002: Connections can contain ports from another graph
+## Resolved issues
 
-- **Status:** Open
-- **Severity:** Medium
-- **Affected code:** `FunctionNodeGraph.Connect`
-- **Reproduction:** Create compatible nodes in two different `FunctionNodeGraph` instances and pass one port from each graph to `Connect`.
-- **Impact:** The connection is accepted even though one endpoint is not owned by the target graph. Evaluation and serialization can then observe an invalid graph containing references to absent nodes.
-- **Recommended resolution:** Verify that both endpoint nodes belong to the graph before replacing or adding a connection. Reject foreign ports without mutating the graph.
+| ID | Severity | Resolution | Regression coverage |
+|:---|:---:|:---|:---|
+| BUG-001 | Medium | Initialize 2D shaders before selecting the text shader. | Automatic text-first graphics preflight. |
+| BUG-002 | Medium | Reject connections whose ports are not owned by the target graph. | `ConnectionsRejectForeignPortsWithoutReplacingExistingInput`. |
+| BUG-003 | Low | Handle controls before glyph lookup and reset kerning continuity at tabs. | `LayoutHandlesControlsBeforeGlyphLookupAndBreaksTabKerning`. |
+| BUG-004 | Low | Restore temporary font scale through `finally`. | `DrawTextRestoresScaleWhenAtlasPreparationFails`. |
+| BUG-005 | Low | Guard glyph-specific debug drawing when layout is empty. | Automatic control-only debug-text preflight. |
+| BUG-006 | Low | Return zero before scanning an empty TTF glyph bitmap. | `PreloadsAsciiAndLazilyAddsBmpGlyphs`. |
+| BUG-007 | Low | Initialize every node-port ID with a unique GUID. | `NodesUseExactTypesReplaceInputsAndFanOut`. |
+| BUG-008 | Low | Return a structured load failure for null JSON content. | `NullJsonReturnsStructuredFailure`. |
+| BUG-009 | Medium | Preserve floating-point texture parameters on the pre-4.5 OpenGL path. | Typed code path, Debug/Release builds, and smoke validation. |
 
-## BUG-003: Tabs can receive fallback-glyph kerning
+## Resolution notes
 
-- **Status:** Open
-- **Severity:** Low
-- **Affected code:** `GfxFont.LayoutString`
-- **Reproduction:** Layout text containing a tab after a printable character with a font that resolves the tab through its fallback glyph.
-- **Impact:** Glyph lookup and pair kerning happen before control-character handling. The tab advance can therefore include kerning against the fallback glyph, producing inconsistent alignment.
-- **Recommended resolution:** Handle carriage returns, newlines, and tabs before glyph lookup and kerning. Define whether a tab resets the previous-character kerning state and apply that rule consistently.
+### BUG-001: Text shader initialization order
 
-## BUG-004: Text scale is not restored after a draw failure
+`Gfx.DrawText` previously selected `Default2D` or `SdfText2D` before `Init2D` had guaranteed their creation. Text can now be the first 2D operation after context setup. Automatic gallery mode performs that exact preflight before drawing another primitive.
 
-- **Status:** Open
-- **Severity:** Low
-- **Affected code:** `Gfx.DrawText`
-- **Reproduction:** Draw text with an explicit font size and trigger an exception during atlas preparation, shader setup, upload, or drawing.
-- **Impact:** `ScaledFontSize` remains set to the requested draw size, affecting later measurement and rendering with the same font.
-- **Recommended resolution:** Restore the original scale in a `finally` block covering every operation after the temporary size is assigned.
+### BUG-002: Cross-graph connections
 
-## BUG-005: Debug text drawing assumes at least one glyph
+`FunctionNodeGraph.Connect` previously accepted compatible ports from nodes owned by another graph. It now returns `null` before changing an occupied input unless both endpoint nodes belong to the target graph. This matches the existing incompatible-type convention.
 
-- **Status:** Open
-- **Severity:** Low
-- **Affected code:** `Gfx.DrawText`
-- **Reproduction:** Call `Gfx.DrawText` with `DebugDraw` enabled and a non-empty string containing only layout controls such as newlines or tabs.
-- **Impact:** Layout produces an empty glyph array, but debug rendering indexes `Chars[0]`, causing `IndexOutOfRangeException`.
-- **Recommended resolution:** Guard glyph-specific debug markers with `Chars.Length > 0`; bounds drawing should handle an empty layout independently.
+### BUG-003: Control-character kerning
 
-## BUG-006: Empty glyph dimensions can cause invalid bitmap indexing
+`GfxFont.LayoutString` previously looked up and kerned a glyph before recognizing tabs and line controls. Carriage returns, newlines, and tabs are now processed first. A tab advances by `TabSize` and clears the previous character so kerning does not cross the tab boundary.
 
-- **Status:** Open
-- **Severity:** Low
-- **Affected code:** `TTFFont.GetGlyphBorderMaximum`
-- **Reproduction:** Inspect the SDF border of a glyph whose rasterized bitmap has a zero width or height.
-- **Impact:** Border indexing assumes both dimensions are positive and can calculate a negative or out-of-range bitmap offset.
-- **Recommended resolution:** Return zero when either dimension is zero or the bitmap is empty before scanning its edges.
+### BUG-004: Font scale restoration
 
-## BUG-007: Node port IDs are always empty
+An exception during atlas preparation or rendering could leave `ScaledFontSize` at a temporary draw size. The complete temporary-size operation is now protected by `try/finally`.
 
-- **Status:** Open
-- **Severity:** Low
-- **Affected code:** `NodePort.Id`
-- **Reproduction:** Create any reflected function node and inspect the IDs of its input and output ports.
-- **Impact:** Every port exposes `Guid.Empty`, so the public ID cannot uniquely identify ports for retained selections, diagnostics, or external graph tooling.
-- **Recommended resolution:** Initialize the ID with `Guid.NewGuid()` or accept a reconstructed ID through an internal constructor if persistence must preserve port identity.
+### BUG-005: Empty debug layout
 
-## BUG-008: Null JSON bypasses structured load diagnostics
+A non-empty input containing only controls produces no glyph geometry. Debug drawing now renders its origin marker safely and only accesses glyph positions or glyph bounds when at least one glyph exists.
 
-- **Status:** Open
-- **Severity:** Low
-- **Affected code:** `NodeGraphJson.Deserialize`
-- **Reproduction:** Pass `null` as the JSON argument with a valid registry.
-- **Impact:** `JsonSerializer.Deserialize` throws `ArgumentNullException`, while malformed JSON is returned as a structured `NodeGraphLoadResult` failure.
-- **Recommended resolution:** Detect null before deserialization and return a consistent validation failure, or explicitly document and enforce an argument-exception contract.
+### BUG-006: Empty TTF glyph border scan
+
+The internal SDF-border diagnostic now returns zero when width, height, or bitmap storage is empty instead of calculating an invalid edge index.
+
+### BUG-007: Empty node-port IDs
+
+`NodePort.Id` now initializes with `Guid.NewGuid()`. Port IDs are non-empty and unique for newly constructed or reconstructed nodes; JSON persistence continues to identify reconstructed ports by node ID and descriptor index.
+
+### BUG-008: Null JSON handling
+
+`NodeGraphJson.Deserialize(null, registry)` now returns an unsuccessful `NodeGraphLoadResult` containing an actionable diagnostic. A null registry remains an argument error because the registry is required to resolve safe callable functions.
+
+### BUG-009: Truncated fallback texture parameters
+
+The legacy bind-to-edit branch of `Texture.TextureParam` converted a boxed floating-point value to `int` before calling `glTexParameter`, truncating values such as anisotropy. The fallback now calls the floating-point overload and preserves the requested value.

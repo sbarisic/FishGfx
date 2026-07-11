@@ -1,326 +1,145 @@
 # FishGfx Project Information
 
-> Migration note (2026-07-10): the core project now targets .NET 10 for Windows x64 and uses Silk.NET.OpenGL. `FishGfx.Modern.sln` contains the supported core, smoke test, and compatibility tests. The remainder of this document describes the pre-migration repository snapshot and may mention removed OpenGL.Net and RealSense components.
+This document describes the supported modern FishGfx code as verified from the repository source. For build commands and examples, see [README.md](README.md). For resolved and open defects, see [BUGS.md](BUGS.md).
 
-> Consolidated from the authenticated Devin Wiki for `sbarisic/FishGfx`, branch `master`, on 2026-07-10. Wiki claims are generated documentation and should be verified against source before making critical changes.
+## Supported baseline
 
-## Project summary
+The supported configuration is Windows x64 on .NET 10. FishGfx creates an OpenGL core-profile context through its custom GLFW binding and sends OpenGL calls through Silk.NET.OpenGL.
 
-FishGfx is a managed C# graphics abstraction layer and 2D/3D game framework built over OpenGL 4.x and GLFW. It is presented as a modern, more capable alternative to SFML. The library combines rendering, GPU resource management, window/input handling, asset loading, cameras and spatial math, common drawable objects, application lifecycle management, GUI integration, demo games, and optional hardware support.
+The context negotiator tries OpenGL 4.6 first and falls back one minor version at a time to OpenGL 4.0. Direct State Access is used on OpenGL 4.5 and newer, with bind-to-edit implementations retained for older 4.x drivers.
 
-The core library targets .NET Framework 4.6.1. Other projects target framework versions from 4.6.2 through 4.8.1. Both x86 and x64 configurations exist; AnyCPU configurations in the main library default to x64.
+Current core dependencies are:
 
-Primary technologies:
+- Silk.NET.OpenGL 2.23.0 for OpenGL entry points and types.
+- System.Drawing.Common 10.0.0 for the Windows bitmap-loading, readback, and screenshot APIs.
+- StbTrueTypeSharp 1.26.12 for TrueType metrics and SDF glyph generation.
+- The bundled Windows x64 `glfw3.dll` and managed bindings under `FishGfx/Glfw3`.
 
-- C# and .NET Framework
-- OpenGL 4.0–4.6 through OpenGL.Net
-- GLFW 3 through custom C# bindings
-- System.Numerics for vectors, matrices, and quaternions
-- System.Drawing for bitmap-backed texture loading
-- Newtonsoft.Json for configuration and level data
-- NuklearDotNet for immediate-mode GUI
-- Humper for AABB-based 2D physics
-- Intel RealSense SDK for optional depth-camera support
+Intel RealSense support has been removed. Linux and macOS are not supported by the modern baseline.
 
-## Repository and solutions
+## Modern solution
 
-- `FishGfx/`: core graphics and game-framework library.
-- `FishGfx/Graphics/`: OpenGL initialization, rendering state, shaders, textures, buffers, cameras, framebuffers, meshes, and drawables.
-- `FishGfx/Glfw3/`: managed GLFW bindings.
-- `FishGfx/Formats/`: OBJ, SMD, Foam, generic mesh, and BMFont handling.
-- `FishGfx/data/`: built-in shaders, models, fonts, and other engine assets.
-- `FishGfx_Nuklear/`: FishGfx rendering/input backend for Nuklear.
-- `Test/`: complete 2D side-scrolling demo with levels, entities, particles, and Humper physics.
-- `Test2/`: validation/demo project for 3D and parallax features.
-- `Test_Nuklear/`: Nuklear integration demo.
-- `FishGfx_LiteTest/`: minimal-overhead test configuration.
-- `RealSenseTest/`: visualization and validation for RealSense depth/point-cloud data.
-- `ModelConv/`: command-line 3D model conversion tool.
-- `VectorPFM/`: auxiliary low-level/vector experimentation tool.
-- `BMFont/`: bundled font assets/tooling.
-- `thirdparty/`: external managed and native dependencies.
-- `submodule_NuklearDotNet/`: NuklearDotNet submodule.
+`FishGfx.Modern.sln` is the supported entry point and contains four projects:
 
-Solutions:
+- `FishGfx`: the core library.
+- `FishGfx.SmokeTest`: interactive primitive gallery, developer console, and automated screenshot validation.
+- `FishGfx.NodeEditor`: reflected function-node editor and headless JSON graph runner.
+- `FishGfx.Tests`: xUnit tests for geometry, fonts, graphs, persistence, UI models, and compatibility mappings.
 
-- `FishGfx.sln`: primary solution containing the core library, Test game, ModelConv, and Nuklear integrations.
-- `FishGfx_Only.sln`: reduced solution containing FishGfx and the primary Test project.
-- `FishGfx_LiteTest/FishGfx_LiteTest.sln`: minimal test solution.
+The older demos, tools, LiteTest, and Nuklear projects are intentionally outside this solution. They remain migration candidates and are not part of modern build acceptance.
 
-Build output is directed to folders including `bin/` and `bin_fishgfx/`; intermediate files go under `obj/`.
+## Context and windowing
 
-## Application lifecycle
+`RenderWindow` owns the GLFW window and active OpenGL context. It exposes keyboard, character, mouse, scroll, resize, clipboard, cursor, buffer-swap, close, and framebuffer-readback operations.
 
-`FishGfxGame` is the abstract application framework. Applications implement the high-level `Init`, `Update`, and `Draw` lifecycle while the base class handles:
+`Internal_OpenGL` owns the single Silk.NET `GL` instance. It resolves functions through the current GLFW context, records the renderer and actual OpenGL version, configures debug callbacks, and exposes the capability checks used by resource wrappers.
 
-1. GLFW/OpenGL window creation.
-2. `InputManager` initialization.
-3. A default orthographic camera in `ShaderUniforms.Current`.
-4. shared resource creation and application initialization.
-5. the continuous update/draw loop.
-6. buffer swapping, event polling, time tracking, and orderly resource cleanup.
+`InputManager` turns window callbacks into frame-coherent held, pressed, and released state. Applications call `BeginNewFrame` before polling events.
 
-The main rendering sequence is conceptually:
+## Render state and resource lifetime
 
-`Run → InitGLFW → create context → SetupOpenGL → Init → [Update(dt) → Draw(dt) → SwapBuffers]`
+`RenderState` describes fixed-function state including depth testing and writes, culling, winding, blending, channel masks, scissoring, and front/back stencil functions and operations. `Gfx.PushRenderState` and `Gfx.PopRenderState` isolate temporary rendering changes.
 
-`InputManager.BeginNewFrame` clears one-frame pressed/released state at the start of each frame. The framework maintains both variable frame delta and accumulated game time.
+GPU wrappers include:
 
-## Core graphics architecture
+- `BufferObject` and `VertexArray`.
+- `ShaderStage` and `ShaderProgram`.
+- `Texture`, `Framebuffer`, `RenderTexture`, and `Renderbuffer`.
+- `OcclusionQuery`.
+- Streaming `Mesh2D` and `Mesh3D` drawables.
 
-The graphics layer provides a managed abstraction over the OpenGL state machine. High-level calls flow through the static `Gfx` API, `RenderAPI`, and GPU wrapper objects before reaching OpenGL.Net.
+GPU objects must be created and explicitly disposed on the context thread. If a finalizer observes an undisposed graphics object, deletion is queued through `RenderAPI` and collected during a later context-thread buffer swap or explicit garbage collection.
 
-### OpenGL initialization
+## Shaders and shared uniforms
 
-`Internal_OpenGL` manages a strict three-phase sequence:
+FishGfx ships 2D, 3D, line, point, textured/color, and SDF text shaders under `FishGfx/data/shaders`.
 
-1. `InitGLFW` loads GLFW and installs an error callback.
-2. `RenderWindow` creates a core-profile context, trying OpenGL 4.6 and falling back version-by-version to 4.0.
-3. `SetupOpenGL` initializes OpenGL.Net entry points, queries the actual version and extensions, records renderer information, and enables diagnostics.
+`ShaderUniforms.Current` provides the active camera, model transforms, resolution, texture size, clip planes, and related shared values. Shader binding uploads the applicable common uniforms and caches uniform locations.
 
-`Is45OrAbove` controls use of Direct State Access features. `OpenGL_BODGES` contains driver-specific workarounds, including an Intel texture-binding workaround.
+Standard interleaved vertex attributes are:
 
-Debug builds can enable synchronous OpenGL debug callbacks. Passing `-debug` enables API logging to `opengl_log.txt`.
+- Location 0: position.
+- Location 1: color.
+- Location 2: texture coordinates.
 
-### Render state and framebuffers
+## Immediate 2D API
 
-`RenderState` collects fixed-function pipeline configuration:
+`Gfx` provides an immediate-style 2D API backed by a reusable streaming mesh. Available primitives include:
 
-- depth test, depth function, and depth mask
-- blending and source/destination factors
-- face culling and winding
-- stencil functions and operations
-- scissor regions
-- per-channel color masks
+- Points, lines, and line strips with thickness support.
+- Filled and outlined rectangles.
+- Filled and outlined rounded rectangles with per-corner radii.
+- Textured rectangles and rounded rectangles.
+- Nine-patch stretching with fixed source-pixel borders.
+- Filled, outlined, and textured circles and ellipses.
+- Filled rings and outlined annular sectors.
+- Stroked quadratic and cubic Bézier curves.
+- Batched bitmap and SDF text.
 
-`Gfx.PushRenderState` and `Gfx.PopRenderState` form a stack so temporary passes—such as UI rendering—can change state and reliably restore the prior configuration.
+CPU tessellators are context-free and independently tested. Adaptive circle, ellipse, curve, rounded-corner, and ring segment counts are bounded, while explicit segment counts support debugging and low-poly rendering.
 
-`FramebufferObject` wraps OpenGL FBOs. `RenderTexture` combines framebuffer attachments and textures for off-screen rendering, post-processing, multisampling, or intermediate passes. Clear operations can target color, depth, and stencil buffers.
+## Retained drawables and formats
 
-### GPU resource lifetime
+The core retains higher-level drawables for sprites, tile maps, terrain, parallax backgrounds, and multi-mesh models. `Camera` supports perspective and orthographic projection, orientation vectors, lazy matrix updates, and screen/world conversion.
 
-`GraphicsObject` is the base for GPU-backed wrappers and standardizes binding and disposal. OpenGL objects cannot safely be deleted on the garbage-collector thread, so FishGfx queues finalizer-triggered destruction in `RenderAPI.GCQueue` and processes deletion on the graphics-context thread.
+Model and geometry support includes `GenericMesh`, Wavefront OBJ, Valve SMD loading, and the FishGfx Foam format. SMD saving and some unsupported parser segments remain roadmap items.
 
-Managed GPU resources include:
+Texture APIs support files, `Bitmap`, raw uploads, cubemaps, multisampling, atlas splitting, filters, wrapping, mipmaps, and anisotropy. The bitmap-facing APIs are intentionally Windows-specific in this release.
 
-- `BufferObject` for vertex/index data
-- `VertexArray` for attribute layouts
-- `ShaderStage` and `ShaderProgram`
-- `Texture`
-- framebuffer objects
-- occlusion queries
+## Fonts and text
 
-Modern Direct State Access calls are used when possible, with bind-to-edit fallbacks for older 4.x contexts.
+`GfxFont` is the shared text layout and measurement abstraction. `Gfx.DrawText` prepares the selected atlas, lays out the string, emits one triangle batch, selects the appropriate shader, and restores the caller's font scale after drawing.
 
-## Shaders, vertices, and drawing
+Two atlas implementations are available:
 
-`ShaderProgram` compiles and links one or more `ShaderStage` objects. Shader source may be provided as text or loaded from disk. Uniform locations are cached in a dictionary; relinking clears and rebuilds the cache.
+- `BMFont` parses binary AngelCode BMFont v3 data and uses its texture pages and kerning pairs.
+- `TTFFont` parses `.ttf` bytes with stb_truetype, generates SDF glyphs lazily, grows and repacks one atlas, and uses an `fwidth`-based SDF shader.
 
-`ShaderUniforms` is a stack-based global rendering context. Binding a shader uploads common values such as:
+The current TTF layout handles individual Unicode BMP characters, multiline text, tabs, fallback glyphs, and pair kerning. Complex-script shaping, right-to-left layout, combining behavior, and supplementary Unicode characters are deferred.
 
-- view, projection, and model matrices
-- near/far clip planes
-- viewport and resolution
-- camera position
-- alpha-test and multisample parameters
-- texture size
+## Developer console
 
-Built-in shaders live under `FishGfx/data/shaders/`. Standard vertex attribute locations are:
+`DevConsole` renders a scrollable text buffer, command prompt, and semi-transparent background. It supports character/key input and host-provided command execution.
 
-- location 0: position
-- location 1: color
-- location 2: UV
+The smoke gallery wraps it with commands for help, scene listing and selection, next/previous navigation, renderer information, and quitting. F1 toggles the overlay; Escape closes it before exiting the gallery.
 
-`Vertex2` and `Vertex3` use sequential, interleaved layouts suitable for direct GPU upload. `Vertex2.CreateQuad` generates a two-triangle rectangle. `Color` is a packed four-byte RGBA structure with integer packing, normalized vector conversions, and predefined colors.
+## Function-node graphs
 
-The static `Gfx` class exposes immediate-style helpers:
+The `FishGfx.NodeGraph` namespace exposes reflection-driven function graphs:
 
-- initialization for dedicated 2D and 3D meshes/shaders
-- state-stack operations
-- 2D rectangles and textured primitives
-- 3D points and lines
-- buffer clearing
-- spatial/debug drawing helpers
+- `[NodeFunction]` opts a public static method into a registry and can assign a display name/category.
+- Ordinary parameters become typed input ports.
+- `[NodeBody]` parameters become inline editable values.
+- Non-void returns become outputs; named `ValueTuple` results expand into multiple outputs.
+- Connections require exact CLR type equality, support output fan-out, and replace an occupied input.
 
-Its default state enables back-face culling, depth testing, and source-alpha blending.
+`FunctionNodeEvaluator` performs dependency-first evaluation, supplies default values to unconnected inputs, detects cycles, catches per-node exceptions, skips failed dependents, and continues independent branches.
 
-## Textures and assets
+`NodeGraphJson` persists function identity, node GUIDs, body text, positions, widths, connections, canvas pan, and zoom. Loading resolves functions only from a caller-supplied registry and validates the complete document before returning a replacement graph. The execution APIs return structured per-node output data suitable for command-line hosts.
 
-`Texture` wraps 2D, multisampled, and cubemap textures. It prefers immutable storage and DSA, with legacy fallbacks. Factory methods support:
+## Node editor
 
-- files and `Bitmap` instances
-- six-face cubemaps
-- atlas splitting into individual textures
-- configurable filters, wraps, and anisotropy
+`FishGfx.NodeEditor` is an interaction-focused editor built entirely with FishGfx rendering and input. It supports:
 
-### Geometry formats
+- Node selection and header dragging.
+- Typed connection creation, replacement, removal, and rewiring.
+- Canvas panning and cursor-centered zoom.
+- Inline typed value editing.
+- Categorized, searchable function creation with mouse and keyboard control.
+- Evaluation through F5 or the toolbar.
+- JSON save/reload through Ctrl+S and Ctrl+O.
+- Headless execution through `--execute <layout.json>`.
 
-`GenericMesh` is the intermediate representation between parsers and GPU-side meshes. It stores `Vertex3` data plus a material name and supports bounding calculations, Y/Z coordinate conversion, and winding reversal.
+The editor registers bundled sample functions for values, math, vectors, outputs, and debugging. Undo/redo, grouping, clipboard operations, and multi-selection are not implemented yet.
 
-Supported formats include:
+## Validation applications
 
-- Wavefront OBJ, including material-delimited meshes
-- Valve SMD
-- FishGfx Foam
+The smoke gallery contains one scene per immediate primitive. Space and Backspace navigate interactively; automatic mode visits every scene sequentially with a fixed animation time.
 
-`RenderModel` converts one or more generic meshes into renderable submeshes/material associations. `ModelConv` provides standalone conversion between supported representations.
+Automatic mode captures the complete 1920×1080 frame before buffer swap, writes an atomic full-size PNG, and generates a 640×360 thumbnail. The files under `FishGfx/pictures` are used directly by the README gallery.
 
-### Fonts
+The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
 
-`GfxFont` defines text measurement and layout independently of the backing format. It models source glyph metrics with `CharOrigin` and positioned glyphs with `CharDest`. Layout supports scaling, newlines, tabs, baseline normalization, and measurement.
+## Roadmap and known defects
 
-`BMFont` implements binary AngelCode BMFont v3 parsing and loads texture pages into FishGfx textures for batched text rendering.
-
-## Camera and spatial math
-
-`Camera` supports perspective, off-center perspective, and orthographic projections. Position and quaternion rotation mark the camera dirty; view/world matrices and orientation vectors are recomputed lazily when requested.
-
-It also supports:
-
-- Euler-angle orientation updates
-- forward/right/up vectors
-- world-to-screen conversion
-- screen-to-world conversion
-- integration with the global shader-uniform stack
-
-Spatial primitives include:
-
-- `AABB`: collision, containment, adjacency, intersection, union, and point-cloud bounds.
-- `BoundSphere`: spherical bounds.
-- `BoundingBox`: oriented/corner-based box representation.
-- `GfxUtils`: vector swizzles, component access, rotation conversion, randomization, and serialization helpers.
-
-## High-level drawables
-
-Complex drawable types implement `IDrawable.Draw()` and are built over meshes, textures, shaders, and the model-matrix stack.
-
-- `Sprite`: textured quad with configurable pivot/center.
-- `Tilemap`: atlas-indexed grid rebuilt only when dirty and rendered as one batched mesh.
-- `Mesh2D` / `Mesh3D`: VAO/VBO/EBO management and drawing.
-- `Terrain`: heightmap-derived mesh generation and texturing.
-- `RenderModel`: multi-submesh, multi-material model rendering.
-- `ParallaxSprite`: scaled multilayer backgrounds with camera-relative motion and seamless horizontal tiling.
-- `DevConsole`: in-game command entry, logging, and debug interaction.
-
-## Input and windowing
-
-`RenderWindow` owns the GLFW window/context and exposes:
-
-- buffer swapping and close state
-- resize, keyboard, character, and mouse events
-- cursor visibility and capture
-- clipboard and monitor/window services
-
-`InputManager` translates window events into frame-coherent state:
-
-- held, pressed-this-frame, and released-this-frame keys
-- raw and normalized mouse coordinates
-- keyboard/mouse query methods
-
-`MicroConfig` provides lightweight serialization/deserialization for primitive settings and enums.
-
-## Test game and physics
-
-The `Test` project is a complete 2D side-scrolling demonstration. `TestGame` loads JSON levels, configures 2D render state, initializes Humper physics, merges collision tiles, spawns entities, updates logic, and draws layered world/UI content.
-
-The rendering order separates background/parallax, tile layers, entities, particles, foreground, debug overlays, and camera-space UI. Level data is compatible with the bundled OgmoEditor workflow.
-
-Entity hierarchy:
-
-- `Entity`: spawn, update, and draw lifecycle.
-- `Pawn`: velocity, grounded state, acceleration, gravity, friction, and physics box.
-- `Player`: player-specific input and behavior.
-- `LevelEntity`: entities instantiated from level metadata.
-
-`SpriteAnimation` and `SpriteAnimator` manage frame sequences and playback. The particle system supplies transient effects such as fire and explosions.
-
-Humper is a spatial-hash AABB engine supporting collision queries and responses such as sliding and bouncing. Tags are bitmasks used to filter interaction categories. The demo includes an AABB-merging optimization to reduce the number of static collision boxes and debug drawing to inspect physics state.
-
-Test utilities include array helpers, vector distance/rounding functions, Bresenham line enumeration, JSON level schemas, and animation helpers.
-
-## Nuklear GUI integration
-
-`FishGfx_Nuklear` bridges NuklearDotNet to FishGfx.
-
-`FishGfxDevice` implements the rendering backend using a streaming `Mesh2D`. It:
-
-- converts Nuklear vertices and draw commands into FishGfx geometry
-- maps coordinate systems and flips Y where necessary
-- applies clipping through scissor state
-- manages GUI textures
-- pushes/pops FishGfx render state so UI rendering does not leak state
-
-Input hooks translate `RenderWindow` mouse, key, modifier, and text events into Nuklear events. `EventsEnabled` can disable GUI event consumption. `Test_Nuklear` demonstrates initialization and per-frame usage.
-
-## RealSense and auxiliary tools
-
-`RealSenseCamera` wraps Intel RealSense context, pipeline, configuration, and sensor options. It supports depth, color, infrared, and pose streams; resolution enumeration; exposure/laser configuration; frame delegates; and point-cloud conversion to FishGfx `Vertex3` data.
-
-`RealSenseTest` visualizes streamed 3D data and provides debugging controls.
-
-`ModelConv` converts supported 3D model formats through the generic-mesh pipeline. `VectorPFM` is a separate experimental/auxiliary project for low-level vector or graphics API work.
-
-## Practical requirements and caveats
-
-- Use a Windows development environment capable of building legacy .NET Framework projects.
-- Install the framework targeting packs required by the selected projects (4.6.1 through 4.8.1).
-- Keep native binaries aligned with the selected x86/x64 build.
-- A GPU/driver supporting at least OpenGL 4.0 is required.
-- OpenGL 4.5+ enables the preferred Direct State Access paths.
-- RealSense features require compatible hardware and the Intel native/managed runtime.
-- Initialize and dispose GPU resources on the graphics-context thread; rely on the provided deferred-disposal path when finalizers are involved.
-- Call the per-frame input reset at the correct point in the game loop.
-- Treat OpenGL line-width behavior as driver-dependent.
-- The code contains explicit vendor workarounds, signaling that driver-specific behavior should be tested on target hardware.
-
-## Devin Wiki topic index
-
-The authenticated wiki contains these documented areas:
-
-1. FishGfx Overview
-   - Getting Started & Project Structure
-   - FishGfxGame Application Lifecycle
-2. Core Graphics Architecture
-   - OpenGL Initialization & Context Management
-   - Render State & Framebuffer System
-   - GPU Resource Management
-3. Shaders & Rendering Primitives
-   - ShaderProgram & ShaderUniforms
-   - Vertex Types & Color
-   - Gfx Drawing API
-4. Textures & Asset Loading
-   - Texture System
-   - 3D Model Formats (OBJ, SMD, Foam, GenericMesh)
-   - Font Rendering (BMFont & GfxFont)
-5. Camera & Spatial Math
-   - Camera System
-   - Spatial Primitives (AABB, BoundSphere, BoundingBox)
-6. Drawables & Advanced Graphics
-   - Tilemap & Sprite
-   - Terrain & RenderModel
-   - ParallaxSprite & DevConsole
-7. Input & Windowing
-   - RenderWindow & GLFW Bindings
-   - InputManager & MicroConfig
-8. Test Game Demo
-   - Game Loop, Level Loading & Rendering Pipeline
-   - Entity System & Particle Effects
-   - Physics (Humper AABB Engine)
-   - Utility Helpers (Utils & Level Data)
-9. Nuklear GUI Integration
-   - FishGfxDevice Rendering Backend
-   - Nuklear Input & Event Mapping
-10. Hardware Integration & Auxiliary Tools
-    - Intel RealSense Camera Integration
-    - Auxiliary Tools (ModelConv & VectorPFM)
-11. Glossary
-
-## Source links
-
-- Repository: <https://github.com/sbarisic/FishGfx>
-- Authenticated Devin Wiki: <https://app.devin.ai/org/sbarisic/wiki/sbarisic/FishGfx?branch=master>
-- Documented wiki revision referenced source commit `f634fc69`.
-
-### Access note
-
-The Devin MCP correctly lists `sbarisic/FishGfx` as an available repository, but its `read_wiki_structure` and `read_wiki_contents` operations currently return a false “repository not found” response. The authenticated Devin web application exposes the complete wiki, so this document was extracted from that authenticated wiki UI.
+The prioritized roadmap is maintained in [README.md](README.md#roadmap). Resolved and open defects are maintained in [BUGS.md](BUGS.md).

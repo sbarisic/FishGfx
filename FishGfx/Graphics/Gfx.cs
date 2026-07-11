@@ -914,47 +914,50 @@ namespace FishGfx.Graphics
 			if (FontSize > 0)
 				Font.ScaledFontSize = FontSize;
 
-			if (!(Font is IGfxAtlasFont AtlasFont))
-				throw new NotSupportedException($"Font type {Font.GetType()} does not provide a texture atlas.");
-			AtlasFont.PrepareText(Str);
-			Texture AtlasTex =
-				AtlasFont.AtlasTexture ?? throw new InvalidOperationException("Font atlas texture was not created.");
-			ShaderProgram TextShader =
-				AtlasFont.RenderMode == GfxFontRenderMode.SignedDistanceField ? SdfText2D : Default2D;
-			if (AtlasFont.RenderMode == GfxFontRenderMode.SignedDistanceField)
-				TextShader.Uniform1f("SdfPixelRange", AtlasFont.SdfPixelRange);
-
-			GfxFont.CharDest[] Chars = Font.LayoutString(Str);
-			Init2D(PrimitiveType.Triangles);
-			Vertex2[] TextVertices = new Vertex2[Chars.Length * 6];
-
-			for (int i = 0; i < Chars.Length; i++)
+			try
 			{
-				ref GfxFont.CharDest C = ref Chars[i];
+				if (!(Font is IGfxAtlasFont AtlasFont))
+					throw new NotSupportedException($"Font type {Font.GetType()} does not provide a texture atlas.");
 
-				float X = C.CharOrigin.X / AtlasTex.Width;
-				float Y = C.CharOrigin.Y / AtlasTex.Height;
-				float W = C.CharOrigin.W / AtlasTex.Width;
-				float H = C.CharOrigin.H / AtlasTex.Height;
+				AtlasFont.PrepareText(Str);
+				Texture AtlasTex =
+					AtlasFont.AtlasTexture ?? throw new InvalidOperationException("Font atlas texture was not created.");
+				GfxFont.CharDest[] Chars = Font.LayoutString(Str);
 
-				//TexturedRectangle(Pos.X + C.X, Pos.Y + C.Y, C.W, C.H, X, 1.0f - Y - H, X + W, 1.0f - Y, Texture: AtlasTex);
-				EmitRectangleTris(
-					TextVertices,
-					i * 6,
-					Pos.X + C.X,
-					Pos.Y + C.Y,
-					C.W,
-					C.H,
-					X,
-					1.0f - Y - H,
-					X + W,
-					1.0f - Y,
-					Clr
-				);
-			}
+				Init2D(PrimitiveType.Triangles);
 
-			// Draw
-			{
+				ShaderProgram TextShader =
+					AtlasFont.RenderMode == GfxFontRenderMode.SignedDistanceField ? SdfText2D : Default2D;
+
+				if (AtlasFont.RenderMode == GfxFontRenderMode.SignedDistanceField)
+					TextShader.Uniform1f("SdfPixelRange", AtlasFont.SdfPixelRange);
+
+				Vertex2[] TextVertices = new Vertex2[Chars.Length * 6];
+
+				for (int i = 0; i < Chars.Length; i++)
+				{
+					ref GfxFont.CharDest C = ref Chars[i];
+
+					float X = C.CharOrigin.X / AtlasTex.Width;
+					float Y = C.CharOrigin.Y / AtlasTex.Height;
+					float W = C.CharOrigin.W / AtlasTex.Width;
+					float H = C.CharOrigin.H / AtlasTex.Height;
+
+					EmitRectangleTris(
+						TextVertices,
+						i * 6,
+						Pos.X + C.X,
+						Pos.Y + C.Y,
+						C.W,
+						C.H,
+						X,
+						1.0f - Y - H,
+						X + W,
+						1.0f - Y,
+						Clr
+					);
+				}
+
 				Mesh2D.SetVertices(TextVertices);
 
 				Start2D();
@@ -964,19 +967,26 @@ namespace FishGfx.Graphics
 				TextShader.Unbind();
 				AtlasTex.UnbindTextureUnit();
 				End2D();
-			}
 
-			if (DebugDraw)
+				if (DebugDraw)
+				{
+					FilledRectangle(Pos.X, Pos.Y, 5, 5, Color.Yellow);
+
+					if (Chars.Length > 0)
+					{
+						FilledRectangle(Pos.X + Chars[0].X, Pos.Y + Chars[0].Y, 5, 5, Color.Red);
+
+						Vector2 Sz = Font.MeasureString(Chars);
+						Rectangle(Pos.X, Pos.Y, Sz.X, Sz.Y, Clr: Color.Red);
+					}
+				}
+
+				return Font.MeasureString(Chars);
+			}
+			finally
 			{
-				FilledRectangle(Pos.X + Chars[0].X, Pos.Y + Chars[0].Y, 5, 5, Color.Red);
-				FilledRectangle(Pos.X, Pos.Y, 5, 5, Color.Yellow);
-
-				Vector2 Sz = Font.MeasureString(Chars);
-				Rectangle(Pos.X, Pos.Y, Sz.X, Sz.Y, Clr: Color.Red);
+				Font.ScaledFontSize = OldScale;
 			}
-
-			Font.ScaledFontSize = OldScale;
-			return Font.MeasureString(Chars);
 		}
 	}
 }

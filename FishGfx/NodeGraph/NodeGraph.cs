@@ -23,7 +23,7 @@ namespace FishGfx.NodeGraph
 
 	public sealed class NodePort
 	{
-		public Guid Id { get; }
+		public Guid Id { get; } = Guid.NewGuid();
 		public string Name { get; }
 		public Type Type { get; }
 		public NodePortDirection Direction { get; }
@@ -153,6 +153,10 @@ namespace FishGfx.NodeGraph
 				throw new ArgumentNullException(nameof(a));
 			if (b == null)
 				throw new ArgumentNullException(nameof(b));
+
+			if (!Nodes.Contains(a.Node) || !Nodes.Contains(b.Node))
+				return null;
+
 			NodePort output = a.Direction == NodePortDirection.Output ? a : b;
 			NodePort input = a.Direction == NodePortDirection.Input ? a : b;
 

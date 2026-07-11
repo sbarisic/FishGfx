@@ -141,6 +141,10 @@ namespace FishGfx.NodeGraph
 		{
 			if (registry == null)
 				throw new ArgumentNullException(nameof(registry));
+
+			if (json == null)
+				return Failure("JSON content is required.");
+
 			Document document;
 
 			try
