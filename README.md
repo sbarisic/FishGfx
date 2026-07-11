@@ -74,6 +74,30 @@ commands.Execute();
 
 Successful execution preserves every command. Replay stops at the first exception and resets `IsExecuting`, but earlier graphics or render-stack changes are not rolled back. Lists do not provide internal synchronization and cannot be mutated or executed recursively during replay.
 
+### Deferred render submission
+
+`DeferredRenderQueue` lets entity code submit immutable command snapshots into opaque, transparent, or application-defined buckets. Each submission captures its model transform, world-space sort position, layer, sort key, and optional owner tag. The render pass can inspect a bucket, apply a built-in camera-depth comparer or its own comparer, and execute the result later:
+
+```csharp
+queue.BeginFrame();
+queue.SubmitTransparent(
+	entity.Commands,
+	entity.WorldMatrix,
+	entity.BoundsCenter,
+	layer: 0,
+	sortKey: entity.MaterialKey,
+	tag: entity
+);
+
+foreach (RenderSubmission item in queue.GetSorted(
+	RenderBucket.Transparent,
+	RenderSubmissionComparers.TransparentBackToFront(camera)
+))
+	item.Execute();
+```
+
+Opaque front-to-back, opaque state-first, and transparent back-to-front comparers are stable and respect explicit layers. Custom `RenderBucket` values and comparers support passes such as shadows, selection, or overlays. Submission snapshots copy command references, while textures, shaders, fonts, meshes, and models remain caller-owned. The model transform is restored after every item; camera and other shared uniforms are taken from the active render pass.
+
 ### Fonts and console
 
 FishGfx supports binary AngelCode BMFont atlases and scalable SDF text generated from TrueType files:
@@ -168,5 +192,5 @@ The 640×360 thumbnails below include the selected scene in the left-side menu. 
 | [![Gfx.RingLines primitive gallery scene](FishGfx/pictures/thumbnails/gfx-ringlines.png)](FishGfx/pictures/gfx-ringlines.png) | [![Gfx.Ellipse primitive gallery scene](FishGfx/pictures/thumbnails/gfx-ellipse.png)](FishGfx/pictures/gfx-ellipse.png) | [![Gfx.FilledEllipse primitive gallery scene](FishGfx/pictures/thumbnails/gfx-filledellipse.png)](FishGfx/pictures/gfx-filledellipse.png) |
 | **Gfx.QuadraticBezier** | **Gfx.CubicBezier** | **Gfx.DrawText (TTF/SDF)** |
 | [![Gfx.QuadraticBezier primitive gallery scene](FishGfx/pictures/thumbnails/gfx-quadraticbezier.png)](FishGfx/pictures/gfx-quadraticbezier.png) | [![Gfx.CubicBezier primitive gallery scene](FishGfx/pictures/thumbnails/gfx-cubicbezier.png)](FishGfx/pictures/gfx-cubicbezier.png) | [![Gfx.DrawText TTF SDF primitive gallery scene](FishGfx/pictures/thumbnails/gfx-drawtext-ttf-sdf.png)](FishGfx/pictures/gfx-drawtext-ttf-sdf.png) |
-| **CommandList** |  |  |
-| [![Typed CommandList gallery scene](FishGfx/pictures/thumbnails/commandlist.png)](FishGfx/pictures/commandlist.png) |  |  |
+| **CommandList** | **DeferredRenderQueue** |  |
+| [![Typed CommandList gallery scene](FishGfx/pictures/thumbnails/commandlist.png)](FishGfx/pictures/commandlist.png) | [![Deferred render queue gallery scene](FishGfx/pictures/thumbnails/deferredrenderqueue.png)](FishGfx/pictures/deferredrenderqueue.png) |  |

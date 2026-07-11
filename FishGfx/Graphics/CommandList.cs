@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Numerics;
+using FishGfx.Graphics.Drawables;
 
 namespace FishGfx.Graphics
 {
@@ -26,6 +27,11 @@ namespace FishGfx.Graphics
 		public int Count => commands.Count;
 		public bool IsExecuting { get; private set; }
 		public GraphicsCommand this[int index] => commands[index];
+
+		public GraphicsCommandBatch Snapshot()
+		{
+			return new GraphicsCommandBatch(commands);
+		}
 
 		public T Add<T>(T command)
 			where T : GraphicsCommand
@@ -623,6 +629,20 @@ namespace FishGfx.Graphics
 		)
 		{
 			return Add(new DrawTextCommand(font, position, text, color, fontSize, debugDraw));
+		}
+
+		public DrawMesh3DCommand RecordDrawMesh(
+			Mesh3D mesh,
+			Texture texture = null,
+			ShaderProgram shader = null
+		)
+		{
+			return Add(new DrawMesh3DCommand(mesh, texture, shader));
+		}
+
+		public DrawRenderModelCommand RecordDrawModel(RenderModel model, ShaderProgram shader = null)
+		{
+			return Add(new DrawRenderModelCommand(model, shader));
 		}
 
 		private void EnsureMutable()

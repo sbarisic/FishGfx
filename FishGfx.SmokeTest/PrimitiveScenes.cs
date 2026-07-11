@@ -13,6 +13,10 @@ namespace FishGfx.SmokeTest
 		private static TTFFont proportionalFont;
 		private static TTFFont monoFont;
 		private static CommandList commandListScene;
+		private static DeferredRenderQueue deferredQueueScene;
+		private static CommandList[] deferredOpaqueCommands;
+		private static CommandList[] deferredTransparentCommands;
+		private static CommandList deferredOverlayCommands;
 
 		internal static void InitializeFonts()
 		{
@@ -24,6 +28,11 @@ namespace FishGfx.SmokeTest
 		{
 			commandListScene?.Clear();
 			commandListScene = null;
+			deferredQueueScene?.Clear();
+			deferredQueueScene = null;
+			deferredOpaqueCommands = null;
+			deferredTransparentCommands = null;
+			deferredOverlayCommands = null;
 			proportionalFont?.Dispose();
 			monoFont?.Dispose();
 			proportionalFont = monoFont = null;
@@ -55,6 +64,7 @@ namespace FishGfx.SmokeTest
 				new GalleryScene("Gfx.CubicBezier", DrawCubicBeziers),
 				new GalleryScene("Gfx.DrawText (TTF/SDF)", DrawTrueTypeText),
 				new GalleryScene("CommandList", DrawCommandList),
+				new GalleryScene("DeferredRenderQueue", DrawDeferredRenderQueue),
 			};
 		}
 
@@ -124,6 +134,141 @@ namespace FishGfx.SmokeTest
 				25
 			);
 			commands.RecordPopRenderState();
+
+			return commands;
+		}
+
+		private static void DrawDeferredRenderQueue(float _, Texture __)
+		{
+			if (deferredQueueScene == null)
+				CreateDeferredRenderQueueScene();
+
+			deferredQueueScene.BeginFrame();
+
+			deferredQueueScene.SubmitOpaque(
+				deferredOpaqueCommands[0],
+				Matrix4x4.CreateTranslation(480, 610, -24),
+				sortKey: 2,
+				tag: "far"
+			);
+			deferredQueueScene.SubmitOpaque(
+				deferredOpaqueCommands[2],
+				Matrix4x4.CreateTranslation(1260, 610, -3),
+				sortKey: 1,
+				tag: "near"
+			);
+			deferredQueueScene.SubmitOpaque(
+				deferredOpaqueCommands[1],
+				Matrix4x4.CreateTranslation(870, 610, -12),
+				sortKey: 2,
+				tag: "middle"
+			);
+
+			deferredQueueScene.SubmitTransparent(
+				deferredTransparentCommands[1],
+				Matrix4x4.CreateTranslation(1030, 300, -10),
+				tag: "middle"
+			);
+			deferredQueueScene.SubmitTransparent(
+				deferredTransparentCommands[2],
+				Matrix4x4.CreateTranslation(1150, 300, -3),
+				tag: "near"
+			);
+			deferredQueueScene.SubmitTransparent(
+				deferredTransparentCommands[0],
+				Matrix4x4.CreateTranslation(910, 300, -20),
+				tag: "far"
+			);
+
+			RenderBucket overlay = new RenderBucket("Overlay");
+			deferredQueueScene.Submit(overlay, deferredOverlayCommands, Matrix4x4.Identity);
+
+			Camera camera = ShaderUniforms.Current.Camera;
+			deferredQueueScene.Execute(
+				RenderBucket.Opaque,
+				RenderSubmissionComparers.OpaqueFrontToBack(camera)
+			);
+			deferredQueueScene.Execute(
+				RenderBucket.Transparent,
+				RenderSubmissionComparers.TransparentBackToFront(camera)
+			);
+
+			foreach (RenderSubmission submission in deferredQueueScene.Query(overlay))
+				submission.Execute();
+		}
+
+		private static void CreateDeferredRenderQueueScene()
+		{
+			deferredQueueScene = new DeferredRenderQueue();
+			deferredOpaqueCommands = new[]
+			{
+				CreateDeferredBox(new Color(70, 135, 235), "FAR  depth 24"),
+				CreateDeferredBox(new Color(75, 195, 145), "MIDDLE  depth 12"),
+				CreateDeferredBox(new Color(235, 145, 75), "NEAR  depth 3"),
+			};
+			deferredTransparentCommands = new[]
+			{
+				CreateDeferredCircle(new Color(80, 150, 255, 145)),
+				CreateDeferredCircle(new Color(95, 235, 155, 145)),
+				CreateDeferredCircle(new Color(255, 105, 145, 145)),
+			};
+			deferredOverlayCommands = new CommandList();
+			deferredOverlayCommands.RecordDrawText(
+				proportionalFont,
+				new Vector2(480, 900),
+				"Deferred entity submissions",
+				new Color(110, 205, 255),
+				48
+			);
+			deferredOverlayCommands.RecordDrawText(
+				monoFont,
+				new Vector2(480, 840),
+				"OPAQUE: submitted far / near / middle, sorted front-to-back",
+				new Color(205, 215, 230),
+				25
+			);
+			deferredOverlayCommands.RecordDrawText(
+				monoFont,
+				new Vector2(480, 535),
+				"TRANSPARENT: submitted middle / near / far, sorted back-to-front",
+				new Color(205, 215, 230),
+				25
+			);
+			deferredOverlayCommands.RecordDrawText(
+				monoFont,
+				new Vector2(480, 120),
+				"Overlay is a custom queried bucket | transforms captured at submission",
+				new Color(255, 210, 105),
+				24
+			);
+		}
+
+		private static CommandList CreateDeferredBox(Color color, string label)
+		{
+			CommandList commands = new CommandList();
+			commands.RecordFilledRoundedRectangle(
+				Vector2.Zero,
+				new Vector2(330, 150),
+				new CornerRadii(24),
+				color
+			);
+			commands.RecordRoundedRectangle(
+				Vector2.Zero,
+				new Vector2(330, 150),
+				new CornerRadii(24),
+				4,
+				new Color(235, 240, 250)
+			);
+			commands.RecordDrawText(monoFont, new Vector2(22, 58), label, Color.White, 23);
+
+			return commands;
+		}
+
+		private static CommandList CreateDeferredCircle(Color color)
+		{
+			CommandList commands = new CommandList();
+			commands.RecordFilledCircle(Vector2.Zero, 145, color);
+			commands.RecordCircle(Vector2.Zero, 145, 5, new Color(235, 240, 250, 210));
 
 			return commands;
 		}

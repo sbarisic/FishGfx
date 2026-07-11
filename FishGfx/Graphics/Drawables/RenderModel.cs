@@ -71,13 +71,23 @@ namespace FishGfx.Graphics.Drawables
 		{
 			foreach (var M in Meshes)
 			{
-				if (M.Texture != null)
-					M.Texture.BindTextureUnit();
+				bool textureBound = false;
 
-				M.Mesh.Draw();
+				try
+				{
+					if (M.Texture != null)
+					{
+						M.Texture.BindTextureUnit();
+						textureBound = true;
+					}
 
-				if (M.Texture != null)
-					M.Texture.UnbindTextureUnit();
+					M.Mesh.Draw();
+				}
+				finally
+				{
+					if (textureBound)
+						M.Texture.UnbindTextureUnit();
+				}
 			}
 		}
 

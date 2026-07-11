@@ -84,6 +84,10 @@ CPU tessellators are context-free and independently tested. Adaptive circle, ell
 
 Arrays are cloned during command construction, while textures, shaders, and fonts remain caller-owned references. Recording performs no OpenGL work. `Execute` must run on the active context thread and uses the camera, model transform, and shared uniforms active at replay time. Lists are reusable and retain all commands after success or failure; replay stops on the first exception, prevents concurrent mutation or recursive execution, and does not roll back state changed by earlier commands. Callers are responsible for synchronization, live resources, and balanced render-state commands.
 
+`CommandList.Snapshot` creates an immutable `GraphicsCommandBatch`. `DeferredRenderQueue` groups those batches into built-in opaque/transparent or custom render buckets. A submission captures its model matrix, representative world position, layer, sort key, owner tag, and stable sequence while retaining caller ownership of referenced resources. Typed mesh and render-model commands extend deferred submission to retained 3D geometry.
+
+Render passes can query buckets in insertion order or request stable opaque front-to-back, opaque state-first, and transparent back-to-front sorting using camera-space depth. Custom comparers support bounds-aware or application-specific policies. Executing a submission temporarily applies its captured model matrix and restores the previous matrix through `finally`; the camera and remaining shared uniforms stay controlled by the render pass. Queues retain submissions until `BeginFrame` or `Clear` and require external synchronization.
+
 ## Retained drawables and formats
 
 The core retains higher-level drawables for sprites, tile maps, terrain, parallax backgrounds, and multi-mesh models. `Camera` supports perspective and orthographic projection, orientation vectors, lazy matrix updates, and screen/world conversion.
@@ -140,7 +144,7 @@ The editor registers bundled sample functions for values, math, vectors, outputs
 
 ## Validation applications
 
-The smoke gallery contains one scene per immediate primitive plus a reusable mixed-command-list scene. Space and Backspace navigate interactively; automatic mode visits every scene sequentially with a fixed animation time.
+The smoke gallery contains one scene per immediate primitive plus reusable command-list and deferred-submission scenes. Space and Backspace navigate interactively; automatic mode visits every scene sequentially with a fixed animation time.
 
 Automatic mode captures the complete 1920×1080 frame before buffer swap, writes an atomic full-size PNG, and generates a 640×360 thumbnail. The files under `FishGfx/pictures` are used directly by the README gallery.
 
