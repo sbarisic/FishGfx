@@ -1,4 +1,3 @@
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -9,11 +8,14 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Silk.NET.OpenGL;
 using GLPixelFormat = Silk.NET.OpenGL.PixelFormat;
 using IPixFormat = System.Drawing.Imaging.PixelFormat;
 
-namespace FishGfx.Graphics {
-	public enum TextureInternalFmt : int {
+namespace FishGfx.Graphics
+{
+	public enum TextureInternalFmt : int
+	{
 		DepthComponent = 6402,
 		Red = 6403,
 		Rgb = 6407,
@@ -161,35 +163,39 @@ namespace FishGfx.Graphics {
 		CompressedRgb8PunchthroughAlpha1Etc2 = 37494,
 		CompressedSrgb8PunchthroughAlpha1Etc2 = 37495,
 		CompressedRgba8Etc2Eac = 37496,
-		CompressedSrgb8Alpha8Etc2Eac = 37497
+		CompressedSrgb8Alpha8Etc2Eac = 37497,
 	}
 
-	public enum TextureWrap : int {
+	public enum TextureWrap : int
+	{
 		Repeat = 10497,
 		MirroredRepeat = 33648,
 		ClampToEdge = 33071,
-		ClampToBorder = 33069
+		ClampToBorder = 33069,
 	}
 
-	public enum TextureFilter : int {
+	public enum TextureFilter : int
+	{
 		Nearest = 9728,
 		Linear = 9729,
 		NearestMipmapNearest = 9984,
 		LinearMipmapNearest = 9985,
 		NearestMipmapLinear = 9986,
-		LinearMipmapLinear = 9987
+		LinearMipmapLinear = 9987,
 	}
 
-	public enum PixelFmt {
+	public enum PixelFmt
+	{
 		Rgb = GLPixelFormat.Rgb,
 		Rgba = GLPixelFormat.Rgba,
 
 		Abgr = GLPixelFormat.AbgrExt,
 		Bgr = GLPixelFormat.Bgr,
-		Bgra = GLPixelFormat.Bgra
+		Bgra = GLPixelFormat.Bgra,
 	}
 
-	public unsafe class Texture : GraphicsObject {
+	public unsafe class Texture : GraphicsObject
+	{
 		internal const int RIGHT = 0;
 		internal const int LEFT = 1;
 		internal const int BOTTOM = 2;
@@ -197,35 +203,31 @@ namespace FishGfx.Graphics {
 		internal const int FRONT = 4;
 		internal const int BACK = 5;
 
-		public int Width {
-			get; private set;
-		}
-		public int Height {
-			get; private set;
-		}
-		public int MipLevels {
-			get; private set;
-		}
-		public bool Multisampled {
-			get; private set;
-		}
-		public bool IsCubeMap {
-			get; private set;
-		}
-		public int Multisamples {
-			get; private set;
-		}
-		public Vector2 Size {
-			get {
-				return new Vector2(Width, Height);
-			}
+		public int Width { get; private set; }
+		public int Height { get; private set; }
+		public int MipLevels { get; private set; }
+		public bool Multisampled { get; private set; }
+		public bool IsCubeMap { get; private set; }
+		public int Multisamples { get; private set; }
+		public Vector2 Size
+		{
+			get { return new Vector2(Width, Height); }
 		}
 
 		TextureTarget Target;
 		InternalFormat InternalFormat;
 		bool FixedSampleLocations;
 
-		public Texture(int W, int H, TextureKind Kind = TextureKind.Texture2D, int MipLevels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba8, int Samples = 0, bool FixedSampleLocations = false) {
+		public Texture(
+			int W,
+			int H,
+			TextureKind Kind = TextureKind.Texture2D,
+			int MipLevels = 1,
+			TextureInternalFmt IntFormat = TextureInternalFmt.Rgba8,
+			int Samples = 0,
+			bool FixedSampleLocations = false
+		)
+		{
 			Target = (TextureTarget)Kind;
 
 			if (Internal_OpenGL.Is45OrAbove)
@@ -242,7 +244,8 @@ namespace FishGfx.Graphics {
 			if (Kind == TextureKind.TextureCubeMap)
 				IsCubeMap = true;
 
-			if (!Multisampled) {
+			if (!Multisampled)
+			{
 				SetWrap();
 				SetFilter();
 				SetMaxAnisotropy();
@@ -251,68 +254,80 @@ namespace FishGfx.Graphics {
 			Storage2D(W, H, MipLevels, IntFormat, FixedSampleLocations);
 		}
 
-		private void TextureParam(TextureParameterName ParamName, object Val) {
-			if (Val is int) {
-
+		private void TextureParam(TextureParameterName ParamName, object Val)
+		{
+			if (Val is int)
+			{
 				if (Internal_OpenGL.Is45OrAbove)
 					Internal_OpenGL.GL.TextureParameter(ID, ParamName, (int)Val);
-				else {
+				else
+				{
 					Bind();
 					Internal_OpenGL.GL.TexParameter(Target, ParamName, (int)Val);
 					Unbind();
 				}
-
-			} else if (Val is float) {
-
+			}
+			else if (Val is float)
+			{
 				if (Internal_OpenGL.Is45OrAbove)
 					Internal_OpenGL.GL.TextureParameter(ID, ParamName, (float)Val);
-				else {
+				else
+				{
 					Bind();
 					Internal_OpenGL.GL.TexParameter(Target, ParamName, (int)Val);
 					Unbind();
 				}
-
-			} else
+			}
+			else
 				throw new NotImplementedException();
 		}
 
-		public void SetWrap(TextureWrap Wrap) {
+		public void SetWrap(TextureWrap Wrap)
+		{
 			SetWrap((int)Wrap);
 		}
 
-		public void SetWrap(TextureWrap UWrap, TextureWrap VWrap) {
+		public void SetWrap(TextureWrap UWrap, TextureWrap VWrap)
+		{
 			TextureParam(TextureParameterName.TextureWrapS, (int)UWrap);
 			TextureParam(TextureParameterName.TextureWrapT, (int)VWrap);
 		}
 
-		public void SetWrap(int Val = (int)TextureWrap.ClampToEdge) {
+		public void SetWrap(int Val = (int)TextureWrap.ClampToEdge)
+		{
 			TextureParam(TextureParameterName.TextureWrapS, Val);
 			TextureParam(TextureParameterName.TextureWrapT, Val);
 			TextureParam(TextureParameterName.TextureWrapR, Val);
 		}
 
-		public void SetFilter(int Min = (int)TextureFilter.Nearest, int Mag = (int)TextureFilter.Nearest) {
+		public void SetFilter(int Min = (int)TextureFilter.Nearest, int Mag = (int)TextureFilter.Nearest)
+		{
 			TextureParam(TextureParameterName.TextureMinFilter, Min);
 			TextureParam(TextureParameterName.TextureMagFilter, Mag);
 		}
 
-		public void SetFilter(TextureFilter Min, TextureFilter Mag) {
+		public void SetFilter(TextureFilter Min, TextureFilter Mag)
+		{
 			SetFilter((int)Min, (int)Mag);
 		}
 
-		public void SetFilter(TextureFilter Filter) {
+		public void SetFilter(TextureFilter Filter)
+		{
 			SetFilter(Filter, Filter);
 		}
 
-		public void SetMinFilter(TextureFilter Filter) {
+		public void SetMinFilter(TextureFilter Filter)
+		{
 			TextureParam(TextureParameterName.TextureMinFilter, (int)Filter);
 		}
 
-		public void SetMagFilter(TextureFilter Filter) {
+		public void SetMagFilter(TextureFilter Filter)
+		{
 			TextureParam(TextureParameterName.TextureMagFilter, (int)Filter);
 		}
 
-		public void SetMaxAnisotropy() {
+		public void SetMaxAnisotropy()
+		{
 			if (!Internal_OpenGL.Is45OrAbove)
 				return;
 
@@ -320,29 +335,56 @@ namespace FishGfx.Graphics {
 			SetAnisotropy(Max);
 		}
 
-		public void SetAnisotropy(float Max) {
+		public void SetAnisotropy(float Max)
+		{
 			TextureParam((TextureParameterName)0x84FE, Max);
 		}
 
-		public void Storage2D(int W, int H, int Levels = 1, TextureInternalFmt IntFormat = TextureInternalFmt.Rgba, bool FixedSampleLocations = false) {
+		public void Storage2D(
+			int W,
+			int H,
+			int Levels = 1,
+			TextureInternalFmt IntFormat = TextureInternalFmt.Rgba,
+			bool FixedSampleLocations = false
+		)
+		{
 			Width = W;
 			Height = H;
 			MipLevels = Levels;
 			InternalFormat = (InternalFormat)IntFormat;
 			this.FixedSampleLocations = FixedSampleLocations;
 
-			if (Multisampled) {
+			if (Multisampled)
+			{
 				if (Internal_OpenGL.Is45OrAbove)
-					Internal_OpenGL.GL.TextureStorage2DMultisample(ID, Multisamples, InternalFormat, W, H, FixedSampleLocations);
-				else {
+					Internal_OpenGL.GL.TextureStorage2DMultisample(
+						ID,
+						Multisamples,
+						InternalFormat,
+						W,
+						H,
+						FixedSampleLocations
+					);
+				else
+				{
 					Bind();
-					Internal_OpenGL.GL.TexStorage2DMultisample(Target, Multisamples, InternalFormat, W, H, FixedSampleLocations);
+					Internal_OpenGL.GL.TexStorage2DMultisample(
+						Target,
+						Multisamples,
+						InternalFormat,
+						W,
+						H,
+						FixedSampleLocations
+					);
 					Unbind();
 				}
-			} else {
+			}
+			else
+			{
 				if (Internal_OpenGL.Is45OrAbove)
 					Internal_OpenGL.GL.TextureStorage2D(ID, Levels, InternalFormat, W, H);
-				else {
+				else
+				{
 					Bind();
 					Internal_OpenGL.GL.TexStorage2D(Target, Levels, InternalFormat, W, H);
 					Unbind();
@@ -350,10 +392,21 @@ namespace FishGfx.Graphics {
 			}
 		}
 
-		public void SubImage(IntPtr Pixels, int X, int Y, int Z, int W, int H, int D,
-			GLPixelFormat PFormat = GLPixelFormat.Rgba, PixelType PType = PixelType.UnsignedByte, int Level = 0) {
-
-			if (Z == 0 && D == 0) {
+		public void SubImage(
+			IntPtr Pixels,
+			int X,
+			int Y,
+			int Z,
+			int W,
+			int H,
+			int D,
+			GLPixelFormat PFormat = GLPixelFormat.Rgba,
+			PixelType PType = PixelType.UnsignedByte,
+			int Level = 0
+		)
+		{
+			if (Z == 0 && D == 0)
+			{
 #if DEBUG
 				if (IsCubeMap)
 					throw new Exception("Invalid Z/D parameter for cubemap");
@@ -361,16 +414,19 @@ namespace FishGfx.Graphics {
 
 				if (Internal_OpenGL.Is45OrAbove)
 					Internal_OpenGL.GL.TextureSubImage2D(ID, Level, X, Y, W, H, PFormat, PType, Pixels);
-				else {
+				else
+				{
 					Bind();
 					Internal_OpenGL.GL.TexSubImage2D(Target, Level, X, Y, W, H, PFormat, PType, Pixels);
 					Unbind();
 				}
-
-			} else {
+			}
+			else
+			{
 				if (Internal_OpenGL.Is45OrAbove)
 					Internal_OpenGL.GL.TextureSubImage3D(ID, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
-				else {
+				else
+				{
 					Bind();
 					Internal_OpenGL.GL.TexSubImage3D(Target, Level, X, Y, Z, W, H, D, PFormat, PType, Pixels);
 					Unbind();
@@ -381,28 +437,47 @@ namespace FishGfx.Graphics {
 				GenerateMipmap();
 		}
 
-		public void SetPixels2D_RGB8(IntPtr Data, int Width, int Height) {
+		public void SetPixels2D_RGB8(IntPtr Data, int Width, int Height)
+		{
 			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Rgb);
 		}
 
-		public void SetPixels2D_BGR8(IntPtr Data, int Width, int Height) {
+		public void SetPixels2D_BGR8(IntPtr Data, int Width, int Height)
+		{
 			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Bgr);
 		}
 
-		public void SetPixels2D_R16(IntPtr Data, int Width, int Height) {
+		public void SetPixels2D_R16(IntPtr Data, int Width, int Height)
+		{
 			SubImage(Data, 0, 0, 0, Width, Height, 0, GLPixelFormat.Red, PixelType.UnsignedShort);
 		}
 
-		public Color[] GetPixels() {
+		public Color[] GetPixels()
+		{
 			Color[] Clrs = new Color[Width * Height];
 
 			// TODO: Older OpenGL way?
-			fixed (Color* ClrsPtr = Clrs) {
+			fixed (Color* ClrsPtr = Clrs)
+			{
 				if (Internal_OpenGL.Is45OrAbove)
-					Internal_OpenGL.GL.GetTextureImage(ID, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, Clrs.Length * sizeof(Color), (IntPtr)ClrsPtr);
-				else {
+					Internal_OpenGL.GL.GetTextureImage(
+						ID,
+						0,
+						GLPixelFormat.Rgba,
+						PixelType.UnsignedByte,
+						Clrs.Length * sizeof(Color),
+						(IntPtr)ClrsPtr
+					);
+				else
+				{
 					Bind();
-					Internal_OpenGL.GL.GetTexImage(TextureTarget.Texture2D, 0, GLPixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrsPtr);
+					Internal_OpenGL.GL.GetTexImage(
+						TextureTarget.Texture2D,
+						0,
+						GLPixelFormat.Rgba,
+						PixelType.UnsignedByte,
+						(IntPtr)ClrsPtr
+					);
 					Unbind();
 				}
 			}
@@ -410,16 +485,23 @@ namespace FishGfx.Graphics {
 			return Clrs;
 		}
 
-		public Color GetPixel(int X, int Y) {
+		public Color GetPixel(int X, int Y)
+		{
 			return GetPixels()[(Height - Y - 1) * Width + X];
 		}
 
-		public Bitmap GetPixelsAsBitmap() {
+		public Bitmap GetPixelsAsBitmap()
+		{
 			Bitmap Bmp = new Bitmap(Width, Height);
-			BitmapData Data = Bmp.LockBits(new Rectangle(0, 0, Bmp.Width, Bmp.Height), ImageLockMode.WriteOnly, IPixFormat.Format32bppArgb);
+			BitmapData Data = Bmp.LockBits(
+				new Rectangle(0, 0, Bmp.Width, Bmp.Height),
+				ImageLockMode.WriteOnly,
+				IPixFormat.Format32bppArgb
+			);
 
 			Color[] Pixels = GetPixels();
-			for (int i = 0; i < Pixels.Length; i++) {
+			for (int i = 0; i < Pixels.Length; i++)
+			{
 				int Offset = i * sizeof(Color);
 				*(Color*)(Data.Scan0 + Offset) = new Color(Pixels[i].B, Pixels[i].G, Pixels[i].R, Pixels[i].A);
 			}
@@ -429,12 +511,22 @@ namespace FishGfx.Graphics {
 			return Bmp;
 		}
 
-		public void SubRect2D(Image Img, int X, int Y) {
-			GetImageData(Img, 0, 0, Img.Width, Img.Height, (Ptr) => SubImage(Ptr, X, Y, 0, Img.Width, Img.Height, 0, GLPixelFormat.Bgra));
+		public void SubRect2D(Image Img, int X, int Y)
+		{
+			GetImageData(
+				Img,
+				0,
+				0,
+				Img.Width,
+				Img.Height,
+				(Ptr) => SubImage(Ptr, X, Y, 0, Img.Width, Img.Height, 0, GLPixelFormat.Bgra)
+			);
 		}
 
-		public void SubImage2D(Image Img, int X = 0, int Y = 0, int W = -1, int H = -1, int Level = 0) {
-			if (W == -1 || H == -1) {
+		public void SubImage2D(Image Img, int X = 0, int Y = 0, int W = -1, int H = -1, int Level = 0)
+		{
+			if (W == -1 || H == -1)
+			{
 				W = Img.Width;
 				H = Img.Height;
 			}
@@ -442,8 +534,19 @@ namespace FishGfx.Graphics {
 			GetImageData(Img, X, Y, W, H, (Ptr) => SubImage(Ptr, X, Y, 0, W, H, 0, GLPixelFormat.Bgra, Level: Level));
 		}
 
-		public void SubImage3D(Image Img, int X = 0, int Y = 0, int Z = 0, int W = -1, int H = -1, int D = 1, int Level = 0) {
-			if (W == -1 || H == -1) {
+		public void SubImage3D(
+			Image Img,
+			int X = 0,
+			int Y = 0,
+			int Z = 0,
+			int W = -1,
+			int H = -1,
+			int D = 1,
+			int Level = 0
+		)
+		{
+			if (W == -1 || H == -1)
+			{
 				W = Img.Width;
 				H = Img.Height;
 			}
@@ -452,86 +555,112 @@ namespace FishGfx.Graphics {
 		}
 
 		[DebuggerStepThrough]
-		void GetImageData(Image Img, int X, int Y, int W, int H, Action<IntPtr> A) {
-			using (Bitmap Bmp = new Bitmap(Img)) {
+		void GetImageData(Image Img, int X, int Y, int W, int H, Action<IntPtr> A)
+		{
+			using (Bitmap Bmp = new Bitmap(Img))
+			{
 				Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
 
-				BitmapData Data = Bmp.LockBits(new Rectangle(X, Y, W, H), ImageLockMode.ReadOnly, IPixFormat.Format32bppArgb);
+				BitmapData Data = Bmp.LockBits(
+					new Rectangle(X, Y, W, H),
+					ImageLockMode.ReadOnly,
+					IPixFormat.Format32bppArgb
+				);
 				A(Data.Scan0);
 				Bmp.UnlockBits(Data);
 			}
 		}
 
-		public void BindTextureUnit(uint Unit = 0) {
+		public void BindTextureUnit(uint Unit = 0)
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				Internal_OpenGL.GL.BindTextureUnit(Unit, ID);
-			else {
+			else
+			{
 				Internal_OpenGL.GL.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
 				Bind();
 			}
 		}
 
-		public void UnbindTextureUnit(uint Unit = 0) {
-			if (Internal_OpenGL.Is45OrAbove) {
-				if (OpenGL_BODGES.INTEL_BIND_ZERO_TEXTURE_BUG) {
+		public void UnbindTextureUnit(uint Unit = 0)
+		{
+			if (Internal_OpenGL.Is45OrAbove)
+			{
+				if (OpenGL_BODGES.INTEL_BIND_ZERO_TEXTURE_BUG)
+				{
 					// TODO: Do something?
-				} else {
-					try {
+				}
+				else
+				{
+					try
+					{
 						Internal_OpenGL.GL.BindTextureUnit(Unit, 0);
-				} catch (Exception) {
+					}
+					catch (Exception)
+					{
 						OpenGL_BODGES.INTEL_BIND_ZERO_TEXTURE_BUG = true;
 					}
 				}
-			} else {
+			}
+			else
+			{
 				Internal_OpenGL.GL.ActiveTexture(TextureUnit.Texture0 + (int)Unit);
 				Unbind();
 			}
 		}
 
-		public override void Bind() {
+		public override void Bind()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new InvalidOperationException("This function is not used in OpenGL 4.5");
 
 			Internal_OpenGL.GL.BindTexture(TextureTarget.Texture2D, ID);
 		}
 
-		public override void Unbind() {
+		public override void Unbind()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new InvalidOperationException("This function is not used in OpenGL 4.5");
 
 			Internal_OpenGL.GL.BindTexture(TextureTarget.Texture2D, 0);
 		}
 
-		public void GenerateMipmap() {
+		public void GenerateMipmap()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				Internal_OpenGL.GL.GenerateTextureMipmap(ID);
 			else
 				Internal_OpenGL.GL.GenerateMipmap(Target);
 		}
 
-		public void GenerateMipmap(int NewMipLevels) {
+		public void GenerateMipmap(int NewMipLevels)
+		{
 			Storage2D(Width, Height, NewMipLevels, (TextureInternalFmt)InternalFormat, FixedSampleLocations);
 			GenerateMipmap();
 		}
 
-		public override void GraphicsDispose() {
+		public override void GraphicsDispose()
+		{
 			Internal_OpenGL.GL.DeleteTextures(new uint[] { ID });
 		}
 
 		// Static
 
-		public static Texture Empty(int W, int H) {
+		public static Texture Empty(int W, int H)
+		{
 			return new Texture(W, H);
 		}
 
-		public static void UpdateFromImage(Texture T, Image Img) {
+		public static void UpdateFromImage(Texture T, Image Img)
+		{
 			T.SubImage2D(Img);
 
 			if (T.MipLevels != 1)
 				T.GenerateMipmap();
 		}
 
-		public static Texture FromImage(Image Img, int MipmapLevels = 0) {
+		public static Texture FromImage(Image Img, int MipmapLevels = 0)
+		{
 			bool GenerateMipmaps = MipmapLevels > 0;
 
 			Texture Tex = null;
@@ -551,9 +680,12 @@ namespace FishGfx.Graphics {
 			return Tex;
 		}
 
-		public static void UpdateFromFile(Texture T, string FileName, bool FlipY = false) {
-			if (FlipY) {
-				using (Bitmap Bmp = new Bitmap(FileName)) {
+		public static void UpdateFromFile(Texture T, string FileName, bool FlipY = false)
+		{
+			if (FlipY)
+			{
+				using (Bitmap Bmp = new Bitmap(FileName))
+				{
 					Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
 					UpdateFromImage(T, Bmp);
 					return;
@@ -563,9 +695,12 @@ namespace FishGfx.Graphics {
 			UpdateFromImage(T, Image.FromFile(FileName));
 		}
 
-		public static Texture FromFile(string FileName, bool FlipY = false, int MipmapLevels = 0) {
-			if (FlipY) {
-				using (Bitmap Bmp = new Bitmap(FileName)) {
+		public static Texture FromFile(string FileName, bool FlipY = false, int MipmapLevels = 0)
+		{
+			if (FlipY)
+			{
+				using (Bitmap Bmp = new Bitmap(FileName))
+				{
 					Bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
 					return FromImage(Bmp, MipmapLevels);
 				}
@@ -574,26 +709,33 @@ namespace FishGfx.Graphics {
 			return FromImage(Image.FromFile(FileName), MipmapLevels);
 		}
 
-		public static Texture[] FromFileAtlas(string FileName, int TileWidth, int TileHeight, int MipmapLevels = 0) {
+		public static Texture[] FromFileAtlas(string FileName, int TileWidth, int TileHeight, int MipmapLevels = 0)
+		{
 			List<Texture> AnimFrames = new List<Texture>();
 
-			using (Bitmap Bmp = new Bitmap(FileName)) {
+			using (Bitmap Bmp = new Bitmap(FileName))
+			{
 				int FramesX = Bmp.Width / TileWidth;
 				int FramesY = Bmp.Height / TileHeight;
 
 				for (int Y = 0; Y < FramesY; Y++)
-					for (int X = 0; X < FramesX; X++) {
-						Bitmap FrameBmp = Bmp.Clone(new Rectangle(X * TileWidth, Y * TileHeight, TileWidth, TileHeight), Bmp.PixelFormat);
+					for (int X = 0; X < FramesX; X++)
+					{
+						Bitmap FrameBmp = Bmp.Clone(
+							new Rectangle(X * TileWidth, Y * TileHeight, TileWidth, TileHeight),
+							Bmp.PixelFormat
+						);
 						AnimFrames.Add(FromImage(FrameBmp, MipmapLevels: MipmapLevels));
 					}
-
 			}
 
 			return AnimFrames.ToArray();
 		}
 
-		public static void CreateOrUpdateFromFile(ref Texture T, string FileName, bool FlipY = false) {
-			if (T == null) {
+		public static void CreateOrUpdateFromFile(ref Texture T, string FileName, bool FlipY = false)
+		{
+			if (T == null)
+			{
 				T = FromFile(FileName, FlipY);
 				return;
 			}
@@ -601,25 +743,36 @@ namespace FishGfx.Graphics {
 			UpdateFromFile(T, FileName, FlipY);
 		}
 
-		public static Texture FromPixels(int Width, int Height, IntPtr Data, PixelFmt Fmt = PixelFmt.Bgra) {
+		public static Texture FromPixels(int Width, int Height, IntPtr Data, PixelFmt Fmt = PixelFmt.Bgra)
+		{
 			Texture Tex = new Texture(Width, Height);
 			Tex.SubImage(Data, 0, 0, 0, Width, Height, 0, (GLPixelFormat)Fmt);
 			return Tex;
 		}
 
-		public static Texture FromPixels(int Width, int Height, byte[] Data, PixelFmt Fmt = PixelFmt.Bgra) {
+		public static Texture FromPixels(int Width, int Height, byte[] Data, PixelFmt Fmt = PixelFmt.Bgra)
+		{
 			fixed (byte* DataPtr = Data)
 				return FromPixels(Width, Height, (IntPtr)DataPtr, Fmt);
 		}
 
-		static bool EqualSize(Image A, Image B) {
+		static bool EqualSize(Image A, Image B)
+		{
 			if (A.Width == B.Width && A.Height == B.Height)
 				return true;
 
 			return false;
 		}
 
-		public static Texture FromFileCubemap(string Left, string Front, string Right, string Back, string Bottom, string Top) {
+		public static Texture FromFileCubemap(
+			string Left,
+			string Front,
+			string Right,
+			string Back,
+			string Bottom,
+			string Top
+		)
+		{
 			Image Lt = Image.FromFile(Left);
 			Image Ft = Image.FromFile(Front);
 			Image Rt = Image.FromFile(Right);
@@ -627,7 +780,9 @@ namespace FishGfx.Graphics {
 			Image Bt = Image.FromFile(Bottom);
 			Image Tp = Image.FromFile(Top);
 
-			if (!(EqualSize(Lt, Ft) && EqualSize(Lt, Rt) && EqualSize(Lt, Bk) && EqualSize(Lt, Bt) && EqualSize(Lt, Tp)))
+			if (
+				!(EqualSize(Lt, Ft) && EqualSize(Lt, Rt) && EqualSize(Lt, Bk) && EqualSize(Lt, Bt) && EqualSize(Lt, Tp))
+			)
 				throw new Exception("All cubemap image sizes need to be of equal size");
 
 			int W = Lt.Width;
@@ -645,8 +800,16 @@ namespace FishGfx.Graphics {
 			return CubeTex;
 		}
 
-		public static Texture FromFileCubemap(string BaseName, string Extension = ".png") {
-			return FromFileCubemap(BaseName + "_lt" + Extension, BaseName + "_ft" + Extension, BaseName + "_rt" + Extension, BaseName + "_bk" + Extension, BaseName + "_bt" + Extension, BaseName + "_tp" + Extension);
+		public static Texture FromFileCubemap(string BaseName, string Extension = ".png")
+		{
+			return FromFileCubemap(
+				BaseName + "_lt" + Extension,
+				BaseName + "_ft" + Extension,
+				BaseName + "_rt" + Extension,
+				BaseName + "_bk" + Extension,
+				BaseName + "_bt" + Extension,
+				BaseName + "_tp" + Extension
+			);
 		}
 	}
 }

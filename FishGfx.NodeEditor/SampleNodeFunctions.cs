@@ -1,6 +1,6 @@
-using FishGfx.NodeGraph;
 using System;
 using System.Numerics;
+using FishGfx.NodeGraph;
 
 namespace FishGfx.NodeEditor
 {
@@ -27,7 +27,8 @@ namespace FishGfx.NodeEditor
 		public static (float x, float y) Split(Vector2 vector) => (vector.X, vector.Y);
 
 		[NodeFunction("Display", Category = "Output")]
-		public static void Display(float value, [NodeBody] string label = "Result") => LastOutput = $"{label}: {value:0.###}";
+		public static void Display(float value, [NodeBody] string label = "Result") =>
+			LastOutput = $"{label}: {value:0.###}";
 
 		[NodeFunction("Console", Category = "Output")]
 		public static float Console(float value, [NodeBody] string label = "Result")
@@ -37,6 +38,7 @@ namespace FishGfx.NodeEditor
 		}
 
 		[NodeFunction("Fail", Category = "Debug")]
-		public static float Fail([NodeBody] string message = "Example error") => throw new InvalidOperationException(message);
+		public static float Fail([NodeBody] string message = "Example error") =>
+			throw new InvalidOperationException(message);
 	}
 }

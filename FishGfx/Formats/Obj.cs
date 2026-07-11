@@ -1,4 +1,3 @@
-﻿using FishGfx;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -7,28 +6,46 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx;
 
-namespace FishGfx.Formats {
-	public static class Obj {
-		public static void Save(string FileName, IEnumerable<GenericMesh> Meshes) {
-			using (StreamWriter SW = new StreamWriter(FileName)) {
+namespace FishGfx.Formats
+{
+	public static class Obj
+	{
+		public static void Save(string FileName, IEnumerable<GenericMesh> Meshes)
+		{
+			using (StreamWriter SW = new StreamWriter(FileName))
+			{
 				int GlobalVertOffset = 0;
 
 				SW.WriteLine("mtllib " + Path.GetFileNameWithoutExtension(FileName) + ".mtl");
 
-				foreach (var Mesh in Meshes) {
+				foreach (var Mesh in Meshes)
+				{
 					foreach (var Vert in Mesh.Vertices)
-						SW.WriteLine(string.Format(CultureInfo.InvariantCulture, "v {0} {1} {2}", Vert.Position.X, Vert.Position.Y, Vert.Position.Z));
+						SW.WriteLine(
+							string.Format(
+								CultureInfo.InvariantCulture,
+								"v {0} {1} {2}",
+								Vert.Position.X,
+								Vert.Position.Y,
+								Vert.Position.Z
+							)
+						);
 
 					foreach (var Vert in Mesh.Vertices)
 						SW.WriteLine(string.Format(CultureInfo.InvariantCulture, "vt {0} {1}", Vert.UV.X, Vert.UV.Y));
-
 
 					SW.WriteLine();
 					SW.WriteLine("usemtl " + Mesh.MaterialName);
 
 					for (int i = 0; i < Mesh.Vertices.Count; i += 3)
-						SW.WriteLine("f {0}/{0} {1}/{1} {2}/{2}", GlobalVertOffset + i + 1, GlobalVertOffset + i + 2, GlobalVertOffset + i + 3);
+						SW.WriteLine(
+							"f {0}/{0} {1}/{1} {2}/{2}",
+							GlobalVertOffset + i + 1,
+							GlobalVertOffset + i + 2,
+							GlobalVertOffset + i + 3
+						);
 
 					GlobalVertOffset += Mesh.Vertices.Count;
 				}
@@ -36,8 +53,10 @@ namespace FishGfx.Formats {
 
 			FileName = Path.ChangeExtension(FileName, ".mtl");
 
-			using (StreamWriter SW = new StreamWriter(FileName)) {
-				foreach (var Mesh in Meshes) {
+			using (StreamWriter SW = new StreamWriter(FileName))
+			{
+				foreach (var Mesh in Meshes)
+				{
 					SW.WriteLine("newmtl " + Mesh.MaterialName);
 					SW.WriteLine("map_Kd " + Mesh.MaterialName + ".png");
 					SW.WriteLine();
@@ -45,7 +64,8 @@ namespace FishGfx.Formats {
 			}
 		}
 
-		public static GenericMesh[] Load(string FileName, bool SwapWindingOrder = true) {
+		public static GenericMesh[] Load(string FileName, bool SwapWindingOrder = true)
+		{
 			List<GenericMesh> Meshes = new List<GenericMesh>();
 			GenericMesh CurMesh = null;
 
@@ -55,7 +75,8 @@ namespace FishGfx.Formats {
 			List<Vector3> Verts = new List<Vector3>();
 			List<Vector2> UVs = new List<Vector2>();
 
-			for (int j = 0; j < Lines.Length; j++) {
+			for (int j = 0; j < Lines.Length; j++)
+			{
 				string Line = Lines[j].Trim().Replace('\t', ' ');
 
 				while (Line.Contains("  "))
@@ -65,7 +86,8 @@ namespace FishGfx.Formats {
 					continue;
 
 				string[] Tokens = Line.Split(' ');
-				switch (Tokens[0].ToLower()) {
+				switch (Tokens[0].ToLower())
+				{
 					case "o":
 						break;
 
@@ -81,27 +103,45 @@ namespace FishGfx.Formats {
 						break;
 
 					case "f": // Face
-						if (CurMesh == null) {
+						if (CurMesh == null)
+						{
 							CurMesh = new GenericMesh("default");
 							Meshes.Add(CurMesh);
 						}
 
-						for (int i = 2; i < Tokens.Length - 1; i++) {
+						for (int i = 2; i < Tokens.Length - 1; i++)
+						{
 							string[] V = Tokens[1].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero));
+							CurMesh.Vertices.Add(
+								new Vertex3(
+									Verts[V[0].ParseInt(1) - 1],
+									V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero
+								)
+							);
 
 							V = Tokens[i].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero));
+							CurMesh.Vertices.Add(
+								new Vertex3(
+									Verts[V[0].ParseInt(1) - 1],
+									V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero
+								)
+							);
 
 							V = Tokens[i + 1].Split('/');
-							CurMesh.Vertices.Add(new Vertex3(Verts[V[0].ParseInt(1) - 1], V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero));
+							CurMesh.Vertices.Add(
+								new Vertex3(
+									Verts[V[0].ParseInt(1) - 1],
+									V.Length > 1 ? UVs[V[1].ParseInt(1) - 1] : Vector2.Zero
+								)
+							);
 						}
 
 						break;
 
 					case "usemtl":
 						CurMesh = Meshes.Where(M => M.MaterialName == Tokens[1]).FirstOrDefault();
-						if (CurMesh == null) {
+						if (CurMesh == null)
+						{
 							CurMesh = new GenericMesh(Tokens[1]);
 							Meshes.Add(CurMesh);
 						}

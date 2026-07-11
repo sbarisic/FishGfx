@@ -1,13 +1,16 @@
-using FishGfx;
-using FishGfx.Game;
-using FishGfx.Graphics;
 using System;
 using System.Globalization;
 using System.IO;
 using System.Numerics;
+using FishGfx;
+using FishGfx.Formats;
+using FishGfx.Game;
+using FishGfx.Graphics;
 
-namespace FishGfx.SmokeTest {
-	internal sealed class GalleryConsole : IDisposable {
+namespace FishGfx.SmokeTest
+{
+	internal sealed class GalleryConsole : IDisposable
+	{
 		private const int FontSize = 16;
 		private const int Columns = 120;
 		private const int VisibleRows = 24;
@@ -16,30 +19,25 @@ namespace FishGfx.SmokeTest {
 		private readonly RenderWindow window;
 		private readonly GalleryScene[] scenes;
 		private readonly PrimitiveGallery gallery;
-		private readonly Texture fontTexture;
-		private readonly ShaderStage vertexShader;
-		private readonly ShaderStage fragmentShader;
-		private readonly ShaderProgram shader;
+		private readonly TTFFont font;
 		private readonly DevConsole console;
 		private readonly OnCharFunc charHandler;
 		private bool disposed;
 
 		internal bool IsOpen => console.Enabled;
 
-		internal GalleryConsole(RenderWindow window, GalleryScene[] scenes, PrimitiveGallery gallery) {
+		internal GalleryConsole(RenderWindow window, GalleryScene[] scenes, PrimitiveGallery gallery)
+		{
 			this.window = window;
 			this.scenes = scenes;
 			this.gallery = gallery;
 
-			fontTexture = Texture.FromFile("data/fonts/tileset/cheepicus16.png");
-			fontTexture.SetFilter(TextureFilter.Nearest);
-			vertexShader = new ShaderStage(ShaderType.VertexShader, Path.Combine(Gfx.ShadersDirectory, "default2d.vert"));
-			fragmentShader = new ShaderStage(ShaderType.FragmentShader, Path.Combine(Gfx.ShadersDirectory, "default_tex_clr.frag"));
-			shader = new ShaderProgram(vertexShader, fragmentShader);
-			console = new DevConsole(fontTexture, FontSize, Columns, VisibleRows, BufferRows, shader) {
+			font = new TTFFont(PrimitiveGallery.AssetPath("fonts", "Consolas-Regular.ttf"));
+			console = new DevConsole(font, FontSize, Columns, VisibleRows, BufferRows)
+			{
 				Position = Vector2.Zero,
 				BackgroundColor = new Color(Color.Coal.R, Color.Coal.G, Color.Coal.B, 204),
-				Enabled = false
+				Enabled = false,
 			};
 
 			console.OnInput += Execute;
@@ -52,7 +50,8 @@ namespace FishGfx.SmokeTest {
 			console.BeginInput();
 		}
 
-		internal void Draw() {
+		internal void Draw()
+		{
 			if (!console.Enabled)
 				return;
 
@@ -61,16 +60,20 @@ namespace FishGfx.SmokeTest {
 			overlayState.EnableDepthMask = false;
 			overlayState.EnableCullFace = false;
 			Gfx.PushRenderState(overlayState);
-			try {
+			try
+			{
 				console.Draw();
-			} finally {
+			}
+			finally
+			{
 				Gfx.PopRenderState();
 			}
 		}
 
 		internal void Close() => console.Enabled = false;
 
-		private void Execute(string input) {
+		private void Execute(string input)
+		{
 			string commandLine = input.Trim();
 			if (commandLine.Length == 0)
 				return;
@@ -79,7 +82,8 @@ namespace FishGfx.SmokeTest {
 			string command = (separator < 0 ? commandLine : commandLine.Substring(0, separator)).ToLowerInvariant();
 			string argument = separator < 0 ? "" : commandLine.Substring(separator + 1).Trim();
 
-			switch (command) {
+			switch (command)
+			{
 				case "help":
 					PrintHelp();
 					break;
@@ -112,7 +116,8 @@ namespace FishGfx.SmokeTest {
 			}
 		}
 
-		private void PrintHelp() {
+		private void PrintHelp()
+		{
 			console.PrintLine("help                 show commands");
 			console.PrintLine("scenes               list scenes");
 			console.PrintLine("scene <index|name>   select scene");
@@ -121,19 +126,24 @@ namespace FishGfx.SmokeTest {
 			console.PrintLine("quit                 close gallery");
 		}
 
-		private void PrintScenes() {
+		private void PrintScenes()
+		{
 			for (int i = 0; i < scenes.Length; i++)
 				console.PrintLine("{0,2}. {1}", i + 1, scenes[i].Title);
 		}
 
-		private void SelectScene(string argument) {
-			if (argument.Length == 0) {
+		private void SelectScene(string argument)
+		{
+			if (argument.Length == 0)
+			{
 				console.PrintLine("Usage: scene <index|name>");
 				return;
 			}
 
-			if (int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number)) {
-				if (number < 1 || number > scenes.Length) {
+			if (int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
+			{
+				if (number < 1 || number > scenes.Length)
+				{
 					console.PrintLine("Scene index must be between 1 and {0}.", scenes.Length);
 					return;
 				}
@@ -144,7 +154,8 @@ namespace FishGfx.SmokeTest {
 
 			string requested = NormalizeSceneName(argument);
 			for (int i = 0; i < scenes.Length; i++)
-				if (NormalizeSceneName(scenes[i].Title) == requested) {
+				if (NormalizeSceneName(scenes[i].Title) == requested)
+				{
 					gallery.SelectScene(i);
 					PrintSelection();
 					return;
@@ -153,28 +164,28 @@ namespace FishGfx.SmokeTest {
 			console.PrintLine("Unknown scene '{0}'. Type 'scenes'.", argument);
 		}
 
-		private void PrintSelection() {
+		private void PrintSelection()
+		{
 			console.PrintLine("Selected {0}: {1}", gallery.SceneIndex + 1, scenes[gallery.SceneIndex].Title);
 		}
 
-		private static string NormalizeSceneName(string name) {
+		private static string NormalizeSceneName(string name)
+		{
 			string normalized = name.Trim();
 			if (normalized.StartsWith("Gfx.", StringComparison.OrdinalIgnoreCase))
 				normalized = normalized.Substring(4);
 			return normalized.ToLowerInvariant();
 		}
 
-		public void Dispose() {
+		public void Dispose()
+		{
 			if (disposed)
 				return;
 			disposed = true;
 			window.OnChar -= charHandler;
 			window.OnKey -= console.SendKey;
 			console.OnInput -= Execute;
-			fontTexture.Dispose();
-			shader.Dispose();
-			vertexShader.Dispose();
-			fragmentShader.Dispose();
+			font.Dispose();
 		}
 	}
 }

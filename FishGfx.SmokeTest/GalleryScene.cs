@@ -1,12 +1,15 @@
-using FishGfx.Graphics;
 using System;
+using FishGfx.Graphics;
 
-namespace FishGfx.SmokeTest {
-	internal sealed class GalleryScene {
+namespace FishGfx.SmokeTest
+{
+	internal sealed class GalleryScene
+	{
 		public string Title { get; }
 		public Action<float, Texture> Draw { get; }
 
-		public GalleryScene(string title, Action<float, Texture> draw) {
+		public GalleryScene(string title, Action<float, Texture> draw)
+		{
 			Title = title;
 			Draw = draw;
 		}

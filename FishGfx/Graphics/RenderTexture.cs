@@ -1,5 +1,3 @@
-using FishGfx;
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -7,9 +5,13 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
-	public class RenderTexture {
+namespace FishGfx.Graphics
+{
+	public class RenderTexture
+	{
 		static Stack<RenderTexture> RTStack = new Stack<RenderTexture>();
 
 		TextureInternalFmt ColorFmt = TextureInternalFmt.Rgba8;
@@ -20,6 +22,7 @@ namespace FishGfx.Graphics {
 		public int Multisamples { get; private set; }
 		public Framebuffer Framebuffer { get; private set; }
 		public Texture Color { get; private set; }
+
 		//public Texture Depth { get; private set; }
 
 		//Renderbuffer DepthStencil;
@@ -33,7 +36,15 @@ namespace FishGfx.Graphics {
 
 		List<int> DrawBuffers = new List<int>();
 
-		public RenderTexture(int W, int H, int MSAASamples = 0, bool IsGBuffer = false, bool CreateColor = true, bool CreateDepthStencil = true) {
+		public RenderTexture(
+			int W,
+			int H,
+			int MSAASamples = 0,
+			bool IsGBuffer = false,
+			bool CreateColor = true,
+			bool CreateDepthStencil = true
+		)
+		{
 			Width = W;
 			Height = H;
 
@@ -44,7 +55,8 @@ namespace FishGfx.Graphics {
 			if (MSAASamples != 0)
 				TextureTgt = TextureKind.Texture2DMultisample;
 
-			if (IsGBuffer) {
+			if (IsGBuffer)
+			{
 				Color = new Texture(W, H, TextureTgt, 1, ColorFmt);
 				Framebuffer.AttachColor(Color, 0);
 				DrawBuffers.Add(0);
@@ -59,17 +71,29 @@ namespace FishGfx.Graphics {
 
 				DepthStencil = new Texture(W, H, TextureTgt, 1, TextureInternalFmt.Depth24Stencil8);
 				Framebuffer.AttachDepth(DepthStencil, true);
-			} else {
-				if (CreateColor) {
+			}
+			else
+			{
+				if (CreateColor)
+				{
 					Color = new Texture(W, H, TextureTgt, 1, ColorFmt, MSAASamples, Multisamples != 0 ? true : false);
 					Framebuffer.AttachColor(Color, 0);
 					DrawBuffers.Add(0);
 				}
 
-				if (CreateDepthStencil) {
+				if (CreateDepthStencil)
+				{
 					//DepthStencil = new Renderbuffer();
 					//DepthStencil.Storage(InternalFormat.Depth24Stencil8, W, H, MSAASamples);
-					DepthStencil = new Texture(W, H, TextureTgt, 1, TextureInternalFmt.Depth24Stencil8, MSAASamples, Multisamples != 0 ? true : false);
+					DepthStencil = new Texture(
+						W,
+						H,
+						TextureTgt,
+						1,
+						TextureInternalFmt.Depth24Stencil8,
+						MSAASamples,
+						Multisamples != 0 ? true : false
+					);
 					Framebuffer.AttachDepth(DepthStencil, true);
 				}
 			}
@@ -77,32 +101,45 @@ namespace FishGfx.Graphics {
 			Framebuffer.DrawBuffers(DrawBuffers.ToArray());
 		}
 
-		public Texture CreateNewColorAttachment(int Idx, TextureInternalFmt? Fmt = null) {
+		public Texture CreateNewColorAttachment(int Idx, TextureInternalFmt? Fmt = null)
+		{
 			if (DrawBuffers.Contains(Idx))
 				throw new Exception(string.Format("Color attachment {0} already exists", Idx));
 
-			Texture Tex = new Texture(Width, Height, TextureTgt, 1, Fmt ?? ColorFmt, Multisamples, Multisamples != 0 ? true : false);
+			Texture Tex = new Texture(
+				Width,
+				Height,
+				TextureTgt,
+				1,
+				Fmt ?? ColorFmt,
+				Multisamples,
+				Multisamples != 0 ? true : false
+			);
 			Framebuffer.AttachColor(Tex, Idx);
 			DrawBuffers.Add(Idx);
 			Framebuffer.DrawBuffers(DrawBuffers.ToArray());
 			return Tex;
 		}
 
-		protected void Bind() {
+		protected void Bind()
+		{
 			Framebuffer.DrawBuffers(DrawBuffers.ToArray());
 			Framebuffer.Bind();
 		}
 
-		protected void Unbind() {
+		protected void Unbind()
+		{
 			Framebuffer.Unbind();
 		}
 
-		public void Push() {
+		public void Push()
+		{
 			Bind();
 			RTStack.Push(this);
 		}
 
-		public void Pop() {
+		public void Pop()
+		{
 			RTStack.Pop();
 			Unbind();
 

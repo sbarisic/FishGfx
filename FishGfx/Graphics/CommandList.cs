@@ -1,11 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace FishGfx.Graphics {
-	public class CommandList {
+namespace FishGfx.Graphics
+{
+	public class CommandList
+	{
 		List<Action> Commands = new List<Action>();
 
 		/*internal void Enqueue(Action Cmd) {

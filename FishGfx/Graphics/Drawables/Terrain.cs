@@ -1,14 +1,16 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Drawing;
-using System.Numerics;
 using Clr = System.Drawing.Color;
 
-namespace FishGfx.Graphics.Drawables {
-	public class Terrain : IDrawable {
+namespace FishGfx.Graphics.Drawables
+{
+	public class Terrain : IDrawable
+	{
 		Mesh3D TerrainMesh;
 		float[] HeightData;
 
@@ -18,20 +20,29 @@ namespace FishGfx.Graphics.Drawables {
 
 		public BoundingBox BoundingBox { get; private set; } = BoundingBox.Empty;
 
-		public Terrain() {
+		public Terrain()
+		{
 			TerrainMesh = new Mesh3D();
 			TerrainMesh.PrimitiveType = PrimitiveType.Triangles;
 		}
 
-		public void LoadFromGenerator(Func<float, float, float> Gen, float Scale, int Width, int Height, bool GeneratePickerColors = true) {
+		public void LoadFromGenerator(
+			Func<float, float, float> Gen,
+			float Scale,
+			int Width,
+			int Height,
+			bool GeneratePickerColors = true
+		)
+		{
 			this.Width = Width;
 			this.Height = Height;
 
 			if (HeightData == null || (HeightData.Length != Width * Height))
 				HeightData = new float[Width * Height];
-			
+
 			for (int y = 0; y < Height; y++)
-				for (int x = 0; x < Width; x++) {
+				for (int x = 0; x < Width; x++)
+				{
 					float xx = (float)x / Width;
 					float yy = (float)y / Height;
 
@@ -43,8 +54,15 @@ namespace FishGfx.Graphics.Drawables {
 
 		/// <param name="Img">Heightmap</param>
 		/// <param name="ScaleValue">Image heightmap range, 255 default</param>
-		public void LoadFromImage(Image Img, float ScaleValue = 255, bool CreateOverlayTexture = true, bool GeneratePickerColors = true) {
-			if (CreateOverlayTexture) {
+		public void LoadFromImage(
+			Image Img,
+			float ScaleValue = 255,
+			bool CreateOverlayTexture = true,
+			bool GeneratePickerColors = true
+		)
+		{
+			if (CreateOverlayTexture)
+			{
 				OverlayTexture = Texture.FromImage(Img);
 				OverlayTexture.SetFilter(TextureFilter.Linear);
 			}
@@ -55,9 +73,11 @@ namespace FishGfx.Graphics.Drawables {
 				HeightData = new float[Width * Height];
 
 			// TODO: Direct pixel access, faster
-			using (Bitmap Bmp = new Bitmap(Img)) {
+			using (Bitmap Bmp = new Bitmap(Img))
+			{
 				for (int y = 0; y < Bmp.Height; y++)
-					for (int x = 0; x < Bmp.Width; x++) {
+					for (int x = 0; x < Bmp.Width; x++)
+					{
 						Clr Pixel = Bmp.GetPixel(x, y);
 
 						// Black 'nd white
@@ -69,10 +89,13 @@ namespace FishGfx.Graphics.Drawables {
 			RecalcAfterLoad(GeneratePickerColors);
 		}
 
-		void RecalcAfterLoad(bool GeneratePickerColors) {
+		void RecalcAfterLoad(bool GeneratePickerColors)
+		{
 			List<Vertex3> Verts = new List<Vertex3>();
-			for (int y = 0; y < Height; y++) {
-				for (int x = 0; x < Width; x++) {
+			for (int y = 0; y < Height; y++)
+			{
+				for (int x = 0; x < Width; x++)
+				{
 					float u = x / (float)Width;
 					float ustep = 1 / (float)Width;
 
@@ -96,7 +119,8 @@ namespace FishGfx.Graphics.Drawables {
 					Vertex3 BottomRight = new Vector3(x + 1, HBottomRight, y);
 					BottomRight.UV = new Vector2(u + ustep, v + vstep);
 
-					if (GeneratePickerColors) {
+					if (GeneratePickerColors)
+					{
 						//int ColorInt = (y * Width + x);
 						//Color Clr = new Color((byte)((ColorInt >> 16) & 0xFF), (byte)((ColorInt >> 8) & 0xFF), (byte)((ColorInt >> 0) & 0xFF));
 						Color Clr = new Color(y * Width + x);
@@ -124,7 +148,8 @@ namespace FishGfx.Graphics.Drawables {
 			TerrainMesh.SetVertices(Verts.ToArray());
 		}
 
-		public float GetHeight(int X, int Y) {
+		public float GetHeight(int X, int Y)
+		{
 			if (X < 0)
 				X = 0;
 
@@ -140,7 +165,8 @@ namespace FishGfx.Graphics.Drawables {
 			return HeightData[Y * Width + X];
 		}
 
-		public void Draw() {
+		public void Draw()
+		{
 			OverlayTexture?.BindTextureUnit();
 			TerrainMesh.Draw();
 			OverlayTexture?.UnbindTextureUnit();

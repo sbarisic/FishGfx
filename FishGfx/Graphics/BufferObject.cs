@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Silk.NET.OpenGL;
-using System.Numerics;
-using System.Runtime.InteropServices;
 using BufferTarget = Silk.NET.OpenGL.BufferTargetARB;
 
-namespace FishGfx.Graphics {
-	public enum BufferUsage {
+namespace FishGfx.Graphics
+{
+	public enum BufferUsage
+	{
 		StreamDraw = 35040,
 		StreamRead = 35041,
 		StreamCopy = 35042,
@@ -18,48 +20,57 @@ namespace FishGfx.Graphics {
 		StaticCopy = 35046,
 		DynamicDraw = 35048,
 		DynamicRead = 35049,
-		DynamicCopy = 35050
+		DynamicCopy = 35050,
 	}
 
-	public unsafe class BufferObject : GraphicsObject {
+	public unsafe class BufferObject : GraphicsObject
+	{
 		public int Size { get; private set; }
 		public int ElementCount { get; private set; }
 
 		BufferTarget Target;
 
-		public BufferObject() {
+		public BufferObject()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				ID = Internal_OpenGL.GL.CreateBuffer();
-			else {
+			else
+			{
 				ID = Internal_OpenGL.GL.GenBuffer();
 				Target = BufferTarget.ArrayBuffer;
 			}
 		}
 
-		public override void Bind() {
+		public override void Bind()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
 
 			Internal_OpenGL.GL.BindBuffer(Target, ID);
 		}
 
-		public override void Unbind() {
+		public override void Unbind()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				throw new Exception("Bind can only be used in non OpenGL 4.5 context");
 
 			Internal_OpenGL.GL.BindBuffer(Target, 0);
 		}
 
-		public void SetData(uint Size, IntPtr Data, int ElementCount, BufferUsage Usage = BufferUsage.DynamicDraw) {
+		public void SetData(uint Size, IntPtr Data, int ElementCount, BufferUsage Usage = BufferUsage.DynamicDraw)
+		{
 			this.Size = (int)Size;
 
 			this.ElementCount = ElementCount;
 
-			if (Internal_OpenGL.Is45OrAbove) {
+			if (Internal_OpenGL.Is45OrAbove)
+			{
 				Internal_OpenGL.GL.InvalidateBufferData(ID);
 				//Internal_OpenGL.GL.NamedBufferData(ID, Size, IntPtr.Zero, (BufferUsageARB)Usage);
 				Internal_OpenGL.GL.NamedBufferData(ID, Size, (void*)Data, (BufferUsageARB)Usage);
-			} else {
+			}
+			else
+			{
 				Bind();
 				Internal_OpenGL.GL.BufferData(Target, Size, null, (BufferUsageARB)Usage);
 				Internal_OpenGL.GL.BufferData(Target, Size, (void*)Data, (BufferUsageARB)Usage);
@@ -67,16 +78,24 @@ namespace FishGfx.Graphics {
 			}
 		}
 
-		public void SetData<T>(T[] Data, BufferUsage Usage = BufferUsage.DynamicDraw) where T : struct {
+		public void SetData<T>(T[] Data, BufferUsage Usage = BufferUsage.DynamicDraw)
+			where T : struct
+		{
 			if (Data == null)
 				return;
 
 			GCHandle PinHandle = GCHandle.Alloc(Data, GCHandleType.Pinned);
-			SetData((uint)(Marshal.SizeOf(typeof(T)) * Data.Length), PinHandle.AddrOfPinnedObject(), Data.Length, Usage);
+			SetData(
+				(uint)(Marshal.SizeOf(typeof(T)) * Data.Length),
+				PinHandle.AddrOfPinnedObject(),
+				Data.Length,
+				Usage
+			);
 			PinHandle.Free();
 		}
 
-		public override void GraphicsDispose() {
+		public override void GraphicsDispose()
+		{
 			// TODO
 			/*if (Internal_OpenGL.Is45OrAbove)
 				Internal_OpenGL.GL.UnmapNamedBuffer(ID);

@@ -1,17 +1,20 @@
-using FishGfx;
-using FishGfx.Formats;
-using FishGfx.Graphics;
 using System.Numerics;
+using FishGfx;
+using FishGfx.Graphics;
 
-namespace FishGfx.SmokeTest {
-	internal static class SceneMenu {
-		internal static void Draw(BMFont font, GalleryScene[] scenes, int selectedIndex) {
+namespace FishGfx.SmokeTest
+{
+	internal static class SceneMenu
+	{
+		internal static void Draw(GfxFont font, GalleryScene[] scenes, int selectedIndex)
+		{
 			const float x = 30;
 			const float firstItemY = 55;
 			const float itemSpacing = 36;
 
 			Gfx.DrawText(font, new Vector2(x, firstItemY), "SCENES", new Color(120, 190, 255), 30);
-			for (int i = 0; i < scenes.Length; i++) {
+			for (int i = 0; i < scenes.Length; i++)
+			{
 				bool selected = i == selectedIndex;
 				string prefix = selected ? "> " : "  ";
 				Color color = selected ? new Color(255, 220, 110) : new Color(190, 200, 220);

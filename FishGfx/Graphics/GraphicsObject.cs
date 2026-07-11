@@ -1,35 +1,42 @@
-using FishGfx;
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
-	public abstract class GraphicsObject : IDisposable {
+namespace FishGfx.Graphics
+{
+	public abstract class GraphicsObject : IDisposable
+	{
 		public uint ID;
 		bool Collected = false;
 
-		~GraphicsObject() {
+		~GraphicsObject()
+		{
 			Dispose();
 		}
 
-		public virtual void Bind() {
+		public virtual void Bind()
+		{
 			throw new InvalidOperationException("Unimplemented function call");
 		}
 
-		public virtual void Unbind() {
+		public virtual void Unbind()
+		{
 			throw new InvalidOperationException("Unimplemented function call");
 		}
 
-		protected void SetLabel(string Lbl) {
+		protected void SetLabel(string Lbl)
+		{
 #if DEBUG
 			// Labels are optional diagnostics and must not leak binding-specific APIs.
 #endif
 		}
 
-		public void Dispose() {
+		public void Dispose()
+		{
 			if (Collected)
 				return;
 			Collected = true;

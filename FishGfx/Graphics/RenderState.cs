@@ -1,18 +1,21 @@
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
-	public enum CullFace {
+namespace FishGfx.Graphics
+{
+	public enum CullFace
+	{
 		Front = TriangleFace.Front,
 		Back = TriangleFace.Back,
 		FrontAndBack = TriangleFace.FrontAndBack,
 	}
 
-	public enum DepthFunc {
+	public enum DepthFunc
+	{
 		Never = DepthFunction.Never,
 		Less = DepthFunction.Less,
 		Equal = DepthFunction.Equal,
@@ -20,15 +23,17 @@ namespace FishGfx.Graphics {
 		Greater = DepthFunction.Greater,
 		NotEqual = DepthFunction.Notequal,
 		GreaterOrEqual = DepthFunction.Gequal,
-		Always = DepthFunction.Always
+		Always = DepthFunction.Always,
 	}
 
-	public enum FrontFace {
+	public enum FrontFace
+	{
 		Clockwise = FrontFaceDirection.CW,
-		CounterClockwise = FrontFaceDirection.Ccw
+		CounterClockwise = FrontFaceDirection.Ccw,
 	}
 
-	public enum BlendFactor {
+	public enum BlendFactor
+	{
 		Zero = BlendingFactor.Zero,
 		One = BlendingFactor.One,
 		SrcColor = BlendingFactor.SrcColor,
@@ -47,10 +52,11 @@ namespace FishGfx.Graphics {
 		Source1Alpha = BlendingFactor.Src1Alpha,
 		Src1Color = BlendingFactor.Src1Color,
 		OneMinusSrc1Color = BlendingFactor.OneMinusSrc1Color,
-		OneMinusSrc1Alpha = BlendingFactor.OneMinusSrc1Alpha
+		OneMinusSrc1Alpha = BlendingFactor.OneMinusSrc1Alpha,
 	}
 
-	public enum StencilFunction {
+	public enum StencilFunction
+	{
 		Skip = -1,
 		Never = 512,
 		Less = 513,
@@ -59,10 +65,11 @@ namespace FishGfx.Graphics {
 		Greater = 516,
 		Notequal = 517,
 		Gequal = 518,
-		Always = 519
+		Always = 519,
 	}
 
-	public enum StencilOperation {
+	public enum StencilOperation
+	{
 		Skip = -1,
 		Zero = 0,
 		Invert = 5386,
@@ -74,12 +81,14 @@ namespace FishGfx.Graphics {
 		DecrWrap = 34056,
 	}
 
-	public enum StencilFace {
+	public enum StencilFace
+	{
 		Front,
-		Back
+		Back,
 	}
 
-	public struct RenderState {
+	public struct RenderState
+	{
 		public CullFace CullFace;
 		public DepthFunc DepthFunc;
 		public FrontFace FrontFace;
@@ -120,47 +129,62 @@ namespace FishGfx.Graphics {
 		public bool EnableColorMaskG;
 		public bool EnableColorMaskB;
 		public bool EnableColorMaskA;
+
 		//public bool EnableTexture2D;
 
 		public float PointSize;
 
 		public AABB ScissorRegion;
 
-		public void SetColorMask(bool R, bool G, bool B, bool A) {
+		public void SetColorMask(bool R, bool G, bool B, bool A)
+		{
 			EnableColorMaskR = R;
 			EnableColorMaskG = G;
 			EnableColorMaskB = B;
 			EnableColorMaskA = A;
 		}
 
-		public void SetColorMask(bool All) {
+		public void SetColorMask(bool All)
+		{
 			SetColorMask(All, All, All, All);
 		}
 
-		public void StencilFunc(StencilFunction Func, int Ref, uint Mask) {
+		public void StencilFunc(StencilFunction Func, int Ref, uint Mask)
+		{
 			StencilFrontFunction = StencilBackFunction = Func;
 			StencilFrontReference = StencilBackReference = Ref;
 			StencilFrontMask = StencilBackMask = Mask;
 		}
 
-		public void StencilOpSeparate(StencilFace F, StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass) {
-			if (F == StencilFace.Front) {
+		public void StencilOpSeparate(
+			StencilFace F,
+			StencilOperation SFail,
+			StencilOperation DPFail,
+			StencilOperation DPPass
+		)
+		{
+			if (F == StencilFace.Front)
+			{
 				StencilFrontSFail = SFail;
 				StencilFrontDPFail = DPFail;
 				StencilFrontDPPass = DPPass;
-			} else {
+			}
+			else
+			{
 				StencilBackSFail = SFail;
 				StencilBackDPFail = DPFail;
 				StencilBackDPPass = DPPass;
 			}
 		}
 
-		public void StencilOp(StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass) {
+		public void StencilOp(StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass)
+		{
 			StencilOpSeparate(StencilFace.Front, SFail, DPFail, DPPass);
 			StencilOpSeparate(StencilFace.Back, SFail, DPFail, DPPass);
 		}
 
-		public void BlendFunc(BlendFactor Src, BlendFactor Dst) {
+		public void BlendFunc(BlendFactor Src, BlendFactor Dst)
+		{
 			BlendFunc_Src = Src;
 			BlendFunc_Dst = Dst;
 		}

@@ -1,29 +1,35 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Numerics;
 
-namespace FishGfx {
-	public struct BoundingBox {
-		public static readonly BoundingBox Empty = new BoundingBox(new Vector3(float.PositiveInfinity), new Vector3(float.NegativeInfinity));
+namespace FishGfx
+{
+	public struct BoundingBox
+	{
+		public static readonly BoundingBox Empty = new BoundingBox(
+			new Vector3(float.PositiveInfinity),
+			new Vector3(float.NegativeInfinity)
+		);
 
 		public Vector3 PositionMin;
 		public Vector3 PositionMax;
 
-		public Vector3 Size {
-			get {
-				return PositionMax - PositionMin;
-			}
+		public Vector3 Size
+		{
+			get { return PositionMax - PositionMin; }
 		}
 
-		public BoundingBox(Vector3 Min, Vector3 Max) {
+		public BoundingBox(Vector3 Min, Vector3 Max)
+		{
 			PositionMin = Min;
 			PositionMax = Max;
 		}
 
-		public BoundingBox Inflate(Vector3 Point) {
+		public BoundingBox Inflate(Vector3 Point)
+		{
 			BoundingBox New = this;
 
 			if (Point.X < New.PositionMin.X)
@@ -47,7 +53,8 @@ namespace FishGfx {
 			return New;
 		}
 
-		public override string ToString() {
+		public override string ToString()
+		{
 			return string.Format("({0} .. {1})", PositionMin, PositionMax);
 		}
 	}

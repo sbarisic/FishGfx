@@ -1,12 +1,14 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
-using System.Numerics;
 
-namespace FishGfx.Graphics.Drawables {
-	public class Tilemap : IDrawable {
+namespace FishGfx.Graphics.Drawables
+{
+	public class Tilemap : IDrawable
+	{
 		List<Vertex3> VertList = new List<Vertex3>();
 
 		Mesh3D Mesh;
@@ -24,24 +26,19 @@ namespace FishGfx.Graphics.Drawables {
 		int TextureWidth;
 		int TextureHeight;
 
-		public int Width {
-			get; private set;
-		}
+		public int Width { get; private set; }
 
-		public int Height {
-			get; private set;
-		}
+		public int Height { get; private set; }
 
-		public int TileSize {
-			get; private set;
-		}
+		public int TileSize { get; private set; }
 
 		public int[] Tiles;
 		Color[] TileColors;
 
 		Vector2 TileUVSize;
 
-		public Tilemap(int TileSize, int Width, int Height, Texture TileAtlasTexture) {
+		public Tilemap(int TileSize, int Width, int Height, Texture TileAtlasTexture)
+		{
 			this.TileSize = TileSize;
 			this.Width = Width;
 			this.Height = Height;
@@ -52,14 +49,17 @@ namespace FishGfx.Graphics.Drawables {
 			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
 			Mesh.PrimitiveType = PrimitiveType.Triangles;
 
-			Mesh.SetVertices(new Vertex3[] {
-				new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
-				new Vertex3(new Vector3(0, 1, 0), new Vector2(0, 1)),
-				new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
-				new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
-				new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
-				new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0))
-			});
+			Mesh.SetVertices(
+				new Vertex3[]
+				{
+					new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
+					new Vertex3(new Vector3(0, 1, 0), new Vector2(0, 1)),
+					new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
+					new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
+					new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
+					new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
+				}
+			);
 
 			Position = new Vector2(0, 0);
 			Scale = new Vector2(1, 1);
@@ -68,8 +68,10 @@ namespace FishGfx.Graphics.Drawables {
 			ClearTiles();
 		}
 
-		public void ClearTiles(int Tile = -1) {
-			for (int i = 0; i < Tiles.Length; i++) {
+		public void ClearTiles(int Tile = -1)
+		{
+			for (int i = 0; i < Tiles.Length; i++)
+			{
 				Tiles[i] = Tile;
 				TileColors[i] = Color.White;
 			}
@@ -77,7 +79,8 @@ namespace FishGfx.Graphics.Drawables {
 			Dirty = true;
 		}
 
-		public void SetTileAtlas(Texture Tex) {
+		public void SetTileAtlas(Texture Tex)
+		{
 			TileAtlas = Tex;
 
 			TextureWidth = Tex.Width;
@@ -91,21 +94,25 @@ namespace FishGfx.Graphics.Drawables {
 			Dirty = true;
 		}
 
-		public Texture GetTileAtlas() {
+		public Texture GetTileAtlas()
+		{
 			return TileAtlas;
 		}
 
-		void IdxToXY(int Idx, out int X, out int Y) {
+		void IdxToXY(int Idx, out int X, out int Y)
+		{
 			X = Idx % Width;
 			Y = (Idx - X) / Width;
 		}
 
-		void TileToTileXY(int Tile, out int X, out int Y) {
+		void TileToTileXY(int Tile, out int X, out int Y)
+		{
 			X = Tile % TileAtlasWidth;
 			Y = (Tile - X) / TileAtlasWidth;
 		}
 
-		public void SetTile(int X, int Y, int Tile, Color Clr) {
+		public void SetTile(int X, int Y, int Tile, Color Clr)
+		{
 			if (X < 0 || X >= Width)
 				throw new Exception("X out of bounds");
 
@@ -117,11 +124,13 @@ namespace FishGfx.Graphics.Drawables {
 			Dirty = true;
 		}
 
-		public void SetTile(int X, int Y, int Tile) {
+		public void SetTile(int X, int Y, int Tile)
+		{
 			SetTile(X, Y, Tile, Color.White);
 		}
 
-		public int GetTile(int X, int Y) {
+		public int GetTile(int X, int Y)
+		{
 			if (X < 0 || X >= Width)
 				throw new Exception("X out of bounds");
 
@@ -131,7 +140,8 @@ namespace FishGfx.Graphics.Drawables {
 			return Tiles[Y * Width + X];
 		}
 
-		public Color GetTileColor(int X, int Y) {
+		public Color GetTileColor(int X, int Y)
+		{
 			if (X < 0 || X >= Width)
 				throw new Exception("X out of bounds");
 
@@ -141,7 +151,8 @@ namespace FishGfx.Graphics.Drawables {
 			return TileColors[Y * Width + X];
 		}
 
-		public bool TryWorldPosToTile(Vector2 WorldPos, out int X, out int Y) {
+		public bool TryWorldPosToTile(Vector2 WorldPos, out int X, out int Y)
+		{
 			X = Y = 0;
 
 			// TODO: Clean that shit up, what the fuck
@@ -160,7 +171,8 @@ namespace FishGfx.Graphics.Drawables {
 			return true;
 		}
 
-		void Update() {
+		void Update()
+		{
 			VertList.Clear();
 			DrawableTileCount = 0;
 
@@ -169,7 +181,8 @@ namespace FishGfx.Graphics.Drawables {
 			Color C = Color.Green;
 			Color D = Color.Green;*/
 
-			for (int i = 0; i < Tiles.Length; i++) {
+			for (int i = 0; i < Tiles.Length; i++)
+			{
 				int Tile = Tiles[i];
 				Color TileColor = TileColors[i];
 
@@ -184,10 +197,26 @@ namespace FishGfx.Graphics.Drawables {
 
 				Vector3 Pos = new Vector3(X, Y, 0) * TileSize;
 				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, TileColor));
-				VertList.Add(new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileUVSize.Y), TileColor));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileUVSize.X, TileUVSize.Y), TileColor));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileUVSize.X, TileUVSize.Y), TileColor));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileUVSize.X, 0), TileColor));
+				VertList.Add(
+					new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileUVSize.Y), TileColor)
+				);
+				VertList.Add(
+					new Vertex3(
+						Pos + new Vector3(TileSize, TileSize, 0),
+						UVPos + new Vector2(TileUVSize.X, TileUVSize.Y),
+						TileColor
+					)
+				);
+				VertList.Add(
+					new Vertex3(
+						Pos + new Vector3(TileSize, TileSize, 0),
+						UVPos + new Vector2(TileUVSize.X, TileUVSize.Y),
+						TileColor
+					)
+				);
+				VertList.Add(
+					new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileUVSize.X, 0), TileColor)
+				);
 				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, TileColor));
 
 				/*VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, A));
@@ -203,8 +232,10 @@ namespace FishGfx.Graphics.Drawables {
 			Mesh.SetVertices(VertList.ToArray());
 		}
 
-		public void Draw() {
-			if (Dirty) {
+		public void Draw()
+		{
+			if (Dirty)
+			{
 				Dirty = false;
 				Update();
 			}
@@ -213,7 +244,8 @@ namespace FishGfx.Graphics.Drawables {
 				return;
 
 			Matrix4x4 OldModel = ShaderUniforms.Current.Model;
-			ShaderUniforms.Current.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
+			ShaderUniforms.Current.Model =
+				Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
 
 			Shader?.Bind(ShaderUniforms.Current);
 			TileAtlas?.BindTextureUnit();
@@ -225,4 +257,3 @@ namespace FishGfx.Graphics.Drawables {
 		}
 	}
 }
-

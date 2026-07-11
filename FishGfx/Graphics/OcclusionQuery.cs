@@ -1,53 +1,62 @@
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
-	public enum QueryTgt {
+namespace FishGfx.Graphics
+{
+	public enum QueryTgt
+	{
 		TimeElapsed = 35007,
 		SamplesPassed = 35092,
 		AnySamplesPassed = 35887,
 		PrimitivesGenerated = 35975,
 		TransformFeedbackPrimitivesWritten = 35976,
-		AnySamplesPassedConservative = 36202
+		AnySamplesPassedConservative = 36202,
 	}
 
-	public class OcclusionQuery : GraphicsObject {
+	public class OcclusionQuery : GraphicsObject
+	{
 		public static OcclusionQuery CurrentQuery;
 
 		public bool IsOcclusionTest;
 		public QueryTgt QueryTarget;
 		OcclusionQuery ResetQuery;
 
-		public OcclusionQuery(QueryTgt Target) {
+		public OcclusionQuery(QueryTgt Target)
+		{
 			IsOcclusionTest = false;
 			QueryTarget = Target;
 			ID = Internal_OpenGL.GL.CreateQuery((QueryTarget)QueryTarget);
 		}
 
-		public override void Bind() {
+		public override void Bind()
+		{
 			ResetQuery = CurrentQuery;
 			CurrentQuery = this;
 			Internal_OpenGL.GL.BeginQuery((QueryTarget)QueryTarget, ID);
 		}
 
-		public override void Unbind() {
+		public override void Unbind()
+		{
 			CurrentQuery = ResetQuery;
 			Internal_OpenGL.GL.EndQuery((QueryTarget)QueryTarget);
 		}
 
-		public void BeginConditional(bool Wait = true) {
+		public void BeginConditional(bool Wait = true)
+		{
 			Internal_OpenGL.GL.BeginConditionalRender(ID, Wait ? GLEnum.QueryByRegionWait : GLEnum.QueryByRegionNoWait);
 		}
 
-		public void EndConditional() {
+		public void EndConditional()
+		{
 			Internal_OpenGL.GL.EndConditionalRender();
 		}
 
-		public override void GraphicsDispose() {
+		public override void GraphicsDispose()
+		{
 			Internal_OpenGL.GL.DeleteQueries(ID);
 		}
 	}

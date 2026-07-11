@@ -1,18 +1,24 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using FishGfx;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
-using System.Numerics;
 
-namespace FishGfx.Game {
+namespace FishGfx.Game
+{
 	public delegate void ConsoleOnInput(string Input);
 
-	public class DevConsole {
+	public class DevConsole
+	{
 		Tilemap Tiles;
+		GfxFont Font;
+		int ConsoleWidth;
+		int ConsoleHeight;
+		Vector2 ConsolePosition;
 
 		int CursorX;
 		int CursorY;
@@ -27,43 +33,33 @@ namespace FishGfx.Game {
 
 		public event ConsoleOnInput OnInput;
 
-		public int Width {
-			get {
-				return Tiles.Width;
-			}
+		public int Width
+		{
+			get { return ConsoleWidth; }
 		}
 
-		public int Height {
-			get {
-				return Tiles.Height;
-			}
+		public int Height
+		{
+			get { return ConsoleHeight; }
 		}
 
-		public int BufferHeight {
-			get;
-			private set;
-		}
+		public int BufferHeight { get; private set; }
 
-		public int BufferWidth {
-			get;
-			private set;
-		}
+		public int BufferWidth { get; private set; }
 
 		int ViewScroll;
 		bool Dirty;
 
-		public int CharSize {
-			get;
-			private set;
-		}
+		public int CharSize { get; private set; }
 
-		public Vector2 Position {
-			get {
-				return Tiles.Position;
-			}
-
-			set {
-				Tiles.Position = value;
+		public Vector2 Position
+		{
+			get { return Tiles != null ? Tiles.Position : ConsolePosition; }
+			set
+			{
+				ConsolePosition = value;
+				if (Tiles != null)
+					Tiles.Position = value;
 			}
 		}
 
@@ -71,11 +67,32 @@ namespace FishGfx.Game {
 		public Color BackgroundColor;
 		public bool Enabled;
 
-		public DevConsole(Texture FontTileset, int Size, int Width, int Height, int BufferHeight, ShaderProgram DrawShader) {
+		public DevConsole(
+			Texture FontTileset,
+			int Size,
+			int Width,
+			int Height,
+			int BufferHeight,
+			ShaderProgram DrawShader
+		)
+		{
 			Tiles = new Tilemap(Size, Width, Height, FontTileset);
 			Tiles.Shader = DrawShader;
 			Tiles.ClearTiles('0');
 
+			Initialize(Size, Width, Height, BufferHeight);
+		}
+
+		public DevConsole(GfxFont Font, int Size, int Width, int Height, int BufferHeight)
+		{
+			this.Font = Font ?? throw new ArgumentNullException(nameof(Font));
+			Initialize(Size, Width, Height, BufferHeight);
+		}
+
+		void Initialize(int Size, int Width, int Height, int BufferHeight)
+		{
+			ConsoleWidth = Width;
+			ConsoleHeight = Height;
 			InputBuffer = new StringBuilder();
 			AwaitingInput = false;
 
@@ -97,15 +114,18 @@ namespace FishGfx.Game {
 			Enabled = true;
 		}
 
-		void CheckScroll() {
+		void CheckScroll()
+		{
 			if (CursorY >= BufferHeight)
 				CursorY = BufferHeight - 1;
 
-			if (CursorY < 0) {
+			if (CursorY < 0)
+			{
 				CursorY = 0;
 
 				for (int Y = BufferHeight - 2; Y >= 0; Y--)
-					for (int X = 0; X < BufferWidth; X++) {
+					for (int X = 0; X < BufferWidth; X++)
+					{
 						char CC = GetChar(X, Y);
 						Color CClr = GetColor(X, Y);
 
@@ -115,13 +135,15 @@ namespace FishGfx.Game {
 			}
 		}
 
-		void NewLine() {
+		void NewLine()
+		{
 			CursorX = 0;
 			CursorY--;
 			CheckScroll();
 		}
 
-		void CursorForward() {
+		void CursorForward()
+		{
 			CursorX++;
 
 			if (CursorX >= BufferWidth)
@@ -130,10 +152,12 @@ namespace FishGfx.Game {
 			CheckScroll();
 		}
 
-		void CursorBackward() {
+		void CursorBackward()
+		{
 			CursorX--;
 
-			if (CursorX < 0) {
+			if (CursorX < 0)
+			{
 				CursorX = BufferWidth - 1;
 				CursorY++;
 			}
@@ -141,7 +165,8 @@ namespace FishGfx.Game {
 			CheckScroll();
 		}
 
-		void SetChar(int X, int Y, char C, Color Clr) {
+		void SetChar(int X, int Y, char C, Color Clr)
+		{
 			Y = BufferHeight - Y - 1;
 
 			CharBuffer[Y * BufferWidth + X] = C;
@@ -149,7 +174,8 @@ namespace FishGfx.Game {
 			Dirty = true;
 		}
 
-		char GetChar(int X, int Y) {
+		char GetChar(int X, int Y)
+		{
 			Y = BufferHeight - Y - 1;
 
 			if (X < 0 || X >= BufferWidth)
@@ -161,7 +187,8 @@ namespace FishGfx.Game {
 			return CharBuffer[Y * BufferWidth + X];
 		}
 
-		Color GetColor(int X, int Y) {
+		Color GetColor(int X, int Y)
+		{
 			Y = BufferHeight - Y - 1;
 
 			if (X < 0 || X >= BufferWidth)
@@ -173,7 +200,8 @@ namespace FishGfx.Game {
 			return ColorBuffer[Y * BufferWidth + X];
 		}
 
-		void Backspace() {
+		void Backspace()
+		{
 			if (BackspaceCounter <= 0)
 				return;
 
@@ -186,8 +214,10 @@ namespace FishGfx.Game {
 			SetChar(CursorX, CursorY, (char)0, Color.White);
 		}
 
-		public void OnCommand(string Cmd) {
-			if (Cmd.Length != 0) {
+		public void OnCommand(string Cmd)
+		{
+			if (Cmd.Length != 0)
+			{
 				OnInput?.Invoke(Cmd);
 			}
 
@@ -195,16 +225,19 @@ namespace FishGfx.Game {
 			BeginInput();
 		}
 
-		public void ResetBackspaceCounter() {
+		public void ResetBackspaceCounter()
+		{
 			BackspaceCounter = 0;
 		}
 
-		public int GetViewScroll() {
+		public int GetViewScroll()
+		{
 			return ViewScroll;
 		}
 
-		public void SetViewScroll(int Scroll) {
-			if (Tiles.Height + Scroll > BufferHeight)
+		public void SetViewScroll(int Scroll)
+		{
+			if (Height + Scroll > BufferHeight)
 				return;
 
 			if (Scroll < 0)
@@ -214,7 +247,8 @@ namespace FishGfx.Game {
 			Dirty = true;
 		}
 
-		public void BeginInput() {
+		public void BeginInput()
+		{
 			Print("> ");
 
 			ResetBackspaceCounter();
@@ -223,16 +257,20 @@ namespace FishGfx.Game {
 			AwaitingInput = true;
 		}
 
-		public void PutChar(char Chr) {
-			if (Chr == '\b') {
+		public void PutChar(char Chr)
+		{
+			if (Chr == '\b')
+			{
 				Backspace();
 				return;
 			}
 
-			if (Chr == '\n') {
+			if (Chr == '\n')
+			{
 				NewLine();
 
-				if (AwaitingInput) {
+				if (AwaitingInput)
+				{
 					AwaitingInput = false;
 					OnCommand(InputBuffer.ToString());
 				}
@@ -248,22 +286,30 @@ namespace FishGfx.Game {
 			CursorForward();
 		}
 
-		public void Print(string Str) {
+		public void Print(string Str)
+		{
 			foreach (var C in Str)
 				PutChar(C);
 		}
 
-		public void PrintLine(string Str = "") {
+		public void PrintLine(string Str = "")
+		{
 			Print(Str + "\n");
 		}
 
-		public void PrintLine(string Fmt, params object[] Args) {
+		public void PrintLine(string Fmt, params object[] Args)
+		{
 			PrintLine(string.Format(Fmt, Args));
 		}
 
-		void Refresh() {
-			for (int Y = 0; Y < Tiles.Height; Y++) {
-				for (int X = 0; X < Tiles.Width; X++) {
+		void Refresh()
+		{
+			if (Tiles == null)
+				return;
+			for (int Y = 0; Y < Tiles.Height; Y++)
+			{
+				for (int X = 0; X < Tiles.Width; X++)
+				{
 					char Chr = GetChar(X, Y + ViewScroll);
 					Color Clr = GetColor(X, Y + ViewScroll);
 
@@ -272,7 +318,8 @@ namespace FishGfx.Game {
 			}
 		}
 
-		public void SendKey(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) {
+		public void SendKey(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods)
+		{
 			if (!Pressed)
 				return;
 
@@ -296,7 +343,8 @@ namespace FishGfx.Game {
 				SetViewScroll(GetViewScroll() - 1);
 		}
 
-		public void SendInput(string Str) {
+		public void SendInput(string Str)
+		{
 			if (!Enabled)
 				return;
 
@@ -306,17 +354,52 @@ namespace FishGfx.Game {
 			Print(Str);
 		}
 
-		public void Draw() {
+		public void Draw()
+		{
 			if (!Enabled)
 				return;
 
-			if (Dirty) {
+			if (Dirty)
+			{
 				Dirty = false;
 				Refresh();
 			}
 
 			Gfx.FilledRectangle(Position.X, Position.Y, CharSize * Width, CharSize * Height, BackgroundColor);
-			Tiles.Draw();
+			if (Tiles != null)
+				Tiles.Draw();
+			else
+				DrawFontBuffer();
+		}
+
+		void DrawFontBuffer()
+		{
+			float scale = CharSize / Font.FontSize;
+			float cellWidth = Math.Max(1, Font.GetCharInfo('M')?.XAdvance * scale ?? CharSize * 0.6f);
+			for (int y = 0; y < Height; y++)
+			{
+				int x = 0;
+				while (x < Width)
+				{
+					Color color = GetColor(x, y + ViewScroll);
+					int start = x;
+					StringBuilder run = new StringBuilder();
+					while (x < Width && GetColor(x, y + ViewScroll) == color)
+					{
+						char c = GetChar(x, y + ViewScroll);
+						run.Append(c == 0 ? ' ' : c);
+						x++;
+					}
+					if (run.ToString().Trim().Length > 0)
+						Gfx.DrawText(
+							Font,
+							Position + new Vector2(start * cellWidth, (Height - y - 1) * CharSize),
+							run.ToString(),
+							color,
+							CharSize
+						);
+				}
+			}
 		}
 	}
 }

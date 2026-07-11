@@ -1,13 +1,16 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace FishGfx {
-	public static class MicroConfig {
-		public static string Serialize(object Obj) {
+namespace FishGfx
+{
+	public static class MicroConfig
+	{
+		public static string Serialize(object Obj)
+		{
 			if (Obj == null)
 				return "null";
 
@@ -16,9 +19,15 @@ namespace FishGfx {
 			if (ObjType.IsEnum)
 				return Enum.GetName(ObjType, Obj);
 
-			Type[] ToStringable = new Type[] {
-				 typeof(int), typeof(uint), typeof(short), typeof(ushort), typeof(byte), typeof(sbyte)
-			 };
+			Type[] ToStringable = new Type[]
+			{
+				typeof(int),
+				typeof(uint),
+				typeof(short),
+				typeof(ushort),
+				typeof(byte),
+				typeof(sbyte),
+			};
 
 			if (ToStringable.Contains(ObjType))
 				return Obj.ToString();
@@ -34,7 +43,8 @@ namespace FishGfx {
 			throw new Exception("Unsupported type " + Obj.GetType());
 		}
 
-		public static object Deserialize(string Str, Type T) {
+		public static object Deserialize(string Str, Type T)
+		{
 			Str = Str.Trim();
 
 			if (!T.IsValueType)
@@ -43,7 +53,8 @@ namespace FishGfx {
 				else
 					throw new Exception("Cannot cast null to value type");
 
-			if (T.IsEnum) {
+			if (T.IsEnum)
+			{
 				if (int.TryParse(Str, out int EnumInt))
 					return Convert.ChangeType(EnumInt, T);
 
@@ -72,13 +83,15 @@ namespace FishGfx {
 			throw new Exception("Unknown type " + T);
 		}
 
-		public static string Serialize(object[] Keys, object[] Values) {
+		public static string Serialize(object[] Keys, object[] Values)
+		{
 			if (Keys.Length != Values.Length)
 				throw new Exception("Length of keys does not match length of values");
 
 			StringBuilder SB = new StringBuilder();
 
-			for (int i = 0; i < Keys.Length; i++) {
+			for (int i = 0; i < Keys.Length; i++)
+			{
 				SB.Append(Serialize(Keys[i]));
 				SB.Append(" = ");
 				SB.AppendLine(Serialize(Values[i]));
@@ -87,12 +100,20 @@ namespace FishGfx {
 			return SB.ToString();
 		}
 
-		public static void Deserialize(string Data, Type KeyType, Type ValueType, out object[] Keys, out object[] Values) {
+		public static void Deserialize(
+			string Data,
+			Type KeyType,
+			Type ValueType,
+			out object[] Keys,
+			out object[] Values
+		)
+		{
 			string[] Lines = Data.Trim().Split('\n').Select(L => L.Trim()).Where(L => L.Length > 0).ToArray();
 			Keys = new object[Lines.Length];
 			Values = new object[Lines.Length];
 
-			for (int i = 0; i < Lines.Length; i++) {
+			for (int i = 0; i < Lines.Length; i++)
+			{
 				int IdxOfEq = Lines[i].IndexOf('=');
 
 				string Key = Lines[i].Substring(0, IdxOfEq).Trim();

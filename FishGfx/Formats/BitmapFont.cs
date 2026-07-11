@@ -1,4 +1,3 @@
-﻿using FishGfx.Graphics;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,11 +5,15 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx.Graphics;
 
-namespace FishGfx.Formats {
-	public unsafe class BMFont : GfxFont {
+namespace FishGfx.Formats
+{
+	public unsafe class BMFont : GfxFont, IGfxAtlasFont
+	{
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct InfoBlock {
+		public struct InfoBlock
+		{
 			public short FontSize;
 			public byte BitField;
 			public byte CharSet;
@@ -26,7 +29,8 @@ namespace FishGfx.Formats {
 		}
 
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct CommonBlock {
+		public struct CommonBlock
+		{
 			public ushort LineHeight;
 			public ushort Base;
 			public ushort ScaleW;
@@ -40,7 +44,8 @@ namespace FishGfx.Formats {
 		}
 
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct CharBlock {
+		public struct CharBlock
+		{
 			public uint ID;
 			public ushort X;
 			public ushort Y;
@@ -54,7 +59,8 @@ namespace FishGfx.Formats {
 		}
 
 		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct KerningBlock {
+		public struct KerningBlock
+		{
 			public uint First;
 			public uint Second;
 			public short Amount;
@@ -67,10 +73,14 @@ namespace FishGfx.Formats {
 		Dictionary<char, CharBlock> Chars;
 		Dictionary<ulong, short> KerningPairs = new Dictionary<ulong, short>();
 
-		public BMFont(string FntFile = null, float FontSize = -1, bool DoLoadTextures = true) {
-			if (FntFile != null) {
-				using (MemoryStream MS = new MemoryStream()) {
-					using (FileStream FS = File.OpenRead(FntFile)) {
+		public BMFont(string FntFile = null, float FontSize = -1, bool DoLoadTextures = true)
+		{
+			if (FntFile != null)
+			{
+				using (MemoryStream MS = new MemoryStream())
+				{
+					using (FileStream FS = File.OpenRead(FntFile))
+					{
 						FS.CopyTo(MS);
 					}
 
@@ -88,19 +98,22 @@ namespace FishGfx.Formats {
 				this.ScaledFontSize = FontSize;
 		}
 
-		public void LoadTextures(string TextureDirectory, TextureFilter Filter = TextureFilter.Nearest) {
+		public void LoadTextures(string TextureDirectory, TextureFilter Filter = TextureFilter.Nearest)
+		{
 			string[] TextureNames = PageNames.Select(KV => KV.Key).ToArray();
 
-			foreach (var TexName in TextureNames) {
+			foreach (var TexName in TextureNames)
+			{
 				Texture T = Texture.FromFile(Path.Combine(TextureDirectory, TexName));
 				T.SetFilter(Filter);
 				PageNames[TexName] = T;
-
 			}
 		}
 
-		public void Read(MemoryStream S) {
-			using (BinaryReader BR = new BinaryReader(S)) {
+		public void Read(MemoryStream S)
+		{
+			using (BinaryReader BR = new BinaryReader(S))
+			{
 				string Magic = Encoding.ASCII.GetString(BR.ReadBytes(3));
 				if (Magic != "BMF")
 					throw new Exception("Invalid BMF font file");
@@ -109,39 +122,49 @@ namespace FishGfx.Formats {
 				if (Ver != 3)
 					throw new Exception("Only BMF v3 is supported");
 
-				while (S.Position < S.Length - 1) {
+				while (S.Position < S.Length - 1)
+				{
 					byte BlockType = BR.ReadByte();
 					int Len = BR.ReadInt32();
 
-					switch (BlockType) {
-						case 1: {
+					switch (BlockType)
+					{
+						case 1:
+							{
 								Info = BR.ReadStruct<InfoBlock>();
 								FntName = Encoding.UTF8.GetString(BR.ReadBytes(Len - sizeof(InfoBlock) - 1));
 								BR.ReadByte();
 								break;
 							}
 
-						case 2: {
+						case 2:
+							{
 								Common = BR.ReadStruct<CommonBlock>();
 								break;
 							}
 
-						case 3: {
+						case 3:
+							{
 								int Pages = Common.Pages;
 								PageNames = new Dictionary<string, Texture>();
 
 								int PageNameLen = Len / Pages;
 								for (int i = 0; i < Pages; i++)
-									PageNames.Add(Encoding.UTF8.GetString(BR.ReadBytes(PageNameLen)).TrimEnd(new[] { '\0' }), null);
+									PageNames.Add(
+										Encoding.UTF8.GetString(BR.ReadBytes(PageNameLen)).TrimEnd(new[] { '\0' }),
+										null
+									);
 
 								break;
 							}
 
-						case 4: {
+						case 4:
+							{
 								int CharCount = Len / sizeof(CharBlock);
 								Chars = new Dictionary<char, CharBlock>();
 
-								for (int i = 0; i < CharCount; i++) {
+								for (int i = 0; i < CharCount; i++)
+								{
 									CharBlock CharInfo = BR.ReadStruct<CharBlock>();
 									Chars.Add((char)CharInfo.ID, CharInfo);
 								}
@@ -149,9 +172,11 @@ namespace FishGfx.Formats {
 								break;
 							}
 
-						case 5: {
+						case 5:
+							{
 								int pairCount = Len / sizeof(KerningBlock);
-								for (int i = 0; i < pairCount; i++) {
+								for (int i = 0; i < pairCount; i++)
+								{
 									KerningBlock pair = BR.ReadStruct<KerningBlock>();
 									KerningPairs[((ulong)pair.First << 32) | pair.Second] = pair.Amount;
 								}
@@ -165,21 +190,31 @@ namespace FishGfx.Formats {
 			}
 		}
 
-		public CharBlock GetChar(char C) {
+		public CharBlock GetChar(char C)
+		{
 			if (Chars.ContainsKey(C))
 				return Chars[C];
 
 			return default(CharBlock);
 		}
 
-		public override int GetKerning(char First, char Second) => KerningPairs.TryGetValue(((ulong)First << 32) | Second, out short amount) ? amount : 0;
+		public override int GetKerning(char First, char Second) =>
+			KerningPairs.TryGetValue(((ulong)First << 32) | Second, out short amount) ? amount : 0;
+
+		public Texture AtlasTexture => PageNames?.Values.FirstOrDefault();
+		public GfxFontRenderMode RenderMode => GfxFontRenderMode.Bitmap;
+		public float SdfPixelRange => 0;
+
+		public void PrepareText(string text) { }
 
 		public override string FontName => FntName;
 
 		public override int LineHeight => Common.LineHeight;
 
-		public override int FontSize {
-			get {
+		public override int FontSize
+		{
+			get
+			{
 				if (Info.FontSize < 0)
 					return -Info.FontSize;
 
@@ -189,8 +224,10 @@ namespace FishGfx.Formats {
 
 		public override int TabSize => LineHeight;
 
-		public override CharOrigin? GetCharInfo(char C) {
-			if (Chars.ContainsKey(C)) {
+		public override CharOrigin? GetCharInfo(char C)
+		{
+			if (Chars.ContainsKey(C))
+			{
 				CharBlock CBlock = Chars[C];
 
 				CharOrigin CInfo = new CharOrigin();

@@ -1,5 +1,3 @@
-using FishGfx;
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -7,17 +5,23 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
-	public class Renderbuffer : GraphicsObject {
-		public Renderbuffer() {
+namespace FishGfx.Graphics
+{
+	public class Renderbuffer : GraphicsObject
+	{
+		public Renderbuffer()
+		{
 			if (Internal_OpenGL.Is45OrAbove)
 				ID = Internal_OpenGL.GL.CreateRenderbuffer();
 			else
 				ID = Internal_OpenGL.GL.GenRenderbuffer();
 		}
 
-		public void Storage(RenderbufferFormat Fmt, int W, int H, int Samples = 0) {
+		public void Storage(RenderbufferFormat Fmt, int W, int H, int Samples = 0)
+		{
 			Bind();
 
 			if (Samples > 0)
@@ -28,15 +32,18 @@ namespace FishGfx.Graphics {
 			Unbind();
 		}
 
-		public override void Bind() {
+		public override void Bind()
+		{
 			Internal_OpenGL.GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, ID);
 		}
 
-		public override void Unbind() {
+		public override void Unbind()
+		{
 			Internal_OpenGL.GL.BindRenderbuffer(RenderbufferTarget.Renderbuffer, 0);
 		}
 
-		public override void GraphicsDispose() {
+		public override void GraphicsDispose()
+		{
 			Internal_OpenGL.GL.DeleteRenderbuffers(ID);
 		}
 	}

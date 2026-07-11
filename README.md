@@ -1,5 +1,16 @@
 # FishGfx
 
+## TrueType fonts
+
+FishGfx supports scalable signed-distance-field text directly from `.ttf` files:
+
+```csharp
+using TTFFont font = new TTFFont("data/fonts/Aaargh.ttf");
+Gfx.DrawText(font, new Vector2(100, 100), "Smooth SDF text", Color.White, 64);
+```
+
+`TTFFont` preloads printable ASCII and lazily adds Unicode BMP glyphs to a growable atlas. Multiline text, tabs, pair kerning, color, alpha, measurement, and different draw sizes use the existing `GfxFont` APIs. Complex-script shaping, supplementary Unicode planes, outlines, and shadows are not currently supported.
+
 ## Function node graphs
 
 FishGfx can expose explicitly marked methods on a static class as strongly typed nodes:

@@ -1,6 +1,3 @@
-using FishGfx;
-using Glfw3;
-using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,26 +7,32 @@ using System.Numerics;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using FishGfx;
+using Glfw3;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
+namespace FishGfx.Graphics
+{
 	[Flags]
-	public enum KeyMods {
+	public enum KeyMods
+	{
 		Shift = 1,
 		Control = 2,
 		Alt = 4,
-		Super = 8
+		Super = 8,
 	}
 
-	public enum Key {
+	public enum Key
+	{
 		Unknown = -1,
 
 		// Printable keys
 		Space = 32,
-		Apostrophe = 39,  // '
-		Comma = 44,  // ,
-		Minus = 45,  // -
-		Period = 46,  // .
-		Slash = 47,  // /
+		Apostrophe = 39, // '
+		Comma = 44, // ,
+		Minus = 45, // -
+		Period = 46, // .
+		Slash = 47, // /
 		Alpha0 = 48,
 		Alpha1 = 49,
 		Alpha2 = 50,
@@ -40,8 +43,8 @@ namespace FishGfx.Graphics {
 		Alpha7 = 55,
 		Alpha8 = 56,
 		Alpha9 = 57,
-		SemiColon = 59,  // ;
-		Equal = 61,  // =
+		SemiColon = 59, // ;
+		Equal = 61, // =
 		A = 65,
 		B = 66,
 		C = 67,
@@ -68,10 +71,10 @@ namespace FishGfx.Graphics {
 		X = 88,
 		Y = 89,
 		Z = 90,
-		LeftBracket = 91,  // [
-		Backslash = 92,  // \
-		RightBracket = 93,  // ]
-		GraveAccent = 96,  // `
+		LeftBracket = 91, // [
+		Backslash = 92, // \
+		RightBracket = 93, // ]
+		GraveAccent = 96, // `
 		World1 = 161, // Non-US #1
 		World2 = 162, // Non-US #2
 
@@ -159,7 +162,7 @@ namespace FishGfx.Graphics {
 		MouseLast = MouseButton8,
 		MouseLeft = MouseButton1,
 		MouseRight = MouseButton2,
-		MouseMiddle = MouseButton3
+		MouseMiddle = MouseButton3,
 	}
 
 	public delegate void OnMouseMoveFunc(RenderWindow Wnd, float X, float Y);
@@ -168,7 +171,8 @@ namespace FishGfx.Graphics {
 	public delegate void OnScrollFunc(RenderWindow Wnd, float XOffset, float YOffset);
 	public delegate void OnWindowResizeFunc(RenderWindow Wnd, int W, int H);
 
-	public unsafe class RenderWindow {
+	public unsafe class RenderWindow
+	{
 		static int SupportedMajor = 0;
 		static int SupportedMinor = 0;
 		static bool _CaptureCursor;
@@ -194,56 +198,52 @@ namespace FishGfx.Graphics {
 		public int WindowWidth { get; private set; }
 		public int WindowHeight { get; private set; }
 
-		public bool ShowCursor {
-			set {
+		public bool ShowCursor
+		{
+			set
+			{
 				Glfw.SetInputMode(Wnd, Glfw.InputMode.Cursor, value ? Glfw.CursorMode.Normal : Glfw.CursorMode.Hidden);
 			}
 		}
 
-		public string ClipboardString {
-			get {
-				return Glfw.GetClipboardString(Wnd);
-			}
-			set {
-				Glfw.SetClipboardString(Wnd, value);
-			}
+		public string ClipboardString
+		{
+			get { return Glfw.GetClipboardString(Wnd); }
+			set { Glfw.SetClipboardString(Wnd, value); }
 		}
 
-		public Vector2 WindowSize {
-			get {
-				return new Vector2(WindowWidth, WindowHeight);
-			}
+		public Vector2 WindowSize
+		{
+			get { return new Vector2(WindowWidth, WindowHeight); }
 		}
 
-		public Vector2 MousePos {
-			get {
-				return new Vector2(MouseX, MouseY);
-			}
+		public Vector2 MousePos
+		{
+			get { return new Vector2(MouseX, MouseY); }
 		}
 
-		public bool ShouldClose {
-			get {
-				return Glfw.WindowShouldClose(Wnd);
-			}
-
-			set {
-				Glfw.SetWindowShouldClose(Wnd, value);
-			}
+		public bool ShouldClose
+		{
+			get { return Glfw.WindowShouldClose(Wnd); }
+			set { Glfw.SetWindowShouldClose(Wnd, value); }
 		}
 
-
-		public bool CaptureCursor {
-			get {
-				return _CaptureCursor;
-			}
-
-			set {
+		public bool CaptureCursor
+		{
+			get { return _CaptureCursor; }
+			set
+			{
 				_CaptureCursor = value;
-				Glfw.SetInputMode(Wnd, Glfw.InputMode.Cursor, _CaptureCursor ? Glfw.CursorMode.Disabled : Glfw.CursorMode.Normal);
+				Glfw.SetInputMode(
+					Wnd,
+					Glfw.InputMode.Cursor,
+					_CaptureCursor ? Glfw.CursorMode.Disabled : Glfw.CursorMode.Normal
+				);
 			}
 		}
 
-		static void SetOpenGLHints(int Major, int Minor) {
+		static void SetOpenGLHints(int Major, int Minor)
+		{
 			Glfw.WindowHint(Glfw.Hint.ClientApi, Glfw.ClientApi.OpenGL);
 			Glfw.WindowHint(Glfw.Hint.ContextCreationApi, Glfw.ContextApi.Native);
 			Glfw.WindowHint(Glfw.Hint.OpenglProfile, Glfw.OpenGLProfile.Core);
@@ -262,29 +262,42 @@ namespace FishGfx.Graphics {
 			Glfw.WindowHint(Glfw.Hint.Samples, 0);
 		}
 
-		Glfw.Window TryCreateWindow(int Major, int Minor, int W, int H, string Title) {
+		Glfw.Window TryCreateWindow(int Major, int Minor, int W, int H, string Title)
+		{
 			SetOpenGLHints(Major, Minor);
 			return Glfw.CreateWindow(W, H, Title);
 		}
 
-		public RenderWindow(int Width, int Height, string Title, bool Resizable = false, bool CenterWindow = true) {
+		public RenderWindow(int Width, int Height, string Title, bool Resizable = false, bool CenterWindow = true)
+		{
 			Internal_OpenGL.InitGLFW();
 			Glfw.WindowHint(Glfw.Hint.Resizable, Resizable);
 
 			// TODO: Add a force-context convar or something?
 
 			// YOLO
-			if (SupportedMajor != 0 && SupportedMinor != 0 && (Wnd = TryCreateWindow(SupportedMajor, SupportedMinor, Width, Height, Title))) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 6, Width, Height, Title)) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 5, Width, Height, Title)) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 4, Width, Height, Title)) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 3, Width, Height, Title)) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 2, Width, Height, Title)) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 1, Width, Height, Title)) {
-			} else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 0, Width, Height, Title)) {
-			} else
+			if (
+				SupportedMajor != 0
+				&& SupportedMinor != 0
+				&& (Wnd = TryCreateWindow(SupportedMajor, SupportedMinor, Width, Height, Title))
+			)
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 6, Width, Height, Title))
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 5, Width, Height, Title))
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 4, Width, Height, Title))
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 3, Width, Height, Title))
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 2, Width, Height, Title))
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 1, Width, Height, Title))
+			{ }
+			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 0, Width, Height, Title))
+			{ }
+			else
 				throw new Exception("Could not create any supported OpenGL context");
-
 
 			if (CenterWindow)
 				Center();
@@ -293,69 +306,99 @@ namespace FishGfx.Graphics {
 			WindowHeight = Height;
 
 			{
-				float OldMouseX = 0, OldMouseY = 0;
+				float OldMouseX = 0,
+					OldMouseY = 0;
 				bool MouseDeltaInitialized = false;
 
-				Glfw.SetCursorPosCallback(Wnd, GlfwOnMouseMove = (W, X, Y) => {
-					if (!CaptureCursor) {
-						if (X < 0 || X >= WindowWidth)
-							return;
+				Glfw.SetCursorPosCallback(
+					Wnd,
+					GlfwOnMouseMove = (W, X, Y) =>
+					{
+						if (!CaptureCursor)
+						{
+							if (X < 0 || X >= WindowWidth)
+								return;
 
-						if (Y < 0 || Y >= WindowHeight)
-							return;
+							if (Y < 0 || Y >= WindowHeight)
+								return;
+						}
+
+						MouseX = (int)X;
+						MouseY = (int)Y;
+						OnMouseMove?.Invoke(this, (float)X, (float)Y);
+
+						if (MouseDeltaInitialized)
+							OnMouseMoveDelta?.Invoke(this, OldMouseX - (float)X, OldMouseY - (float)Y);
+						else
+							MouseDeltaInitialized = true;
+
+						OldMouseX = (float)X;
+						OldMouseY = (float)Y;
 					}
-
-					MouseX = (int)X;
-					MouseY = (int)Y;
-					OnMouseMove?.Invoke(this, (float)X, (float)Y);
-
-					if (MouseDeltaInitialized)
-						OnMouseMoveDelta?.Invoke(this, OldMouseX - (float)X, OldMouseY - (float)Y);
-					else
-						MouseDeltaInitialized = true;
-
-					OldMouseX = (float)X;
-					OldMouseY = (float)Y;
-				});
+				);
 			}
 
-			Glfw.SetKeyCallback(Wnd, GlfwOnKey = (Wnd, Key, Scancode, Action, Mods) => {
-				if (OnKey != null) {
-					bool IsPressed = Action == Glfw.InputState.Press || Action == Glfw.InputState.Repeat ? true : false;
-					bool IsRepeat = Action == Glfw.InputState.Repeat;
-					OnKey(this, (Key)Key, Scancode, IsPressed, IsRepeat, (KeyMods)Mods);
+			Glfw.SetKeyCallback(
+				Wnd,
+				GlfwOnKey = (Wnd, Key, Scancode, Action, Mods) =>
+				{
+					if (OnKey != null)
+					{
+						bool IsPressed =
+							Action == Glfw.InputState.Press || Action == Glfw.InputState.Repeat ? true : false;
+						bool IsRepeat = Action == Glfw.InputState.Repeat;
+						OnKey(this, (Key)Key, Scancode, IsPressed, IsRepeat, (KeyMods)Mods);
+					}
 				}
-			});
+			);
 
-			Glfw.SetMouseButtonCallback(Wnd, GlfwOnMouseButton = (Wnd, Button, State, Mods) => {
-				if (OnKey != null) {
-					bool IsPressed = State == Glfw.InputState.Press || State == Glfw.InputState.Repeat ? true : false;
-					bool IsRepeat = State == Glfw.InputState.Repeat;
-					OnKey(this, Key.MouseButton1 + (int)Button, -1, IsPressed, IsRepeat, (KeyMods)Mods);
+			Glfw.SetMouseButtonCallback(
+				Wnd,
+				GlfwOnMouseButton = (Wnd, Button, State, Mods) =>
+				{
+					if (OnKey != null)
+					{
+						bool IsPressed =
+							State == Glfw.InputState.Press || State == Glfw.InputState.Repeat ? true : false;
+						bool IsRepeat = State == Glfw.InputState.Repeat;
+						OnKey(this, Key.MouseButton1 + (int)Button, -1, IsPressed, IsRepeat, (KeyMods)Mods);
+					}
 				}
-			});
+			);
 
+			Glfw.SetCharCallback(
+				Wnd,
+				GlfwOnChar = (Wnd, Unicode) =>
+				{
+					OnChar?.Invoke(this, ((char)Unicode).ToString(), Unicode);
+				}
+			);
 
-			Glfw.SetCharCallback(Wnd, GlfwOnChar = (Wnd, Unicode) => {
-				OnChar?.Invoke(this, ((char)Unicode).ToString(), Unicode);
-			});
+			Glfw.SetScrollCallback(
+				Wnd,
+				GlfwOnScroll = (Wnd, XOffset, YOffset) =>
+				{
+					OnScroll?.Invoke(this, (float)XOffset, (float)YOffset);
+				}
+			);
 
-			Glfw.SetScrollCallback(Wnd, GlfwOnScroll = (Wnd, XOffset, YOffset) => {
-				OnScroll?.Invoke(this, (float)XOffset, (float)YOffset);
-			});
+			Glfw.SetWindowSizeCallback(
+				Wnd,
+				GlfwOnWindowResize = (Wnd, W, H) =>
+				{
+					WindowWidth = W;
+					WindowHeight = H;
 
-			Glfw.SetWindowSizeCallback(Wnd, GlfwOnWindowResize = (Wnd, W, H) => {
-				WindowWidth = W;
-				WindowHeight = H;
-
-				OnWindowResize?.Invoke(this, W, H);
-			});
+					OnWindowResize?.Invoke(this, W, H);
+				}
+			);
 
 			CaptureCursor = false;
 			MakeCurrent();
 		}
 
-		public void MakeCurrent() {
+		public void MakeCurrent()
+		{
 			Glfw.MakeContextCurrent(Wnd);
 			Internal_OpenGL.InitOpenGL();
 			Internal_OpenGL.SetupOpenGL();
@@ -363,19 +406,23 @@ namespace FishGfx.Graphics {
 			Gfx.PopRenderState();
 
 			if (Gfx.GetRenderStateCount() != 0)
-				throw new Exception("Render state count is not 0, did you forget to call Gfx.PopRenderState() somewhere?");
+				throw new Exception(
+					"Render state count is not 0, did you forget to call Gfx.PopRenderState() somewhere?"
+				);
 
 			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 
 			Internal_OpenGL.GL.Enable(EnableCap.Multisample);
 		}
 
-		public void SwapBuffers() {
+		public void SwapBuffers()
+		{
 			RenderAPI.CollectGarbage();
 			Glfw.SwapBuffers(Wnd);
 		}
 
-		public void ReadPixels() {
+		public void ReadPixels()
+		{
 			GetWindowSize(out int W, out int H);
 
 			if (PixelData == null)
@@ -388,7 +435,8 @@ namespace FishGfx.Graphics {
 				Internal_OpenGL.GL.ReadPixels(0, 0, W, H, PixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrPtr);
 		}
 
-		public Color GetPixel(int X, int Y) {
+		public Color GetPixel(int X, int Y)
+		{
 			GetWindowSize(out int W, out int H);
 			int Idx = (H - Y - 1) * W + X;
 
@@ -398,21 +446,25 @@ namespace FishGfx.Graphics {
 			return PixelData[Idx];
 		}
 
-		public void Close() {
+		public void Close()
+		{
 			ShouldClose = true;
 			Glfw.DestroyWindow(Wnd);
 		}
 
-		void GetWindowSize(out int Width, out int Height) {
+		void GetWindowSize(out int Width, out int Height)
+		{
 			Glfw.GetWindowSize(Wnd, out Width, out Height);
 		}
 
-		Vector2 GetWindowSizeVec() {
+		Vector2 GetWindowSizeVec()
+		{
 			GetWindowSize(out int W, out int H);
 			return new Vector2(W, H);
 		}
 
-		public void Center() {
+		public void Center()
+		{
 			RenderAPI.GetDesktopResolution(out int W, out int H);
 			GetWindowSize(out int WW, out int WH);
 
@@ -422,11 +474,13 @@ namespace FishGfx.Graphics {
 			Glfw.SetWindowPos(Wnd, X, Y);
 		}
 
-		public void SetTitle(string Title) {
+		public void SetTitle(string Title)
+		{
 			Glfw.SetWindowTitle(Wnd, Title);
 		}
 
-		public static Vector2 GetDesktopResolution() {
+		public static Vector2 GetDesktopResolution()
+		{
 			Internal_OpenGL.InitGLFW();
 			Glfw.VideoMode VMode = Glfw.GetVideoMode(Glfw.GetPrimaryMonitor());
 			return new Vector2(VMode.Width, VMode.Height);

@@ -1,14 +1,17 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Numerics;
 using FishGfx;
 using FishGfx.Formats;
 using FishGfx.Game;
 using FishGfx.Graphics;
-using System;
-using System.Diagnostics;
-using System.Linq;
-using System.Numerics;
 
-namespace FishGfx.SmokeTest {
-	internal sealed class PrimitiveGallery {
+namespace FishGfx.SmokeTest
+{
+	internal sealed class PrimitiveGallery
+	{
 		internal const int Width = 1920;
 		internal const int Height = 1080;
 
@@ -19,15 +22,18 @@ namespace FishGfx.SmokeTest {
 
 		internal int SceneIndex => sceneIndex;
 
-		internal PrimitiveGallery(string[] args) {
+		internal PrimitiveGallery(string[] args)
+		{
 			autoMode = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
 		}
 
-		internal void Run() {
+		internal void Run()
+		{
 			window = new RenderWindow(Width, Height, "FishGfx Primitive Scene Gallery");
 			InputManager input = new InputManager(window);
 			Texture texture = LoadGridTexture();
-			BMFont titleFont = new BMFont("data/fonts/proggy.fnt", 42);
+			TTFFont titleFont = new TTFFont(AssetPath("fonts", "Aaargh.ttf"));
+			PrimitiveScenes.InitializeFonts();
 			scenes = PrimitiveScenes.Create();
 			GalleryConsole galleryConsole = new GalleryConsole(window, scenes, this);
 
@@ -39,14 +45,18 @@ namespace FishGfx.SmokeTest {
 			int lastAutoScene = -1;
 			Stopwatch runtime = Stopwatch.StartNew();
 
-			while (!window.ShouldClose) {
+			while (!window.ShouldClose)
+			{
 				input.BeginNewFrame();
 				Events.Poll();
 
-				if (galleryConsole.IsOpen) {
+				if (galleryConsole.IsOpen)
+				{
 					if (input.GetKeyPressed(Key.Escape))
 						galleryConsole.Close();
-				} else {
+				}
+				else
+				{
 					if (input.GetKeyPressed(Key.Space))
 						NextScene();
 					if (input.GetKeyPressed(Key.Backspace))
@@ -55,9 +65,11 @@ namespace FishGfx.SmokeTest {
 						RequestClose();
 				}
 
-				if (autoMode) {
+				if (autoMode)
+				{
 					int autoScene = (int)runtime.Elapsed.TotalSeconds;
-					if (autoScene != lastAutoScene) {
+					if (autoScene != lastAutoScene)
+					{
 						lastAutoScene = autoScene;
 						sceneIndex = Math.Min(autoScene, scenes.Length - 1);
 					}
@@ -73,15 +85,16 @@ namespace FishGfx.SmokeTest {
 			}
 
 			galleryConsole.Dispose();
-			foreach (Texture fontTexture in titleFont.PageNames.Values)
-				fontTexture.Dispose();
+			PrimitiveScenes.DisposeFonts();
+			titleFont.Dispose();
 			texture.Dispose();
 			RenderAPI.CollectGarbage();
 			window.Close();
 			Console.WriteLine($"Primitive gallery completed using {RenderAPI.Renderer}");
 		}
 
-		internal void SelectScene(int index) {
+		internal void SelectScene(int index)
+		{
 			sceneIndex = ((index % scenes.Length) + scenes.Length) % scenes.Length;
 		}
 
@@ -91,10 +104,14 @@ namespace FishGfx.SmokeTest {
 
 		internal void RequestClose() => window.ShouldClose = true;
 
-		private static Texture LoadGridTexture() {
-			Texture texture = Texture.FromFile("data/textures/grid.png");
+		private static Texture LoadGridTexture()
+		{
+			Texture texture = Texture.FromFile(AssetPath("textures", "grid.png"));
 			texture.SetFilter(TextureFilter.Nearest);
 			return texture;
 		}
+
+		internal static string AssetPath(params string[] parts) =>
+			Path.Combine(new[] { AppContext.BaseDirectory, "data" }.Concat(parts).ToArray());
 	}
 }

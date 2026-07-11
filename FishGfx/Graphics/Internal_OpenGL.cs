@@ -1,22 +1,22 @@
-using FishGfx;
-
-using Glfw3;
-
-using Silk.NET.OpenGL;
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using FishGfx;
+using Glfw3;
+using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics {
-	internal static class OpenGL_BODGES {
+namespace FishGfx.Graphics
+{
+	internal static class OpenGL_BODGES
+	{
 		public static bool INTEL_BIND_ZERO_TEXTURE_BUG = false;
 	}
 
-	internal static unsafe class Internal_OpenGL {
+	internal static unsafe class Internal_OpenGL
+	{
 		public static GL GL { get; private set; }
 #if DEBUG
 		static DebugProc DebugCallback;
@@ -26,18 +26,13 @@ namespace FishGfx.Graphics {
 
 		//static bool LastFrontFace;
 
-		public static string[] Extensions {
-			get; private set;
-		}
-		public static string Version {
-			get; private set;
-		}
+		public static string[] Extensions { get; private set; }
+		public static string Version { get; private set; }
 
-		public static bool Is45OrAbove {
-			get; private set;
-		}
+		public static bool Is45OrAbove { get; private set; }
 
-		public static void InitGLFW() {
+		public static void InitGLFW()
+		{
 			if (GLFWInitialized)
 				return;
 
@@ -48,22 +43,27 @@ namespace FishGfx.Graphics {
 			if (!Glfw.Init())
 				throw new Exception("Could not initialize glfw");
 
-			Glfw.SetErrorCallback((Err, Msg) => {
-				if (Err == Glfw.ErrorCode.VersionUnavailable)
-					return;
+			Glfw.SetErrorCallback(
+				(Err, Msg) =>
+				{
+					if (Err == Glfw.ErrorCode.VersionUnavailable)
+						return;
 
-				throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
-			});
+					throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
+				}
+			);
 		}
 
-		public static void InitOpenGL() {
+		public static void InitOpenGL()
+		{
 			if (GL != null)
 				return;
 
 			GL = GL.GetApi(Glfw.GetProcAddress);
 		}
 
-		public static void SetupOpenGL() {
+		public static void SetupOpenGL()
+		{
 			if (OpenGLInitialized)
 				return;
 
@@ -75,14 +75,16 @@ namespace FishGfx.Graphics {
 			if (File.Exists(LogName))
 				File.Delete(LogName);
 
-			DebugCallback = (Src, DbgType, ID, Severity, Len, Buffer, UserPtr) => {
+			DebugCallback = (Src, DbgType, ID, Severity, Len, Buffer, UserPtr) =>
+			{
 				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
 
 				// Will use video memory blah blah
 				if (Src == GLEnum.DebugSourceApi && DbgType == GLEnum.DebugTypeOther && ID == 131185)
 					return;
 
-				if (Src == GLEnum.DebugSourceApplication) {
+				if (Src == GLEnum.DebugSourceApplication)
+				{
 					if (DbgType == GLEnum.DebugTypeMarker)
 						return;
 
@@ -90,15 +92,14 @@ namespace FishGfx.Graphics {
 						return;
 				}
 
-
 				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
 				Console.WriteLine(Msg);
 
-				if ((Severity == GLEnum.DebugSeverityHigh) && Debugger.IsAttached) {
+				if ((Severity == GLEnum.DebugSeverityHigh) && Debugger.IsAttached)
+				{
 					if (!Msg.Contains("GL_INVALID_OPERATION in BindTextureUnit"))
 						Debugger.Break();
 				}
-
 			};
 			GL.DebugMessageCallback(DebugCallback, null);
 
@@ -128,7 +129,8 @@ namespace FishGfx.Graphics {
 			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 		}
 
-		public static void Scissor(int X, int Y, int W, int H, bool Enable) {
+		public static void Scissor(int X, int Y, int W, int H, bool Enable)
+		{
 			Internal_OpenGL.GL.Scissor(X, Y, (uint)W, (uint)H);
 
 			if (Enable)

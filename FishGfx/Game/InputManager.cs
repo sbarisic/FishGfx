@@ -1,14 +1,16 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using FishGfx;
-using System.Numerics;
 using FishGfx.Graphics;
 
-namespace FishGfx.Game {
-	public class InputManager {
+namespace FishGfx.Game
+{
+	public class InputManager
+	{
 		Key[] AllKeys;
 
 		Dictionary<Key, bool> KeysPressed = new Dictionary<Key, bool>();
@@ -20,7 +22,8 @@ namespace FishGfx.Game {
 
 		RenderWindow Window;
 
-		public InputManager(RenderWindow Window) {
+		public InputManager(RenderWindow Window)
+		{
 			AllKeys = (Key[])Enum.GetValues(typeof(Key));
 			this.Window = Window;
 
@@ -31,12 +34,14 @@ namespace FishGfx.Game {
 			Window.OnMouseMove += Window_OnMouseMove;
 		}
 
-		private void Window_OnMouseMove(RenderWindow Wnd, float X, float Y) {
+		private void Window_OnMouseMove(RenderWindow Wnd, float X, float Y)
+		{
 			MouseX = X;
 			MouseY = Y;
 		}
 
-		private void Window_OnKey(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods) {
+		private void Window_OnKey(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods)
+		{
 			if (Repeat)
 				return;
 
@@ -48,30 +53,37 @@ namespace FishGfx.Game {
 				KeysReleased[Key] = true;
 		}
 
-		public Vector2 GetMousePos() {
+		public Vector2 GetMousePos()
+		{
 			return new Vector2(MouseX, Window.WindowSize.Y - MouseY);
 		}
 
-		public Vector2 GetMousePosNormal() {
+		public Vector2 GetMousePosNormal()
+		{
 			return GetMousePos() / Window.WindowSize;
 		}
 
-		public void BeginNewFrame() {
-			for (int i = 0; i < AllKeys.Length; i++) {
+		public void BeginNewFrame()
+		{
+			for (int i = 0; i < AllKeys.Length; i++)
+			{
 				KeysPressed[AllKeys[i]] = false;
 				KeysReleased[AllKeys[i]] = false;
 			}
 		}
 
-		public bool GetKeyDown(Key K) {
+		public bool GetKeyDown(Key K)
+		{
 			return KeysDown[K];
 		}
 
-		public bool GetKeyPressed(Key K) {
+		public bool GetKeyPressed(Key K)
+		{
 			return KeysPressed[K];
 		}
 
-		public bool GetKeyReleased(Key K) {
+		public bool GetKeyReleased(Key K)
+		{
 			return KeysReleased[K];
 		}
 	}

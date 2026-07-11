@@ -1,17 +1,20 @@
 using System;
 using System.Numerics;
 
-namespace FishGfx.Graphics {
-	public readonly struct NinePatchInsets : IEquatable<NinePatchInsets> {
+namespace FishGfx.Graphics
+{
+	public readonly struct NinePatchInsets : IEquatable<NinePatchInsets>
+	{
 		public float Left { get; }
 		public float Top { get; }
 		public float Right { get; }
 		public float Bottom { get; }
 
-		public NinePatchInsets(float uniformInset) : this(uniformInset, uniformInset, uniformInset, uniformInset) {
-		}
+		public NinePatchInsets(float uniformInset)
+			: this(uniformInset, uniformInset, uniformInset, uniformInset) { }
 
-		public NinePatchInsets(float left, float top, float right, float bottom) {
+		public NinePatchInsets(float left, float top, float right, float bottom)
+		{
 			Validate(left, nameof(left));
 			Validate(top, nameof(top));
 			Validate(right, nameof(right));
@@ -24,24 +27,38 @@ namespace FishGfx.Graphics {
 
 		public bool Equals(NinePatchInsets other) =>
 			Left == other.Left && Top == other.Top && Right == other.Right && Bottom == other.Bottom;
+
 		public override bool Equals(object obj) => obj is NinePatchInsets other && Equals(other);
+
 		public override int GetHashCode() => HashCode.Combine(Left, Top, Right, Bottom);
 
-		private static void Validate(float value, string name) {
+		private static void Validate(float value, string name)
+		{
 			if (!float.IsFinite(value) || value < 0)
 				throw new ArgumentOutOfRangeException(name, "Nine-patch insets must be finite and non-negative.");
 		}
 	}
 
-	internal static class NinePatchTessellator {
-		internal static Vertex2[] Create(Vector2 position, Vector2 size, Vector2 textureSize, NinePatchInsets insets, Color color) {
+	internal static class NinePatchTessellator
+	{
+		internal static Vertex2[] Create(
+			Vector2 position,
+			Vector2 size,
+			Vector2 textureSize,
+			NinePatchInsets insets,
+			Color color
+		)
+		{
 			ValidateFinite(position, nameof(position));
 			ValidateFinite(size, nameof(size));
 			ValidateFinite(textureSize, nameof(textureSize));
 			if (size.X < 0 || size.Y < 0)
 				throw new ArgumentOutOfRangeException(nameof(size), "Nine-patch destination size cannot be negative.");
 			if (textureSize.X <= 0 || textureSize.Y <= 0)
-				throw new ArgumentOutOfRangeException(nameof(textureSize), "Nine-patch texture dimensions must be positive.");
+				throw new ArgumentOutOfRangeException(
+					nameof(textureSize),
+					"Nine-patch texture dimensions must be positive."
+				);
 			if (insets.Left + insets.Right > textureSize.X)
 				throw new ArgumentOutOfRangeException(nameof(insets), "Horizontal insets exceed the texture width.");
 			if (insets.Top + insets.Bottom > textureSize.Y)
@@ -59,15 +76,28 @@ namespace FishGfx.Graphics {
 			Vertex2[] vertices = new Vertex2[54];
 			int offset = 0;
 			for (int row = 0; row < 3; row++)
-				for (int column = 0; column < 3; column++) {
-					EmitQuad(vertices, offset, x[column], y[row], x[column + 1], y[row + 1],
-						u[column], v[row], u[column + 1], v[row + 1], color);
+				for (int column = 0; column < 3; column++)
+				{
+					EmitQuad(
+						vertices,
+						offset,
+						x[column],
+						y[row],
+						x[column + 1],
+						y[row + 1],
+						u[column],
+						v[row],
+						u[column + 1],
+						v[row + 1],
+						color
+					);
 					offset += 6;
 				}
 			return vertices;
 		}
 
-		private static (float first, float second) FitBorders(float first, float second, float available) {
+		private static (float first, float second) FitBorders(float first, float second, float available)
+		{
 			float total = first + second;
 			if (total <= available || total == 0)
 				return (first, second);
@@ -75,8 +105,20 @@ namespace FishGfx.Graphics {
 			return (first * scale, second * scale);
 		}
 
-		private static void EmitQuad(Vertex2[] vertices, int offset, float x0, float y0, float x1, float y1,
-			float u0, float v0, float u1, float v1, Color color) {
+		private static void EmitQuad(
+			Vertex2[] vertices,
+			int offset,
+			float x0,
+			float y0,
+			float x1,
+			float y1,
+			float u0,
+			float v0,
+			float u1,
+			float v1,
+			Color color
+		)
+		{
 			vertices[offset] = new Vertex2(new Vector2(x0, y0), new Vector2(u0, v0), color);
 			vertices[offset + 1] = new Vertex2(new Vector2(x1, y1), new Vector2(u1, v1), color);
 			vertices[offset + 2] = new Vertex2(new Vector2(x0, y1), new Vector2(u0, v1), color);
@@ -85,7 +127,8 @@ namespace FishGfx.Graphics {
 			vertices[offset + 5] = new Vertex2(new Vector2(x1, y1), new Vector2(u1, v1), color);
 		}
 
-		private static void ValidateFinite(Vector2 value, string name) {
+		private static void ValidateFinite(Vector2 value, string name)
+		{
 			if (!float.IsFinite(value.X) || !float.IsFinite(value.Y))
 				throw new ArgumentOutOfRangeException(name, "Nine-patch values must be finite.");
 		}
