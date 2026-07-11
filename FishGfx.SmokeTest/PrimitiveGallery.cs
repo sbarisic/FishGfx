@@ -68,11 +68,13 @@ namespace FishGfx.SmokeTest
 				if (autoMode)
 				{
 					int autoScene = (int)runtime.Elapsed.TotalSeconds;
+
 					if (autoScene != lastAutoScene)
 					{
 						lastAutoScene = autoScene;
 						sceneIndex = Math.Min(autoScene, scenes.Length - 1);
 					}
+
 					if (autoScene >= scenes.Length)
 						window.ShouldClose = true;
 				}

@@ -16,6 +16,7 @@ public class RingTests
 		AssertVector(center + new Vector2(40, 0), vertices[1]);
 		AssertVector(center + new Vector2(0, 40), vertices[8]);
 		AssertVector(center + new Vector2(0, 20), vertices[^1]);
+
 		for (int i = 0; i < vertices.Length; i += 3)
 			AssertPositiveWinding(vertices[i], vertices[i + 1], vertices[i + 2]);
 	}
@@ -25,6 +26,7 @@ public class RingTests
 	{
 		Vector2[] vertices = RingTessellator.Filled(Vector2.Zero, 0, 50, 0, MathF.PI, 4);
 		Assert.Equal(12, vertices.Length);
+
 		for (int i = 0; i < vertices.Length; i += 3)
 		{
 			Assert.Equal(Vector2.Zero, vertices[i]);

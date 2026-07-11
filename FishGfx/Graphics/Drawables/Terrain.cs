@@ -69,6 +69,7 @@ namespace FishGfx.Graphics.Drawables
 
 			Width = Img.Width;
 			Height = Img.Height;
+
 			if (HeightData == null || (HeightData.Length != Width * Height))
 				HeightData = new float[Width * Height];
 
@@ -92,6 +93,7 @@ namespace FishGfx.Graphics.Drawables
 		void RecalcAfterLoad(bool GeneratePickerColors)
 		{
 			List<Vertex3> Verts = new List<Vertex3>();
+
 			for (int y = 0; y < Height; y++)
 			{
 				for (int x = 0; x < Width; x++)

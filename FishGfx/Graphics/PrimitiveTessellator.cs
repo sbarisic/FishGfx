@@ -12,6 +12,7 @@ namespace FishGfx.Graphics
 		internal static int ResolveArcSegments(float radius, int requestedSegments)
 		{
 			ValidateNonNegativeFinite(radius, nameof(radius));
+
 			if (requestedSegments < 0 || requestedSegments is > 0 and < 3)
 				throw new ArgumentOutOfRangeException(
 					nameof(requestedSegments),
@@ -41,6 +42,7 @@ namespace FishGfx.Graphics
 				return requestedSegments;
 
 			float polygonLength = 0;
+
 			for (int i = 1; i < controlPoints.Length; i++)
 				polygonLength += Vector2.Distance(controlPoints[i - 1], controlPoints[i]);
 			return Math.Clamp((int)MathF.Ceiling(polygonLength / CurveSegmentLength), 8, 512);
@@ -50,15 +52,18 @@ namespace FishGfx.Graphics
 		{
 			ValidateEllipse(center, radii);
 			int resolvedSegments = ResolveArcSegments(MathF.Max(radii.X, radii.Y), segments);
+
 			if (radii.X == 0 || radii.Y == 0)
 				return Array.Empty<Vector2>();
 
 			Vector2[] vertices = new Vector2[resolvedSegments + 1];
+
 			for (int i = 0; i < resolvedSegments; i++)
 			{
 				float angle = MathF.Tau * i / resolvedSegments;
 				vertices[i] = center + new Vector2(MathF.Cos(angle) * radii.X, MathF.Sin(angle) * radii.Y);
 			}
+
 			vertices[resolvedSegments] = vertices[0];
 			return vertices;
 		}
@@ -67,10 +72,12 @@ namespace FishGfx.Graphics
 		{
 			ValidateEllipse(center, radii);
 			int resolvedSegments = ResolveArcSegments(MathF.Max(radii.X, radii.Y), segments);
+
 			if (radii.X == 0 || radii.Y == 0)
 				return Array.Empty<Vector2>();
 
 			Vector2[] vertices = new Vector2[resolvedSegments * 3];
+
 			for (int i = 0; i < resolvedSegments; i++)
 			{
 				float angle0 = MathF.Tau * i / resolvedSegments;
@@ -80,6 +87,7 @@ namespace FishGfx.Graphics
 				vertices[offset + 1] = center + new Vector2(MathF.Cos(angle0) * radii.X, MathF.Sin(angle0) * radii.Y);
 				vertices[offset + 2] = center + new Vector2(MathF.Cos(angle1) * radii.X, MathF.Sin(angle1) * radii.Y);
 			}
+
 			return vertices;
 		}
 
@@ -87,12 +95,14 @@ namespace FishGfx.Graphics
 		{
 			int resolvedSegments = ResolveCurveSegments(segments, start, control, end);
 			Vector2[] vertices = new Vector2[resolvedSegments + 1];
+
 			for (int i = 0; i <= resolvedSegments; i++)
 			{
 				float t = i / (float)resolvedSegments;
 				float inverse = 1 - t;
 				vertices[i] = inverse * inverse * start + 2 * inverse * t * control + t * t * end;
 			}
+
 			return vertices;
 		}
 
@@ -106,6 +116,7 @@ namespace FishGfx.Graphics
 		{
 			int resolvedSegments = ResolveCurveSegments(segments, start, control1, control2, end);
 			Vector2[] vertices = new Vector2[resolvedSegments + 1];
+
 			for (int i = 0; i <= resolvedSegments; i++)
 			{
 				float t = i / (float)resolvedSegments;
@@ -116,6 +127,7 @@ namespace FishGfx.Graphics
 					+ 3 * inverse * t * t * control2
 					+ t * t * t * end;
 			}
+
 			return vertices;
 		}
 
@@ -141,6 +153,7 @@ namespace FishGfx.Graphics
 			ValidateFinite(boundsSize, nameof(boundsSize));
 			ValidateFinite(uvMin, nameof(uvMin));
 			ValidateFinite(uvMax, nameof(uvMax));
+
 			if (boundsSize.X < 0 || boundsSize.Y < 0)
 				throw new ArgumentOutOfRangeException(nameof(boundsSize));
 			if (uvMin.X > uvMax.X || uvMin.Y > uvMax.Y)
@@ -152,12 +165,14 @@ namespace FishGfx.Graphics
 
 			Vector2 uvSize = uvMax - uvMin;
 			Vertex2[] vertices = new Vertex2[positions.Length];
+
 			for (int i = 0; i < positions.Length; i++)
 			{
 				ValidateFinite(positions[i], nameof(positions));
 				Vector2 normalized = (positions[i] - boundsMin) / boundsSize;
 				vertices[i] = new Vertex2(positions[i], uvMin + normalized * uvSize, color);
 			}
+
 			return vertices;
 		}
 

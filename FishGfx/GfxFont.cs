@@ -93,6 +93,7 @@ namespace FishGfx
 				MinCoord = MaxCoord = Vector2.Zero;
 				return;
 			}
+
 			Vector2 Max = new Vector2(Chars[0].X, Chars[0].Y);
 			Vector2 Min = new Vector2(Chars[0].X, Chars[0].Y);
 
@@ -130,6 +131,7 @@ namespace FishGfx
 				//throw new NotImplementedException();
 
 				CharOrigin ChrOrigin = MaybeCharInfo.Value;
+
 				if (Previous != '\0')
 					X += GetKerning(Previous, Chr);
 

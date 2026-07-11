@@ -52,6 +52,7 @@ namespace FishGfx.Graphics
 			Framebuffer = new Framebuffer();
 
 			Multisamples = MSAASamples;
+
 			if (MSAASamples != 0)
 				TextureTgt = TextureKind.Texture2DMultisample;
 

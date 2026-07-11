@@ -34,6 +34,7 @@ namespace FishGfx.NodeEditor
 			if (!IsActive)
 				return false;
 			Target.Text = Text;
+
 			if (!Target.Parse())
 				return false;
 			Cancel();

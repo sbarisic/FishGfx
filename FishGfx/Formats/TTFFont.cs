@@ -63,10 +63,13 @@ namespace FishGfx.Formats
 		{
 			if (data == null)
 				throw new ArgumentNullException(nameof(data));
+
 			if (data.Length == 0)
 				throw new ArgumentException("Font data is empty.", nameof(data));
+
 			TTFFontOptions source = options ?? new TTFFontOptions();
 			ValidateOptions(source);
+
 			this.options = new TTFFontOptions
 			{
 				BasePixelHeight = source.BasePixelHeight,
@@ -77,28 +80,35 @@ namespace FishGfx.Formats
 				SdfPixelDistanceScale = source.SdfPixelDistanceScale,
 				PreloadPrintableAscii = source.PreloadPrintableAscii,
 			};
+
 			fontData = (byte[])data.Clone();
 			fontDataHandle = GCHandle.Alloc(fontData, GCHandleType.Pinned);
 			fontInfo = new stbtt_fontinfo();
 			byte* pointer = (byte*)fontDataHandle.AddrOfPinnedObject();
 			int offset = stbtt_GetFontOffsetForIndex(pointer, 0);
+
 			if (offset < 0 || stbtt_InitFont(fontInfo, pointer, offset) == 0)
 			{
 				fontDataHandle.Free();
 				throw new ArgumentException("Data is not a supported TrueType font.", nameof(data));
 			}
+
 			FontNameValue = string.IsNullOrWhiteSpace(fontName) ? "TrueType" : fontName;
 			scale = stbtt_ScaleForPixelHeight(fontInfo, this.options.BasePixelHeight);
+
 			int ascent;
 			int descent;
 			int gap;
+
 			stbtt_GetFontVMetrics(fontInfo, &ascent, &descent, &gap);
+
 			ascentPixels = (int)MathF.Round(ascent * scale);
 			lineHeight = Math.Max(1, (int)MathF.Ceiling((ascent - descent + gap) * scale));
 			atlasSize = this.options.InitialAtlasSize;
 			atlasPixels = new byte[atlasSize * atlasSize];
 			fallback = stbtt_FindGlyphIndex(fontInfo, 0xFFFD) != 0 ? '\uFFFD' : '?';
 			AddGlyph(fallback);
+
 			if (this.options.PreloadPrintableAscii)
 			{
 				for (char c = ' '; c <= '~'; c++)
@@ -106,6 +116,7 @@ namespace FishGfx.Formats
 					AddGlyph(c);
 				}
 			}
+
 			Glyph space = GetGlyph(' ');
 			tabSize = Math.Max(1, space.Advance * 4);
 			ScaledFontSize = FontSize;
@@ -127,22 +138,26 @@ namespace FishGfx.Formats
 		{
 			Glyph glyph = GetGlyph(c);
 			byte maximum = 0;
+
 			for (int x = 0; x < glyph.Width; x++)
 			{
 				maximum = Math.Max(maximum, glyph.Bitmap[x]);
 				maximum = Math.Max(maximum, glyph.Bitmap[(glyph.Height - 1) * glyph.Width + x]);
 			}
+
 			for (int y = 0; y < glyph.Height; y++)
 			{
 				maximum = Math.Max(maximum, glyph.Bitmap[y * glyph.Width]);
 				maximum = Math.Max(maximum, glyph.Bitmap[y * glyph.Width + glyph.Width - 1]);
 			}
+
 			return maximum;
 		}
 
 		public void PrepareText(string text)
 		{
 			ThrowIfDisposed();
+
 			if (text != null)
 			{
 				foreach (char c in text)
@@ -167,6 +182,7 @@ namespace FishGfx.Formats
 			replacement.SetFilter(TextureFilter.Linear);
 			replacement.SetWrap(TextureWrap.ClampToEdge);
 			byte[] flipped = new byte[atlasPixels.Length];
+
 			for (int y = 0; y < atlasSize; y++)
 			{
 				Buffer.BlockCopy(atlasPixels, y * atlasSize, flipped, (atlasSize - y - 1) * atlasSize, atlasSize);
@@ -185,6 +201,7 @@ namespace FishGfx.Formats
 		public override CharOrigin? GetCharInfo(char c)
 		{
 			ThrowIfDisposed();
+
 			if (char.IsSurrogate(c))
 				c = fallback;
 			Glyph glyph = GetGlyph(c);
@@ -217,6 +234,7 @@ namespace FishGfx.Formats
 				AddGlyph(c);
 				glyph = glyphs[c];
 			}
+
 			return glyph;
 		}
 
@@ -238,11 +256,13 @@ namespace FishGfx.Formats
 			}
 
 			char c = Normalize(requested);
+
 			if (c != requested)
 			{
 				AddAlias(requested, c);
 				return;
 			}
+
 			int advance;
 			int bearing;
 			stbtt_GetCodepointHMetrics(fontInfo, c, &advance, &bearing);
@@ -263,11 +283,13 @@ namespace FishGfx.Formats
 				&yOffset
 			);
 			byte[] data = width > 0 && height > 0 ? new byte[width * height] : Array.Empty<byte>();
+
 			if (bitmap != null)
 			{
 				Marshal.Copy((IntPtr)bitmap, data, 0, data.Length);
 				stbtt_FreeSDF(bitmap, null);
 			}
+
 			Glyph glyph = new Glyph
 			{
 				Codepoint = c,
@@ -279,9 +301,11 @@ namespace FishGfx.Formats
 				Bitmap = data,
 			};
 			glyphs[c] = glyph;
+
 			if (!Repack())
 			{
 				glyphs.Remove(c);
+
 				if (c != fallback)
 					AddAlias(requested, fallback);
 			}
@@ -296,6 +320,7 @@ namespace FishGfx.Formats
 				int y = 1;
 				int rowHeight = 0;
 				bool fits = true;
+
 				foreach (Glyph glyph in glyphs.Values.Distinct().OrderBy(g => g.Codepoint))
 				{
 					if (glyph.Width == 0 || glyph.Height == 0)
@@ -303,19 +328,23 @@ namespace FishGfx.Formats
 						glyph.X = glyph.Y = 0;
 						continue;
 					}
+
 					if (x + glyph.Width + 1 > atlasSize)
 					{
 						x = 1;
 						y += rowHeight + 1;
 						rowHeight = 0;
 					}
+
 					if (y + glyph.Height + 1 > atlasSize)
 					{
 						fits = false;
 						break;
 					}
+
 					glyph.X = x;
 					glyph.Y = y;
+
 					for (int row = 0; row < glyph.Height; row++)
 					{
 						Buffer.BlockCopy(
@@ -330,12 +359,14 @@ namespace FishGfx.Formats
 					x += glyph.Width + 1;
 					rowHeight = Math.Max(rowHeight, glyph.Height);
 				}
+
 				if (fits)
 				{
 					atlasPixels = pixels;
 					atlasDirty = true;
 					return true;
 				}
+
 				if (atlasSize >= options.MaximumAtlasSize)
 				{
 					return false;
@@ -405,6 +436,7 @@ namespace FishGfx.Formats
 
 			disposed = true;
 			atlasTexture?.Dispose();
+
 			if (fontDataHandle.IsAllocated)
 			{
 				fontDataHandle.Free();

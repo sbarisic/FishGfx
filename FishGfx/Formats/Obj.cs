@@ -86,6 +86,7 @@ namespace FishGfx.Formats
 					continue;
 
 				string[] Tokens = Line.Split(' ');
+
 				switch (Tokens[0].ToLower())
 				{
 					case "o":
@@ -140,11 +141,13 @@ namespace FishGfx.Formats
 
 					case "usemtl":
 						CurMesh = Meshes.Where(M => M.MaterialName == Tokens[1]).FirstOrDefault();
+
 						if (CurMesh == null)
 						{
 							CurMesh = new GenericMesh(Tokens[1]);
 							Meshes.Add(CurMesh);
 						}
+
 						break;
 
 					default:

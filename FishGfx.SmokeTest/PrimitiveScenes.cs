@@ -207,6 +207,7 @@ namespace FishGfx.SmokeTest
 			for (int strip = 0; strip < 6; strip++)
 			{
 				Vertex2[] points = new Vertex2[18];
+
 				for (int i = 0; i < points.Length; i++)
 				{
 					float x = 100 + i * 100;
@@ -216,6 +217,7 @@ namespace FishGfx.SmokeTest
 						new Color((byte)(60 + i * 9), (byte)(230 - strip * 22), (byte)(100 + strip * 24))
 					);
 				}
+
 				Gfx.LineStrip(points, 4 + strip * 2);
 			}
 		}
@@ -223,10 +225,12 @@ namespace FishGfx.SmokeTest
 		private static void DrawPoints(float time, Texture _)
 		{
 			Vector2 center = new Vector2(Width / 2f, Height / 2f + 40);
+
 			for (int ring = 0; ring < 5; ring++)
 			{
 				int count = 10 + ring * 6;
 				float radius = 100 + ring * 85;
+
 				for (int i = 0; i < count; i++)
 				{
 					float angle = time * (0.35f + ring * 0.12f) + i * MathF.Tau / count;
@@ -292,6 +296,7 @@ namespace FishGfx.SmokeTest
 			for (int ring = 0; ring < 4; ring++)
 			{
 				int count = 6 + ring * 3;
+
 				for (int i = 0; i < count; i++)
 				{
 					float angle = time * (0.2f + ring * 0.08f) + i * MathF.Tau / count;
@@ -364,6 +369,7 @@ namespace FishGfx.SmokeTest
 			for (int ring = 0; ring < 4; ring++)
 			{
 				int count = 7 + ring * 3;
+
 				for (int i = 0; i < count; i++)
 				{
 					float angle = time * (0.25f + ring * 0.08f) + i * MathF.Tau / count;
@@ -382,6 +388,7 @@ namespace FishGfx.SmokeTest
 		private static void DrawRings(float time, Texture _)
 		{
 			Vector2 fullCenter = new Vector2(650, 560);
+
 			for (int i = 0; i < 5; i++)
 				Gfx.Ring(
 					fullCenter,
@@ -407,6 +414,7 @@ namespace FishGfx.SmokeTest
 		private static void DrawRingLines(float time, Texture _)
 		{
 			Vector2 fullCenter = new Vector2(680, 560);
+
 			for (int i = 0; i < 5; i++)
 				Gfx.RingLines(
 					fullCenter,

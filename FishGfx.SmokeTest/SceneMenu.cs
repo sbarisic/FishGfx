@@ -13,6 +13,7 @@ namespace FishGfx.SmokeTest
 			const float itemSpacing = 36;
 
 			Gfx.DrawText(font, new Vector2(x, firstItemY), "SCENES", new Color(120, 190, 255), 30);
+
 			for (int i = 0; i < scenes.Length; i++)
 			{
 				bool selected = i == selectedIndex;

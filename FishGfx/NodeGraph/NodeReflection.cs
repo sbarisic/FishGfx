@@ -79,6 +79,7 @@ namespace FishGfx.NodeGraph
 				return Array.Empty<NodeOutputDescriptor>();
 			List<Type> tupleTypes = new List<Type>();
 			FlattenTupleTypes(method.ReturnType, tupleTypes);
+
 			if (tupleTypes.Count == 0)
 				return new[] { new NodeOutputDescriptor("return", method.ReturnType) };
 			IList<string> names = method
@@ -104,6 +105,7 @@ namespace FishGfx.NodeGraph
 				return;
 			Type[] args = type.GetGenericArguments();
 			int normal = args.Length == 8 ? 7 : args.Length;
+
 			for (int i = 0; i < normal; i++)
 				result.Add(args[i]);
 			if (args.Length == 8)

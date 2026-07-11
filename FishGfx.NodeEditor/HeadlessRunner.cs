@@ -9,6 +9,7 @@ namespace FishGfx.NodeEditor
 		internal static int Execute(string path)
 		{
 			TextWriter output = Console.Out;
+
 			try
 			{
 				Console.SetOut(TextWriter.Null);

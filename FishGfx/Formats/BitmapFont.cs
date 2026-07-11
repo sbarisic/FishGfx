@@ -115,10 +115,12 @@ namespace FishGfx.Formats
 			using (BinaryReader BR = new BinaryReader(S))
 			{
 				string Magic = Encoding.ASCII.GetString(BR.ReadBytes(3));
+
 				if (Magic != "BMF")
 					throw new Exception("Invalid BMF font file");
 
 				byte Ver = BR.ReadByte();
+
 				if (Ver != 3)
 					throw new Exception("Only BMF v3 is supported");
 
@@ -149,6 +151,7 @@ namespace FishGfx.Formats
 								PageNames = new Dictionary<string, Texture>();
 
 								int PageNameLen = Len / Pages;
+
 								for (int i = 0; i < Pages; i++)
 									PageNames.Add(
 										Encoding.UTF8.GetString(BR.ReadBytes(PageNameLen)).TrimEnd(new[] { '\0' }),
@@ -175,11 +178,13 @@ namespace FishGfx.Formats
 						case 5:
 							{
 								int pairCount = Len / sizeof(KerningBlock);
+
 								for (int i = 0; i < pairCount; i++)
 								{
 									KerningBlock pair = BR.ReadStruct<KerningBlock>();
 									KerningPairs[((ulong)pair.First << 32) | pair.Second] = pair.Amount;
 								}
+
 								break;
 							}
 

@@ -85,6 +85,7 @@ public class RoundedRectangleTests
 			2
 		);
 		Assert.Equal(36, vertices.Length);
+
 		for (int i = 0; i < vertices.Length; i += 3)
 		{
 			Vector2 a = vertices[i + 1] - vertices[i];

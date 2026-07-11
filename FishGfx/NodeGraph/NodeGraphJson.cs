@@ -112,6 +112,7 @@ namespace FishGfx.NodeGraph
 				directory = Path.GetDirectoryName(fullPath);
 			Directory.CreateDirectory(directory);
 			string temporary = fullPath + ".tmp";
+
 			try
 			{
 				File.WriteAllText(temporary, Serialize(graph, view));
@@ -141,6 +142,7 @@ namespace FishGfx.NodeGraph
 			if (registry == null)
 				throw new ArgumentNullException(nameof(registry));
 			Document document;
+
 			try
 			{
 				document = JsonSerializer.Deserialize<Document>(json, FileOptions);
@@ -149,7 +151,9 @@ namespace FishGfx.NodeGraph
 			{
 				return Failure($"Invalid JSON: {ex.Message}");
 			}
+
 			List<string> errors = new List<string>();
+
 			if (document == null)
 				return Failure("The document is empty.");
 			if (document.Version != CurrentVersion)
@@ -163,6 +167,7 @@ namespace FishGfx.NodeGraph
 				errors.Add("Canvas pan/zoom is invalid.");
 			document.Nodes ??= new List<NodeDto>();
 			document.Connections ??= new List<ConnectionDto>();
+
 			foreach (
 				IGrouping<Guid, NodeDto> duplicate in document
 					.Nodes.GroupBy(n => n.Id)
@@ -171,6 +176,7 @@ namespace FishGfx.NodeGraph
 				errors.Add($"Node id {duplicate.Key} is empty or duplicated.");
 
 			Dictionary<Guid, NodeFunctionDescriptor> descriptors = new Dictionary<Guid, NodeFunctionDescriptor>();
+
 			foreach (NodeDto node in document.Nodes)
 			{
 				if (!Finite(node.X, node.Y, node.Width) || node.Width <= 0)
@@ -192,6 +198,7 @@ namespace FishGfx.NodeGraph
 				{
 					descriptors[node.Id] = matches[0];
 					int bodyCount = matches[0].Parameters.Count(p => p.IsBody);
+
 					if ((node.Body?.Count ?? 0) != bodyCount)
 						errors.Add($"Node {node.Id} has {node.Body?.Count ?? 0} body values; expected {bodyCount}.");
 					else
@@ -208,6 +215,7 @@ namespace FishGfx.NodeGraph
 			}
 
 			HashSet<(Guid, int)> occupiedInputs = new HashSet<(Guid, int)>();
+
 			foreach (ConnectionDto connection in document.Connections)
 			{
 				NodeDto outputNode = document.Nodes.FirstOrDefault(n => n.Id == connection.OutputNode),
@@ -222,8 +230,10 @@ namespace FishGfx.NodeGraph
 					errors.Add("A connection references a missing or unresolved node.");
 					continue;
 				}
+
 				IReadOnlyList<NodeOutputDescriptor> outputs = outputDescriptor.Outputs;
 				NodeParameterDescriptor[] inputs = inputDescriptor.Parameters.Where(p => !p.IsBody).ToArray();
+
 				if (
 					connection.OutputIndex < 0
 					|| connection.OutputIndex >= outputs.Count
@@ -236,27 +246,33 @@ namespace FishGfx.NodeGraph
 					);
 					continue;
 				}
+
 				if (outputs[connection.OutputIndex].Type != inputs[connection.InputIndex].Type)
 					errors.Add("A connection has mismatched port types.");
 				if (!occupiedInputs.Add((connection.InputNode, connection.InputIndex)))
 					errors.Add($"Node {connection.InputNode} input {connection.InputIndex} has multiple connections.");
 			}
+
 			if (errors.Count > 0)
 				return new NodeGraphLoadResult { Errors = errors };
 
 			FunctionNodeGraph graph = new FunctionNodeGraph();
 			Dictionary<Guid, FunctionNode> nodes = new Dictionary<Guid, FunctionNode>();
+
 			foreach (NodeDto dto in document.Nodes)
 			{
 				FunctionNode node = graph.CreateNode(descriptors[dto.Id], new Vector2(dto.X, dto.Y), dto.Id);
 				node.Width = dto.Width;
+
 				for (int i = 0; i < dto.Body.Count; i++)
 				{
 					node.BodyValues[i].Text = dto.Body[i];
 					node.BodyValues[i].Parse();
 				}
+
 				nodes.Add(dto.Id, node);
 			}
+
 			foreach (ConnectionDto dto in document.Connections)
 				graph.Connect(
 					nodes[dto.OutputNode].Outputs[dto.OutputIndex],
@@ -294,6 +310,7 @@ namespace FishGfx.NodeGraph
 				SuccessfulNodes = evaluation.SuccessfulNodes,
 				FailedNodes = evaluation.FailedNodes,
 			};
+
 			foreach (FunctionNode node in load.Graph.Nodes.OrderBy(n => n.Id))
 				result.Nodes.Add(
 					new NodeGraphExecutionNode

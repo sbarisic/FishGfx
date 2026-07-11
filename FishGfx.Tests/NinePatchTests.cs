@@ -14,6 +14,7 @@ public class NinePatchTests
 	{
 		Vertex2[] vertices = Create(new Vector2(512, 384));
 		Assert.Equal(54, vertices.Length);
+
 		for (int patch = 0; patch < 9; patch++)
 		{
 			Vertex2[] quad = vertices.Skip(patch * 6).Take(6).ToArray();
@@ -68,11 +69,13 @@ public class NinePatchTests
 	public void AdjacentPatchesShareBoundaries()
 	{
 		Vertex2[] vertices = Create(new Vector2(700, 500));
+
 		for (int row = 0; row < 3; row++)
 		{
 			Assert.Equal(Bounds(vertices, row * 3).max.X, Bounds(vertices, row * 3 + 1).min.X);
 			Assert.Equal(Bounds(vertices, row * 3 + 1).max.X, Bounds(vertices, row * 3 + 2).min.X);
 		}
+
 		for (int column = 0; column < 3; column++)
 		{
 			Assert.Equal(Bounds(vertices, column).max.Y, Bounds(vertices, column + 3).min.Y);

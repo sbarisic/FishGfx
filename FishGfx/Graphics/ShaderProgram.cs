@@ -129,6 +129,7 @@ namespace FishGfx.Graphics
 			Internal_OpenGL.GL.LinkProgram(ID);
 
 			Internal_OpenGL.GL.GetProgram(ID, ProgramPropertyARB.LinkStatus, out int Linked);
+
 			if (Linked == 0)
 			{
 				ErrorString = Internal_OpenGL.GL.GetProgramInfoLog(ID);
@@ -178,6 +179,7 @@ namespace FishGfx.Graphics
 				return UniformLocations[Name];
 
 			int Loc = Internal_OpenGL.GL.GetUniformLocation(ID, Name);
+
 			if (Loc != -1)
 				UniformLocations.Add(Name, Loc);
 
@@ -193,6 +195,7 @@ namespace FishGfx.Graphics
 			where T : struct
 		{
 			int Loc = GetUniformLocation(Uniform);
+
 			if (Loc == -1)
 				return false;
 
@@ -207,6 +210,7 @@ namespace FishGfx.Graphics
 			where T : struct
 		{
 			int Loc = GetUniformLocation(Uniform);
+
 			if (Loc == -1)
 				return false;
 
@@ -221,6 +225,7 @@ namespace FishGfx.Graphics
 			where T : struct
 		{
 			int Loc = GetUniformLocation(Uniform);
+
 			if (Loc == -1)
 				return false;
 
@@ -235,6 +240,7 @@ namespace FishGfx.Graphics
 			where T : struct
 		{
 			int Loc = GetUniformLocation(Uniform);
+
 			if (Loc == -1)
 				return false;
 
@@ -248,6 +254,7 @@ namespace FishGfx.Graphics
 		public bool Uniform1(string Uniform, int Val)
 		{
 			int Loc = GetUniformLocation(Uniform);
+
 			if (Loc == -1)
 				return false;
 
@@ -335,9 +342,11 @@ namespace FishGfx.Graphics
 			Internal_OpenGL.GL.CompileShader(ID);
 
 			Internal_OpenGL.GL.GetShader(ID, ShaderParameterName.CompileStatus, out int Status);
+
 			if (Status == 0)
 			{
 				string Log = Internal_OpenGL.GL.GetShaderInfoLog(ID);
+
 				if (SrcFile != null)
 					ErrorString = SrcFile + "\n" + Log;
 				else

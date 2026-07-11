@@ -114,6 +114,7 @@ namespace FishGfx.Graphics
 
 			GL.GetInteger(GetPName.NumExtensions, out int ExtensionCount);
 			List<string> SupportedExtensions = new List<string>(ExtensionCount);
+
 			for (uint i = 0; i < ExtensionCount; i++)
 				SupportedExtensions.Add(GL.GetStringS(StringName.Extensions, i));
 

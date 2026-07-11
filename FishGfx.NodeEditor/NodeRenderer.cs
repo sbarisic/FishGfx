@@ -27,6 +27,7 @@ namespace FishGfx.NodeEditor
 		private static Color PortColor(Type type)
 		{
 			uint hash = 2166136261;
+
 			foreach (char c in type.FullName ?? type.Name)
 				hash = (hash ^ c) * 16777619;
 			return new Color((byte)(70 + hash % 150), (byte)(70 + (hash >> 8) % 150), (byte)(70 + (hash >> 16) % 150));
@@ -52,6 +53,7 @@ namespace FishGfx.NodeEditor
 		{
 			Gfx.Clear(CanvasColor);
 			DrawGrid(canvas, width, height);
+
 			foreach (NodeConnection connection in graph.Connections)
 				DrawConnection(connection, canvas, selected == connection);
 			if (dragPort != null)
@@ -65,12 +67,14 @@ namespace FishGfx.NodeEditor
 					5 * canvas.Zoom
 				);
 			}
+
 			foreach (FunctionNode node in graph.Nodes)
 				DrawNode(node, canvas, selected == node, hoverPort, editor);
 			Gfx.DrawText(font, new Vector2(22, height - 42), "NODE EDITOR", new Color(145, 151, 160), 23);
 			Color evaluateColor = result == null || result.Success ? new Color(55, 132, 86) : new Color(172, 68, 68);
 			Gfx.FilledRoundedRectangle(220, height - 58, 132, 38, new CornerRadii(5), evaluateColor, 3);
 			Gfx.DrawText(font, new Vector2(240, height - 49), "Evaluate  F5", Color.White, 17);
+
 			if (result != null)
 				Gfx.DrawText(font, new Vector2(370, height - 48), result.Summary, evaluateColor, 18);
 			if (!string.IsNullOrEmpty(fileStatus))
@@ -88,6 +92,7 @@ namespace FishGfx.NodeEditor
 				new Color(115, 120, 128),
 				18
 			);
+
 			if (menu.IsOpen)
 				DrawMenu(menu);
 		}
@@ -152,6 +157,7 @@ namespace FishGfx.NodeEditor
 				HeaderColor,
 				4
 			);
+
 			if (selected)
 				Gfx.RoundedRectangle(
 					p,
@@ -201,6 +207,7 @@ namespace FishGfx.NodeEditor
 				string text = editor.Target == value ? editor.Text + "|" : value.Text;
 				Gfx.DrawText(font, bp + new Vector2(8 * z, 4 * z), text, TextColor, Math.Max(10, 17 * z));
 			}
+
 			if (node.Outputs.Count > 0 && node.EvaluationState == NodeEvaluationState.Success)
 			{
 				string preview = string.Join(
@@ -243,6 +250,7 @@ namespace FishGfx.NodeEditor
 			float textWidth = Measure(font, port.Name, textSize).X;
 			Vector2 text = p + new Vector2(port.Direction == NodePortDirection.Input ? x : x - textWidth, -8 * z);
 			Gfx.DrawText(font, text, port.Name, TextColor, textSize);
+
 			if (hover)
 				Gfx.DrawText(
 					font,
@@ -297,13 +305,16 @@ namespace FishGfx.NodeEditor
 			);
 
 			float top = p.Y + ContextMenu.Height - ContextMenu.SearchHeight;
+
 			for (int visible = 0; visible < menu.VisibleRows; visible++)
 			{
 				int index = menu.CategoryScroll + visible;
+
 				if (index >= menu.Categories.Count)
 					break;
 				MenuCategory category = menu.Categories[index];
 				float y = top - (visible + 1) * ContextMenu.RowHeight;
+
 				if (index == menu.SelectedCategory)
 					Gfx.FilledRoundedRectangle(
 						p.X + 7,
@@ -337,6 +348,7 @@ namespace FishGfx.NodeEditor
 			for (int visible = 0; visible < menu.VisibleRows; visible++)
 			{
 				int index = menu.FunctionScroll + visible;
+
 				if (index >= menu.CurrentFunctions.Count)
 					break;
 				NodeFunctionDescriptor function = menu.CurrentFunctions[index];
@@ -370,6 +382,7 @@ namespace FishGfx.NodeEditor
 					17
 				);
 			}
+
 			if (menu.Categories.Count == 0)
 				Gfx.DrawText(
 					menuFont,
@@ -383,6 +396,7 @@ namespace FishGfx.NodeEditor
 		private static Vector2 Measure(GfxFont measuredFont, string text, float size)
 		{
 			float oldSize = measuredFont.ScaledFontSize;
+
 			try
 			{
 				measuredFont.ScaledFontSize = size;

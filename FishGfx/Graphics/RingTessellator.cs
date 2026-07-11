@@ -17,12 +17,14 @@ namespace FishGfx.Graphics
 		)
 		{
 			float sweep = Validate(center, innerRadius, outerRadius, startAngle, endAngle, segments);
+
 			if (sweep == 0 || outerRadius == 0 || innerRadius == outerRadius)
 				return Array.Empty<Vector2>();
 
 			int resolvedSegments = ResolveSegments(outerRadius, sweep, segments);
 			int verticesPerSegment = innerRadius == 0 ? 3 : 6;
 			Vector2[] vertices = new Vector2[resolvedSegments * verticesPerSegment];
+
 			for (int i = 0; i < resolvedSegments; i++)
 			{
 				float angle0 = startAngle + sweep * i / resolvedSegments;
@@ -51,6 +53,7 @@ namespace FishGfx.Graphics
 					vertices[offset + 5] = inner1;
 				}
 			}
+
 			return vertices;
 		}
 
@@ -64,12 +67,14 @@ namespace FishGfx.Graphics
 		)
 		{
 			float sweep = Validate(center, innerRadius, outerRadius, startAngle, endAngle, segments);
+
 			if (sweep == 0 || outerRadius == 0)
 				return Array.Empty<Vector2[]>();
 
 			int resolvedSegments = ResolveSegments(outerRadius, sweep, segments);
 			Vector2[] outer = Arc(center, outerRadius, startAngle, sweep, resolvedSegments);
 			bool fullRing = MathF.Abs(sweep - MathF.Tau) <= SweepTolerance;
+
 			if (innerRadius == outerRadius)
 			{
 				if (fullRing)
@@ -80,6 +85,7 @@ namespace FishGfx.Graphics
 			if (fullRing)
 			{
 				outer[^1] = outer[0];
+
 				if (innerRadius == 0)
 					return new[] { outer };
 				Vector2[] innerLoop = Arc(center, innerRadius, startAngle, sweep, resolvedSegments);
@@ -88,6 +94,7 @@ namespace FishGfx.Graphics
 			}
 
 			Vector2[] contour;
+
 			if (innerRadius == 0)
 			{
 				contour = new Vector2[outer.Length + 2];
@@ -100,10 +107,12 @@ namespace FishGfx.Graphics
 				Vector2[] inner = Arc(center, innerRadius, startAngle, sweep, resolvedSegments);
 				contour = new Vector2[outer.Length + inner.Length + 1];
 				Array.Copy(outer, contour, outer.Length);
+
 				for (int i = 0; i < inner.Length; i++)
 					contour[outer.Length + i] = inner[inner.Length - 1 - i];
 				contour[^1] = outer[0];
 			}
+
 			return new[] { contour };
 		}
 
@@ -122,11 +131,13 @@ namespace FishGfx.Graphics
 		private static Vector2[] Arc(Vector2 center, float radius, float startAngle, float sweep, int segments)
 		{
 			Vector2[] points = new Vector2[segments + 1];
+
 			for (int i = 0; i <= segments; i++)
 			{
 				float angle = startAngle + sweep * i / segments;
 				points[i] = center + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius;
 			}
+
 			return points;
 		}
 
@@ -153,6 +164,7 @@ namespace FishGfx.Graphics
 				throw new ArgumentOutOfRangeException(nameof(segments));
 
 			float sweep = endAngle - startAngle;
+
 			if (sweep < 0 || sweep > MathF.Tau + SweepTolerance)
 				throw new ArgumentOutOfRangeException(
 					nameof(endAngle),

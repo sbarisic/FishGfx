@@ -62,6 +62,7 @@ namespace FishGfx.NodeGraph
 		public bool Parse()
 		{
 			IsValid = NodeValueConverter.TryParse(Text, Type, out object parsed);
+
 			if (IsValid)
 				Value = parsed;
 			return IsValid;
@@ -86,6 +87,7 @@ namespace FishGfx.NodeGraph
 			Id = id ?? Guid.NewGuid();
 			Function = function;
 			Position = position;
+
 			foreach (NodeParameterDescriptor parameter in function.Parameters)
 			{
 				if (parameter.IsBody)
@@ -93,6 +95,7 @@ namespace FishGfx.NodeGraph
 				else
 					Inputs.Add(NewPort(parameter.Name, parameter.Type, NodePortDirection.Input));
 			}
+
 			foreach (NodeOutputDescriptor output in function.Outputs)
 				Outputs.Add(NewPort(output.Name, output.Type, NodePortDirection.Output));
 		}
@@ -152,6 +155,7 @@ namespace FishGfx.NodeGraph
 				throw new ArgumentNullException(nameof(b));
 			NodePort output = a.Direction == NodePortDirection.Output ? a : b;
 			NodePort input = a.Direction == NodePortDirection.Input ? a : b;
+
 			if (
 				output.Direction != NodePortDirection.Output
 				|| input.Direction != NodePortDirection.Input
@@ -186,6 +190,7 @@ namespace FishGfx.NodeGraph
 			{
 				node.EvaluationState = NodeEvaluationState.NotEvaluated;
 				node.EvaluationMessage = null;
+
 				foreach (NodePort output in node.Outputs)
 					output.Value = null;
 			}
@@ -217,11 +222,14 @@ namespace FishGfx.NodeGraph
 			{
 				node.EvaluationState = NodeEvaluationState.NotEvaluated;
 				node.EvaluationMessage = null;
+
 				foreach (NodePort output in node.Outputs)
 					output.Value = null;
 			}
+
 			Dictionary<FunctionNode, VisitState> states = new Dictionary<FunctionNode, VisitState>();
 			List<FunctionNode> stack = new List<FunctionNode>();
+
 			foreach (FunctionNode node in graph.Nodes)
 				Visit(node, graph, states, stack);
 			return new NodeEvaluationResult
@@ -245,19 +253,24 @@ namespace FishGfx.NodeGraph
 				if (state == VisitState.Done)
 					return node.EvaluationState == NodeEvaluationState.Success;
 				int cycleStart = stack.IndexOf(node);
+
 				for (int i = cycleStart; i < stack.Count; i++)
 					Fail(stack[i], "Cycle detected", NodeEvaluationState.Error);
 				return false;
 			}
+
 			states[node] = VisitState.Visiting;
 			stack.Add(node);
 			bool dependencyFailed = false;
+
 			foreach (NodePort input in node.Inputs)
 			{
 				NodeConnection connection = graph.ConnectionAtInput(input);
+
 				if (connection != null && !Visit(connection.Output.Node, graph, states, stack))
 					dependencyFailed = true;
 			}
+
 			if (node.EvaluationState == NodeEvaluationState.Error)
 				dependencyFailed = true;
 			if (dependencyFailed && node.EvaluationState != NodeEvaluationState.Error)
@@ -279,14 +292,17 @@ namespace FishGfx.NodeGraph
 				for (int i = 0; i < args.Length; i++)
 				{
 					NodeParameterDescriptor parameter = node.Function.Parameters[i];
+
 					if (parameter.IsBody)
 					{
 						NodeBodyValue body = node.BodyValues[bodyIndex++];
+
 						if (!body.Parse())
 						{
 							Fail(node, $"Invalid {body.Name}: {body.Text}", NodeEvaluationState.Error);
 							return;
 						}
+
 						args[i] = body.Value;
 					}
 					else
@@ -296,16 +312,20 @@ namespace FishGfx.NodeGraph
 						args[i] = connection == null ? NodeValueConverter.Default(input.Type) : connection.Output.Value;
 					}
 				}
+
 				object result = node.Function.Method.Invoke(null, args);
+
 				if (node.Outputs.Count == 1 && node.Function.Outputs[0].TupleIndex < 0)
 					node.Outputs[0].Value = result;
 				else if (node.Outputs.Count > 0)
 				{
 					List<object> values = new List<object>();
 					FlattenTupleValues(result, values);
+
 					for (int i = 0; i < node.Outputs.Count; i++)
 						node.Outputs[i].Value = values[i];
 				}
+
 				node.EvaluationState = NodeEvaluationState.Success;
 				node.EvaluationMessage = "OK";
 			}
@@ -326,6 +346,7 @@ namespace FishGfx.NodeGraph
 			for (int i = 0; i < tuple.Length; i++)
 			{
 				object item = tuple[i];
+
 				if (i == 7 && item is ITuple)
 					FlattenTupleValues(item, result);
 				else

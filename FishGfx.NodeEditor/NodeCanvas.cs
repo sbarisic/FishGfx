@@ -97,15 +97,18 @@ namespace FishGfx.NodeEditor
 			Vector2 c1 = start + new Vector2(Math.Max(60, Math.Abs(end.X - start.X) * .45f), 0);
 			Vector2 c2 = end - new Vector2(Math.Max(60, Math.Abs(end.X - start.X) * .45f), 0);
 			Vector2 previous = start;
+
 			for (int i = 1; i <= 32; i++)
 			{
 				float t = i / 32f,
 					u = 1 - t;
 				Vector2 current = u * u * u * start + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * end;
+
 				if (DistanceToSegment(point, previous, current) <= tolerance)
 					return true;
 				previous = current;
 			}
+
 			return false;
 		}
 
@@ -113,6 +116,7 @@ namespace FishGfx.NodeEditor
 		{
 			Vector2 ab = b - a;
 			float lengthSquared = ab.LengthSquared();
+
 			if (lengthSquared == 0)
 				return Vector2.Distance(p, a);
 			float t = Math.Clamp(Vector2.Dot(p - a, ab) / lengthSquared, 0, 1);

@@ -53,6 +53,7 @@ namespace FishGfx.NodeGraph
 		public static bool TryParse(string text, Type type, out object value)
 		{
 			value = null;
+
 			if (!IsSupported(type))
 				return false;
 			if (type == typeof(string))
@@ -60,6 +61,7 @@ namespace FishGfx.NodeGraph
 				value = text ?? "";
 				return true;
 			}
+
 			if (type.IsEnum)
 			{
 				try
@@ -72,12 +74,14 @@ namespace FishGfx.NodeGraph
 					return false;
 				}
 			}
+
 			if (type == typeof(bool))
 			{
 				bool ok = bool.TryParse(text, out bool v);
 				value = v;
 				return ok;
 			}
+
 			if (type == typeof(Vector2))
 				return TryVector(text, 2, a => new Vector2(a[0], a[1]), out value);
 			if (type == typeof(Vector3))
@@ -87,11 +91,13 @@ namespace FishGfx.NodeGraph
 			try
 			{
 				value = Convert.ChangeType(text, type, CultureInfo.InvariantCulture);
+
 				if ((value is float f && !float.IsFinite(f)) || (value is double d && !double.IsFinite(d)))
 				{
 					value = null;
 					return false;
 				}
+
 				return true;
 			}
 			catch
@@ -109,9 +115,11 @@ namespace FishGfx.NodeGraph
 		{
 			value = null;
 			string[] parts = (text ?? "").Split(',');
+
 			if (parts.Length != count)
 				return false;
 			float[] numbers = new float[count];
+
 			for (int i = 0; i < count; i++)
 				if (
 					!float.TryParse(parts[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out numbers[i])

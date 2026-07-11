@@ -105,6 +105,7 @@ public class NodeGraphJsonTests
 		Directory.CreateDirectory(directory);
 		TextWriter old = Console.Out;
 		StringWriter output = new StringWriter();
+
 		try
 		{
 			NodeFunctionRegistry registry = new NodeFunctionRegistry();
@@ -121,6 +122,7 @@ public class NodeGraphJsonTests
 		finally
 		{
 			Console.SetOut(old);
+
 			if (Directory.Exists(directory))
 				Directory.Delete(directory, true);
 		}

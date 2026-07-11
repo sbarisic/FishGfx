@@ -32,8 +32,10 @@ namespace FishGfx.Graphics
 				Refresh();
 				return _View;
 			}
+
 			private set { _View = value; }
 		}
+
 		public Matrix4x4 World
 		{
 			get
@@ -41,6 +43,7 @@ namespace FishGfx.Graphics
 				Refresh();
 				return _World;
 			}
+
 			private set { _World = value; }
 		}
 
@@ -95,6 +98,7 @@ namespace FishGfx.Graphics
 				Refresh();
 				return _WorldForwardNormal;
 			}
+
 			private set { _WorldForwardNormal = value; }
 		}
 
@@ -105,6 +109,7 @@ namespace FishGfx.Graphics
 				Refresh();
 				return _WorldRightNormal;
 			}
+
 			private set { _WorldRightNormal = value; }
 		}
 
@@ -115,6 +120,7 @@ namespace FishGfx.Graphics
 				Refresh();
 				return _WorldUpNormal;
 			}
+
 			private set { _WorldUpNormal = value; }
 		}
 
@@ -329,6 +335,7 @@ namespace FishGfx.Graphics
 			if (MouseMovement && (MouseDelta.X != 0 || MouseDelta.Y != 0))
 			{
 				Yaw -= MouseDelta.X * MouseScale;
+
 				while (Yaw > MaxAngle)
 					Yaw -= MaxAngle;
 				while (Yaw < 0)
@@ -358,6 +365,7 @@ namespace FishGfx.Graphics
 			};
 
 			Vector3[] Points3D = new Vector3[8];
+
 			for (int i = 0; i < Points3D.Length; i++)
 				Points3D[i] = Points[i].XYZ() / Points[i].W;
 

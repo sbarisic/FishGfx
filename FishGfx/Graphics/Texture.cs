@@ -500,6 +500,7 @@ namespace FishGfx.Graphics
 			);
 
 			Color[] Pixels = GetPixels();
+
 			for (int i = 0; i < Pixels.Length; i++)
 			{
 				int Offset = i * sizeof(Color);
@@ -664,6 +665,7 @@ namespace FishGfx.Graphics
 			bool GenerateMipmaps = MipmapLevels > 0;
 
 			Texture Tex = null;
+
 			if (Img.Size.Width == 1 || Img.Size.Height == 1)
 				GenerateMipmaps = false;
 

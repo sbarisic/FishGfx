@@ -36,6 +36,7 @@ public class TTFFontTests
 		using TTFFont font = new TTFFont(UnicodeFontPath);
 		int initial = font.GlyphCount;
 		GfxFont.CharOrigin added = default;
+
 		for (char c = '\u00A0'; c < '\u0400' && font.GlyphCount == initial; c++)
 			added = font.GetCharInfo(c).Value;
 		Assert.True(initial >= 95);
@@ -55,6 +56,7 @@ public class TTFFontTests
 			PreloadPrintableAscii = false,
 		};
 		using TTFFont font = new TTFFont(FontPath, options);
+
 		foreach (char c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789éñøЖΩ")
 			font.GetCharInfo(c);
 		Assert.True(font.AtlasSize > 64);

@@ -58,6 +58,7 @@ namespace FishGfx.Game
 			set
 			{
 				ConsolePosition = value;
+
 				if (Tiles != null)
 					Tiles.Position = value;
 			}
@@ -366,6 +367,7 @@ namespace FishGfx.Game
 			}
 
 			Gfx.FilledRectangle(Position.X, Position.Y, CharSize * Width, CharSize * Height, BackgroundColor);
+
 			if (Tiles != null)
 				Tiles.Draw();
 			else
@@ -376,20 +378,24 @@ namespace FishGfx.Game
 		{
 			float scale = CharSize / Font.FontSize;
 			float cellWidth = Math.Max(1, Font.GetCharInfo('M')?.XAdvance * scale ?? CharSize * 0.6f);
+
 			for (int y = 0; y < Height; y++)
 			{
 				int x = 0;
+
 				while (x < Width)
 				{
 					Color color = GetColor(x, y + ViewScroll);
 					int start = x;
 					StringBuilder run = new StringBuilder();
+
 					while (x < Width && GetColor(x, y + ViewScroll) == color)
 					{
 						char c = GetChar(x, y + ViewScroll);
 						run.Append(c == 0 ? ' ' : c);
 						x++;
 					}
+
 					if (run.ToString().Trim().Length > 0)
 						Gfx.DrawText(
 							Font,

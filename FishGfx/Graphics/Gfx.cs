@@ -353,6 +353,7 @@ namespace FishGfx.Graphics
 					new ShaderStage(ShaderType.FragmentShader, Path.Combine(ShadersDirectory, "default_tex_clr.frag"))
 				);
 			}
+
 			if (SdfText2D == null)
 			{
 				SdfText2D = new ShaderProgram(
@@ -585,6 +586,7 @@ namespace FishGfx.Graphics
 				Radii,
 				CornerSegments
 			);
+
 			if (positions.Length == 0)
 				return;
 			LineStrip(ColorVertices(positions, Color ?? FishGfx.Color.White), Thickness);
@@ -696,6 +698,7 @@ namespace FishGfx.Graphics
 		private static Vertex2[] ColorVertices(Vector2[] positions, Color color)
 		{
 			Vertex2[] vertices = new Vertex2[positions.Length];
+
 			for (int i = 0; i < positions.Length; i++)
 				vertices[i] = new Vertex2(positions[i], color);
 			return vertices;
@@ -785,6 +788,7 @@ namespace FishGfx.Graphics
 		{
 			PrimitiveTessellator.ValidateThickness(Thickness);
 			Vector2[][] paths = RingTessellator.Lines(Center, InnerRadius, OuterRadius, StartAngle, EndAngle, Segments);
+
 			foreach (Vector2[] path in paths)
 				LineStrip(ColorVertices(path, Color ?? FishGfx.Color.White), Thickness);
 		}
@@ -804,6 +808,7 @@ namespace FishGfx.Graphics
 		{
 			PrimitiveTessellator.ValidateThickness(Thickness);
 			Vector2[] positions = PrimitiveTessellator.EllipseOutline(Center, Radii, Segments);
+
 			if (positions.Length == 0)
 				return;
 			LineStrip(ColorVertices(positions, Color ?? FishGfx.Color.White), Thickness);
@@ -905,6 +910,7 @@ namespace FishGfx.Graphics
 			Pos.Y = (int)(Pos.Y - 0.5f);
 
 			float OldScale = Font.ScaledFontSize;
+
 			if (FontSize > 0)
 				Font.ScaledFontSize = FontSize;
 

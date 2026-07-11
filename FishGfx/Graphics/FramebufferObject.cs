@@ -128,6 +128,7 @@ namespace FishGfx.Graphics
 		public void DrawBuffers(params int[] Indices)
 		{
 			GLEnum[] Buffers = new GLEnum[Indices.Length];
+
 			for (int i = 0; i < Indices.Length; i++)
 				Buffers[i] = (GLEnum)(Indices[i] + (int)FramebufferAttachment.ColorAttachment0);
 

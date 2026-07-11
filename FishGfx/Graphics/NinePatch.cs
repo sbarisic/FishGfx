@@ -52,6 +52,7 @@ namespace FishGfx.Graphics
 			ValidateFinite(position, nameof(position));
 			ValidateFinite(size, nameof(size));
 			ValidateFinite(textureSize, nameof(textureSize));
+
 			if (size.X < 0 || size.Y < 0)
 				throw new ArgumentOutOfRangeException(nameof(size), "Nine-patch destination size cannot be negative.");
 			if (textureSize.X <= 0 || textureSize.Y <= 0)
@@ -75,6 +76,7 @@ namespace FishGfx.Graphics
 
 			Vertex2[] vertices = new Vertex2[54];
 			int offset = 0;
+
 			for (int row = 0; row < 3; row++)
 				for (int column = 0; column < 3; column++)
 				{
@@ -99,6 +101,7 @@ namespace FishGfx.Graphics
 		private static (float first, float second) FitBorders(float first, float second, float available)
 		{
 			float total = first + second;
+
 			if (total <= available || total == 0)
 				return (first, second);
 			float scale = available / total;

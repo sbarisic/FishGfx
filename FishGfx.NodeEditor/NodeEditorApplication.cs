@@ -58,9 +58,11 @@ namespace FishGfx.NodeEditor
 			window.OnScroll += OnScroll;
 			window.OnChar += OnChar;
 			window.OnWindowResize += OnResize;
+
 			if (!autoMode && File.Exists(layoutPath))
 			{
 				SeedGraph();
+
 				if (!LoadLayout())
 				{
 					graph = new FunctionNodeGraph();
@@ -71,11 +73,13 @@ namespace FishGfx.NodeEditor
 				SeedGraph();
 			ConfigureProjection();
 			previousMouse = input.GetMousePos();
+
 			if (autoMode)
 			{
 				Vector2 menuPoint = new Vector2(820, 820);
 				menu.Open(menuPoint, canvas.ScreenToWorld(menuPoint), window.WindowWidth, window.WindowHeight);
 			}
+
 			Stopwatch runtime = Stopwatch.StartNew();
 
 			while (!window.ShouldClose)
@@ -90,6 +94,7 @@ namespace FishGfx.NodeEditor
 				editorState.EnableDepthMask = false;
 				editorState.EnableCullFace = false;
 				Gfx.PushRenderState(editorState);
+
 				try
 				{
 					renderer.Draw(
@@ -112,7 +117,9 @@ namespace FishGfx.NodeEditor
 				{
 					Gfx.PopRenderState();
 				}
+
 				window.SwapBuffers();
+
 				if (autoMode && runtime.Elapsed.TotalSeconds >= 2)
 					window.ShouldClose = true;
 			}
@@ -136,6 +143,7 @@ namespace FishGfx.NodeEditor
 			{
 				menu.UpdateHover(mouse);
 				menu.Scroll(mouse, scrollDelta);
+
 				foreach (string chars in typedCharacters)
 					menu.Append(chars);
 				if (input.GetKeyPressed(Key.Backspace))
@@ -176,6 +184,7 @@ namespace FishGfx.NodeEditor
 					graph.InvalidateEvaluation();
 					evaluationResult = null;
 				}
+
 				if (input.GetKeyPressed(Key.Escape))
 					editor.Cancel();
 				return;
@@ -192,6 +201,7 @@ namespace FishGfx.NodeEditor
 			if (input.GetKeyPressed(Key.Delete))
 				DeleteSelected();
 			bool control = input.GetKeyDown(Key.LeftControl) || input.GetKeyDown(Key.RightControl);
+
 			if (control && input.GetKeyPressed(Key.S))
 				SaveLayout();
 			if (control && input.GetKeyPressed(Key.O))
@@ -215,6 +225,7 @@ namespace FishGfx.NodeEditor
 		private void HandleLeftPress(Vector2 world)
 		{
 			Vector2 screen = input.GetMousePos();
+
 			if (
 				screen.X >= 220
 				&& screen.X <= 352
@@ -225,21 +236,27 @@ namespace FishGfx.NodeEditor
 				evaluationResult = evaluator.Evaluate(graph);
 				return;
 			}
+
 			FunctionNode nodeAt = FindNode(world);
+
 			if (nodeAt != null && NodeGeometry.CloseOf(nodeAt).Contains(world))
 			{
 				graph.Remove(nodeAt);
 				evaluationResult = null;
+
 				if (selected == nodeAt)
 					selected = null;
 				return;
 			}
+
 			NodePort port = FindPort(world);
+
 			if (port != null)
 			{
 				if (port.Direction == NodePortDirection.Input)
 				{
 					NodeConnection existing = graph.ConnectionAtInput(port);
+
 					if (existing != null)
 					{
 						graph.Remove(existing);
@@ -249,6 +266,7 @@ namespace FishGfx.NodeEditor
 						return;
 					}
 				}
+
 				draggedPort = port;
 				selected = null;
 				return;
@@ -263,11 +281,13 @@ namespace FishGfx.NodeEditor
 						return;
 					}
 				selected = nodeAt;
+
 				if (NodeGeometry.HeaderOf(nodeAt).Contains(world))
 				{
 					draggedNode = nodeAt;
 					nodeDragOffset = world - nodeAt.Position;
 				}
+
 				return;
 			}
 
@@ -278,14 +298,17 @@ namespace FishGfx.NodeEditor
 		private void HandleLeftRelease(Vector2 world)
 		{
 			draggedNode = null;
+
 			if (draggedPort == null)
 				return;
 			NodePort target = FindPort(world);
+
 			if (target != null && target != draggedPort)
 			{
 				selected = graph.Connect(draggedPort, target);
 				evaluationResult = null;
 			}
+
 			draggedPort = null;
 		}
 
@@ -309,6 +332,7 @@ namespace FishGfx.NodeEditor
 		private NodePort FindPort(Vector2 world)
 		{
 			float radius = NodeGeometry.PortRadius + 5 / canvas.Zoom;
+
 			for (int n = graph.Nodes.Count - 1; n >= 0; n--)
 				foreach (NodePort port in graph.Nodes[n].Inputs.Concat(graph.Nodes[n].Outputs))
 					if (Vector2.Distance(world, NodeGeometry.PortPosition(port)) <= radius)
@@ -359,12 +383,14 @@ namespace FishGfx.NodeEditor
 		private bool LoadLayout()
 		{
 			NodeGraphLoadResult load = NodeGraphJson.LoadFile(layoutPath, registry);
+
 			if (!load.Success)
 			{
 				fileStatus = "Load failed: " + string.Join(" | ", load.Errors);
 				fileStatusError = true;
 				return false;
 			}
+
 			graph = load.Graph;
 			canvas.Apply(load.View);
 			selected = null;

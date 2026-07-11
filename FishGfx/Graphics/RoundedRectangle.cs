@@ -64,6 +64,7 @@ namespace FishGfx.Graphics
 		internal static Vector2[] Outline(Vector2 position, Vector2 size, CornerRadii radii, int cornerSegments = 0)
 		{
 			Validate(position, size, cornerSegments);
+
 			if (size.X == 0 || size.Y == 0)
 				return Array.Empty<Vector2>();
 
@@ -76,6 +77,7 @@ namespace FishGfx.Graphics
 		internal static Vector2[] Filled(Vector2 position, Vector2 size, CornerRadii radii, int cornerSegments = 0)
 		{
 			Validate(position, size, cornerSegments);
+
 			if (size.X == 0 || size.Y == 0)
 				return Array.Empty<Vector2>();
 
@@ -83,6 +85,7 @@ namespace FishGfx.Graphics
 			List<Vector2> boundary = Boundary(position, size, fitted, cornerSegments);
 			Vector2 center = position + size / 2;
 			Vector2[] vertices = new Vector2[boundary.Count * 3];
+
 			for (int i = 0; i < boundary.Count; i++)
 			{
 				int offset = i * 3;
@@ -90,6 +93,7 @@ namespace FishGfx.Graphics
 				vertices[offset + 1] = boundary[i];
 				vertices[offset + 2] = boundary[(i + 1) % boundary.Count];
 			}
+
 			return vertices;
 		}
 
@@ -165,7 +169,9 @@ namespace FishGfx.Graphics
 				points.Add(sharpCorner);
 				return;
 			}
+
 			int segments = ResolveCornerSegments(radius, requestedSegments);
+
 			for (int i = 0; i <= segments; i++)
 			{
 				float angle = start + (end - start) * i / segments;
@@ -184,6 +190,7 @@ namespace FishGfx.Graphics
 			if (!float.IsFinite(position.X) || !float.IsFinite(position.Y))
 				throw new ArgumentOutOfRangeException(nameof(position));
 			ValidateSize(size);
+
 			if (cornerSegments < 0)
 				throw new ArgumentOutOfRangeException(nameof(cornerSegments));
 		}

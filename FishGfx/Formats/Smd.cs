@@ -150,6 +150,7 @@ namespace FishGfx.Formats
 		SmdNode[] GetAllNodes(SmdNode Parent = null, List<SmdNode> AddTo = null)
 		{
 			List<SmdNode> AllNodes = new List<SmdNode>();
+
 			if (Parent == null)
 			{
 				Parent = WorldNode;
@@ -182,6 +183,7 @@ namespace FishGfx.Formats
 			}
 
 			SmdNode SomeNode = null;
+
 			foreach (var C in StartNode.Children)
 				if ((SomeNode = FindNode(ID, C)) != null)
 					return SomeNode;
@@ -210,10 +212,12 @@ namespace FishGfx.Formats
 				while (!Reader.EndOfStream)
 				{
 					string L = Reader.ReadLine().Replace('\t', ' ').Trim();
+
 					if (L.StartsWith("//"))
 						continue;
 
 					LineNum++;
+
 					if (LineNum == 1)
 						if (L == "version 1")
 							continue;
@@ -260,6 +264,7 @@ namespace FishGfx.Formats
 							CurTimeNum = TimeNum;
 
 							SmdNode[] AllNodes = GetAllNodes();
+
 							foreach (var Node in AllNodes)
 							{
 								if (Node.AnimFrames.Count > 0)
@@ -303,6 +308,7 @@ namespace FishGfx.Formats
 						else if (!L.Contains(' '))
 						{
 							string MaterialName = L;
+
 							if (MaterialName.Contains("."))
 								MaterialName = MaterialName.Substring(0, MaterialName.IndexOf('.'));
 

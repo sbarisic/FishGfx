@@ -99,6 +99,7 @@ namespace FishGfx.NodeEditor
 				Refilter();
 				return false;
 			}
+
 			Close();
 			return true;
 		}
@@ -128,6 +129,7 @@ namespace FishGfx.NodeEditor
 		internal NodeFunctionDescriptor Click(Vector2 screen)
 		{
 			int category = CategoryAt(screen);
+
 			if (category >= 0)
 			{
 				SelectedCategory = category;
@@ -136,7 +138,9 @@ namespace FishGfx.NodeEditor
 				EnsureVisible();
 				return null;
 			}
+
 			int function = FunctionAt(screen);
+
 			if (function >= 0)
 			{
 				if (function == SelectedFunction)
@@ -145,6 +149,7 @@ namespace FishGfx.NodeEditor
 				EnsureVisible();
 				return null;
 			}
+
 			if (!PanelBounds.Contains(screen))
 				Close();
 			return null;
@@ -161,6 +166,7 @@ namespace FishGfx.NodeEditor
 			if (!IsOpen || delta == 0)
 				return;
 			int direction = delta > 0 ? -1 : 1;
+
 			if (screen.X < Position.X + CategoryWidth)
 				categoryScroll = Math.Clamp(categoryScroll + direction, 0, Math.Max(0, categories.Count - VisibleRows));
 			else
@@ -182,6 +188,7 @@ namespace FishGfx.NodeEditor
 			float left = category ? Position.X : Position.X + CategoryWidth;
 			float right = category ? Position.X + CategoryWidth : Position.X + Width;
 			float top = Position.Y + Height - SearchHeight;
+
 			if (p.X < left || p.X >= right || p.Y < Position.Y + Padding || p.Y >= top)
 				return -1;
 			int visibleIndex = (int)((top - p.Y) / RowHeight);
@@ -226,6 +233,7 @@ namespace FishGfx.NodeEditor
 		private int KeepVisible(int selection, int scroll, int count)
 		{
 			int max = Math.Max(0, count - VisibleRows);
+
 			if (selection < scroll)
 				scroll = selection;
 			if (selection >= scroll + VisibleRows)
@@ -241,6 +249,7 @@ namespace FishGfx.NodeEditor
 		internal static Color ColorFor(string category)
 		{
 			uint hash = 2166136261;
+
 			foreach (char c in category ?? "")
 				hash = (hash ^ c) * 16777619;
 			return new Color((byte)(75 + hash % 145), (byte)(75 + (hash >> 8) % 145), (byte)(75 + (hash >> 16) % 145));

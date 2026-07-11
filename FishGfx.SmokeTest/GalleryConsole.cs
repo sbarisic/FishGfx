@@ -60,6 +60,7 @@ namespace FishGfx.SmokeTest
 			overlayState.EnableDepthMask = false;
 			overlayState.EnableCullFace = false;
 			Gfx.PushRenderState(overlayState);
+
 			try
 			{
 				console.Draw();
@@ -75,6 +76,7 @@ namespace FishGfx.SmokeTest
 		private void Execute(string input)
 		{
 			string commandLine = input.Trim();
+
 			if (commandLine.Length == 0)
 				return;
 
@@ -147,12 +149,14 @@ namespace FishGfx.SmokeTest
 					console.PrintLine("Scene index must be between 1 and {0}.", scenes.Length);
 					return;
 				}
+
 				gallery.SelectScene(number - 1);
 				PrintSelection();
 				return;
 			}
 
 			string requested = NormalizeSceneName(argument);
+
 			for (int i = 0; i < scenes.Length; i++)
 				if (NormalizeSceneName(scenes[i].Title) == requested)
 				{
@@ -172,6 +176,7 @@ namespace FishGfx.SmokeTest
 		private static string NormalizeSceneName(string name)
 		{
 			string normalized = name.Trim();
+
 			if (normalized.StartsWith("Gfx.", StringComparison.OrdinalIgnoreCase))
 				normalized = normalized.Substring(4);
 			return normalized.ToLowerInvariant();

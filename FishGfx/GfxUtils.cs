@@ -235,6 +235,7 @@ namespace FishGfx
 				Yaw = (float)Math.Atan2(2 * Quat.Y * Quat.W - 2 * Quat.X * Quat.Z, SqX - SqY - SqZ + SqW);
 
 			Yaw *= (float)(180.0 / Math.PI);
+
 			if (Yaw < 0)
 				Yaw += 360;
 

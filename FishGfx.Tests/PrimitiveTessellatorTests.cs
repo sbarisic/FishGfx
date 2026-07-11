@@ -20,6 +20,7 @@ public class PrimitiveTessellatorTests
 		Vector2 center = new Vector2(10, 20);
 		Vector2[] vertices = PrimitiveTessellator.FilledEllipse(center, new Vector2(30, 15), 12);
 		Assert.Equal(36, vertices.Length);
+
 		for (int i = 0; i < vertices.Length; i += 3)
 		{
 			Assert.Equal(center, vertices[i]);
@@ -34,6 +35,7 @@ public class PrimitiveTessellatorTests
 	{
 		Vector2 center = new Vector2(25, -40);
 		Vector2[] vertices = PrimitiveTessellator.EllipseOutline(center, new Vector2(75), 32);
+
 		foreach (Vector2 vertex in vertices)
 			Assert.InRange(Vector2.Distance(center, vertex), 74.999f, 75.001f);
 	}
