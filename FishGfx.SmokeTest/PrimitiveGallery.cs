@@ -14,6 +14,8 @@ namespace FishGfx.SmokeTest
 	{
 		internal const int Width = 1920;
 		internal const int Height = 1080;
+		private const double AutoSceneDuration = 1.0;
+		private const float AutoRenderTime = 0.5f;
 
 		private readonly bool autoMode;
 		private RenderWindow window;
@@ -36,21 +38,55 @@ namespace FishGfx.SmokeTest
 			PrimitiveScenes.InitializeFonts();
 			scenes = PrimitiveScenes.Create();
 			GalleryConsole galleryConsole = new GalleryConsole(window, scenes, this);
+			string screenshotDirectory = null;
+			string[] screenshotFileNames = null;
+
+			if (autoMode)
+			{
+				screenshotDirectory = GalleryScreenshot.FindPicturesDirectory();
+				screenshotFileNames = GalleryScreenshot.FileNamesForTitles(scenes.Select(scene => scene.Title));
+				Directory.CreateDirectory(screenshotDirectory);
+			}
 
 			ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, Width, Height);
 			ShaderUniforms.Current.Resolution = new Vector2(Width, Height);
 			ShaderUniforms.Current.TextureSize = texture.Size;
 
 			sceneIndex = 0;
-			int lastAutoScene = -1;
+			double autoSceneStartedAt = 0;
+			int autoFramesRendered = 0;
+			bool autoSceneCaptured = false;
 			Stopwatch runtime = Stopwatch.StartNew();
 
 			while (!window.ShouldClose)
 			{
 				input.BeginNewFrame();
 				Events.Poll();
+				double elapsedSeconds = runtime.Elapsed.TotalSeconds;
 
-				if (galleryConsole.IsOpen)
+				if (autoMode)
+				{
+					galleryConsole.Close();
+
+					if (input.GetKeyPressed(Key.Escape))
+						RequestClose();
+
+					if (autoSceneCaptured && elapsedSeconds - autoSceneStartedAt >= AutoSceneDuration)
+					{
+						if (sceneIndex == scenes.Length - 1)
+						{
+							RequestClose();
+						}
+						else
+						{
+							sceneIndex++;
+							autoSceneStartedAt = elapsedSeconds;
+							autoFramesRendered = 0;
+							autoSceneCaptured = false;
+						}
+					}
+				}
+				else if (galleryConsole.IsOpen)
 				{
 					if (input.GetKeyPressed(Key.Escape))
 						galleryConsole.Close();
@@ -65,24 +101,32 @@ namespace FishGfx.SmokeTest
 						RequestClose();
 				}
 
-				if (autoMode)
-				{
-					int autoScene = (int)runtime.Elapsed.TotalSeconds;
-
-					if (autoScene != lastAutoScene)
-					{
-						lastAutoScene = autoScene;
-						sceneIndex = Math.Min(autoScene, scenes.Length - 1);
-					}
-
-					if (autoScene >= scenes.Length)
-						window.ShouldClose = true;
-				}
+				if (window.ShouldClose)
+					break;
 
 				Gfx.Clear(new Color(18, 23, 36));
-				scenes[sceneIndex].Draw((float)runtime.Elapsed.TotalSeconds, texture);
+				scenes[sceneIndex].Draw(autoMode ? AutoRenderTime : (float)elapsedSeconds, texture);
 				SceneMenu.Draw(titleFont, scenes, sceneIndex);
 				galleryConsole.Draw();
+
+				if (autoMode)
+				{
+					autoFramesRendered++;
+
+					if (autoFramesRendered == 2)
+					{
+						GalleryScreenshot.Capture(
+							window,
+							screenshotDirectory,
+							screenshotFileNames[sceneIndex]
+						);
+						autoSceneCaptured = true;
+						Console.WriteLine(
+							$"Captured {scenes[sceneIndex].Title} to {screenshotFileNames[sceneIndex]}"
+						);
+					}
+				}
+
 				window.SwapBuffers();
 			}
 

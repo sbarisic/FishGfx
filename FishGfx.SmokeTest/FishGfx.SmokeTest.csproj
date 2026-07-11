@@ -12,4 +12,9 @@
   <ItemGroup>
     <ProjectReference Include="..\FishGfx\FishGfx.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>FishGfx.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
