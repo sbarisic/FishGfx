@@ -17,6 +17,7 @@ namespace FishGfx.VoxelTest
 	{
 		private const int Width = 1920;
 		private const int Height = 1080;
+		private const float EditReach = 12;
 		private readonly bool autoMode;
 		private Vector2 mouseDelta;
 		private bool boundaryBlockEnabled = true;
@@ -94,6 +95,12 @@ namespace FishGfx.VoxelTest
 							cullingEnabled = !cullingEnabled;
 							renderer.CullingEnabled = cullingEnabled;
 						}
+
+						if (input.GetKeyPressed(Key.MouseLeft))
+							DestroyTargetedVoxel(world, camera);
+
+						if (input.GetKeyPressed(Key.MouseRight))
+							PlaceTargetedVoxel(world, camera, materials.Stone);
 					}
 
 					if (window.ShouldClose)
@@ -191,6 +198,21 @@ namespace FishGfx.VoxelTest
 		{
 			boundaryBlockEnabled = !boundaryBlockEnabled;
 			world.SetVoxel(15, 8, 0, boundaryBlockEnabled ? new VoxelCell(materials.Glass) : VoxelCell.Air);
+		}
+
+		private static void DestroyTargetedVoxel(VoxelWorld world, Camera camera)
+		{
+			if (VoxelRaycast.Cast(world, camera.Position, camera.WorldForwardNormal, EditReach, out VoxelRaycastHit hit))
+				world.SetVoxel(hit.X, hit.Y, hit.Z, VoxelCell.Air);
+		}
+
+		private static void PlaceTargetedVoxel(VoxelWorld world, Camera camera, ushort materialId)
+		{
+			if (
+				VoxelRaycast.Cast(world, camera.Position, camera.WorldForwardNormal, EditReach, out VoxelRaycastHit hit)
+				&& hit.HasSurfaceNormal
+			)
+				world.SetVoxel(hit.AdjacentX, hit.AdjacentY, hit.AdjacentZ, new VoxelCell(materialId));
 		}
 
 		private static void ForceStaleBoundaryEdit(VoxelWorld world, MaterialIds materials)
@@ -378,9 +400,20 @@ namespace FishGfx.VoxelTest
 						+ $"vertices opaque/cutout: {stats.OpaqueVertices} / {stats.CutoutVertices}\n"
 						+ $"transparent faces/vertices: {stats.TransparentFaces} / {stats.TransparentVertices}\n"
 						+ $"culling: {(cullingEnabled ? "on" : "off")}   C toggles, E edits a chunk boundary\n"
+						+ "Left destroy, Right place stone\n"
 						+ "WASD + mouse, Space/Ctrl vertical, Shift fast",
 					new Color(220, 228, 240),
 					22
+				);
+				Gfx.Line(
+					new Vertex2(new Vector2(Width / 2 - 10, Height / 2), new Color(245, 245, 245, 220)),
+					new Vertex2(new Vector2(Width / 2 + 10, Height / 2), new Color(245, 245, 245, 220)),
+					2
+				);
+				Gfx.Line(
+					new Vertex2(new Vector2(Width / 2, Height / 2 - 10), new Color(245, 245, 245, 220)),
+					new Vertex2(new Vector2(Width / 2, Height / 2 + 10), new Color(245, 245, 245, 220)),
+					2
 				);
 			}
 			finally

@@ -161,7 +161,9 @@ The smoke gallery contains one scene per immediate primitive plus reusable comma
 
 Automatic mode captures the complete 1920×1080 frame before buffer swap, writes an atomic full-size PNG, and generates a 640×360 thumbnail. The files under `FishGfx/pictures` are used directly by the README gallery.
 
-`FishGfx.VoxelTest` generates deterministic multi-chunk terrain spanning negative coordinates and demonstrates opaque blocks, cutout foliage, glass/water transparency, ambient occlusion, neighbor culling, and boundary edits. Interactive controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, E boundary editing, and C culling disable/enable. `--auto -debug` forces stale revisions and neighbor rebuilds, waits for accepted GPU meshes, renders all three passes, and exits without user input.
+`VoxelRaycast` provides bounded DDA traversal through positive and negative voxel coordinates. A hit reports the occupied cell, entry-face normal, distance, world position, and adjacent cell used for placement.
+
+`FishGfx.VoxelTest` generates deterministic multi-chunk terrain spanning negative coordinates and demonstrates opaque blocks, cutout foliage, glass/water transparency, ambient occlusion, neighbor culling, and boundary edits. Interactive controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, left click to destroy, right click to place stone, E fixed boundary editing, and C culling disable/enable. `--auto -debug` forces stale revisions and neighbor rebuilds, waits for accepted GPU meshes, renders all three passes, and exits without user input.
 
 The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, voxel coordinates/palettes/meshing/revisions/culling/sorting, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
 

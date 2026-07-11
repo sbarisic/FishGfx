@@ -131,7 +131,7 @@ queue.Execute(RenderBucket.Transparent, RenderSubmissionComparers.TransparentBac
 
 The renderer owns its worker scheduler, shaders, per-chunk GPU meshes, and global transparent stream. The application retains ownership of the atlas texture and must keep it alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted separately. Transparent faces are gathered across all visible chunks, stably sorted back-to-front in camera space, and uploaded as one world-space stream. Face occlusion, per-face atlas tiles, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
 
-Run `FishGfx.VoxelTest` to inspect a deterministic world spanning positive and negative chunks. Use WASD and the mouse to fly, Space/Ctrl to move vertically, Shift to accelerate, E to edit a boundary voxel, and C to toggle culling. The unattended validation mode is:
+`VoxelRaycast.Cast` performs a bounded voxel-grid traversal and returns the hit cell, surface normal, exact distance/position, and adjacent placement cell. `FishGfx.VoxelTest` uses it for block editing in a deterministic world spanning positive and negative chunks. Use the left mouse button to destroy the targeted block, the right mouse button to place stone, WASD and the mouse to fly, Space/Ctrl to move vertically, Shift to accelerate, E to edit a fixed boundary voxel, and C to toggle culling. The unattended validation mode is:
 
 ```powershell
 dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -- --auto -debug

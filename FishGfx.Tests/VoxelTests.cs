@@ -292,6 +292,75 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void VoxelRaycastFindsSurfaceAndAdjacentPlacementCell()
+	{
+		VoxelWorld world = new();
+		world.SetVoxel(0, 0, 0, new VoxelCell(1));
+
+		Assert.True(
+			VoxelRaycast.Cast(
+				world,
+				new Vector3(0.5f, 0.5f, -2),
+				Vector3.UnitZ,
+				10,
+				out VoxelRaycastHit hit
+			)
+		);
+		Assert.Equal((0, 0, 0), (hit.X, hit.Y, hit.Z));
+		Assert.Equal((0, 0, -1), (hit.NormalX, hit.NormalY, hit.NormalZ));
+		Assert.Equal((0, 0, -1), (hit.AdjacentX, hit.AdjacentY, hit.AdjacentZ));
+		Assert.Equal(2, hit.Distance, 5);
+		Assert.Equal(new VoxelCell(1), hit.Voxel);
+	}
+
+	[Fact]
+	public void VoxelRaycastSupportsNegativeCoordinatesAndRangeLimits()
+	{
+		VoxelWorld world = new();
+		world.SetVoxel(-1, 0, 0, new VoxelCell(2));
+
+		Assert.False(
+			VoxelRaycast.Cast(
+				world,
+				new Vector3(-0.5f, 0.5f, 3),
+				-Vector3.UnitZ,
+				1.99f,
+				out _
+			)
+		);
+		Assert.True(
+			VoxelRaycast.Cast(
+				world,
+				new Vector3(-0.5f, 0.5f, 3),
+				-Vector3.UnitZ,
+				2,
+				out VoxelRaycastHit hit
+			)
+		);
+		Assert.Equal((-1, 0, 0), (hit.X, hit.Y, hit.Z));
+		Assert.Equal((0, 0, 1), (hit.NormalX, hit.NormalY, hit.NormalZ));
+	}
+
+	[Fact]
+	public void VoxelRaycastReportsOriginsInsideSolidVoxels()
+	{
+		VoxelWorld world = new();
+		world.SetVoxel(2, 3, 4, new VoxelCell(1));
+
+		Assert.True(
+			VoxelRaycast.Cast(
+				world,
+				new Vector3(2.25f, 3.5f, 4.75f),
+				Vector3.UnitX,
+				0,
+				out VoxelRaycastHit hit
+			)
+		);
+		Assert.Equal(0, hit.Distance);
+		Assert.False(hit.HasSurfaceNormal);
+	}
+
+	[Fact]
 	public void MeshingSchedulerProducesRevisionedResultsAndReschedulesEdits()
 	{
 		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
