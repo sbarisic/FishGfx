@@ -44,8 +44,9 @@ namespace FishGfx.VoxelTest
 			window.OnMouseMoveDelta += (_, x, y) => mouseDelta += new Vector2(x, y);
 			VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(out VoxelTestMaterialIds materials);
 			VoxelTestWorldData worldData = VoxelTestWorldGenerator.Generate(materials);
-			VoxelWorld world = worldData.World;
-			Camera camera = CreateCamera();
+			VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(worldData, materials);
+			VoxelWorld world = streamer.World;
+			Camera camera = CreateCamera(worldData);
 			Camera uiCamera = new Camera();
 			uiCamera.SetOrthogonal(0, 0, Width, Height);
 			ShaderUniforms.Current.Resolution = new Vector2(Width, Height);
@@ -58,9 +59,9 @@ namespace FishGfx.VoxelTest
 				new VoxelAtlasLayout(3, 2, 192, 128),
 				new VoxelRendererOptions
 				{
-					MaxWorkers = 2,
-					RenderDistance = 180,
-					UploadBudget = 12,
+					MaxWorkers = Math.Max(2, Environment.ProcessorCount - 1),
+					RenderDistance = 108,
+					UploadBudget = 24,
 				}
 			);
 			DeferredRenderQueue renderQueue = new DeferredRenderQueue();
@@ -70,17 +71,14 @@ namespace FishGfx.VoxelTest
 			overlayState.EnableDepthMask = false;
 			overlayState.EnableDepthClamp = false;
 			Stopwatch timer = Stopwatch.StartNew();
+			RollingFrameRateCounter frameRate = new RollingFrameRateCounter();
 			double previousTime = timer.Elapsed.TotalSeconds;
 			VoxelRendererStatistics finalStatistics = default;
+			VoxelRendererFrameDiagnostics finalDiagnostics = default;
 			int autoValidationStage = 0;
 			int autoGpuChunkCount = 0;
 			bool underwaterValidated = false;
-
-			if (autoMode)
-			{
-				renderer.UpdateMeshing(0);
-				ForceStaleMeshEdits(world, materials);
-			}
+			bool staleEditsForced = false;
 
 			try
 			{
@@ -91,16 +89,17 @@ namespace FishGfx.VoxelTest
 					double now = timer.Elapsed.TotalSeconds;
 					float deltaTime = (float)(now - previousTime);
 					previousTime = now;
+					frameRate.Update(now, Math.Max(deltaTime, float.Epsilon));
 
 					if (input.GetKeyPressed(Key.Escape))
 						window.ShouldClose = true;
 
 					if (!autoMode)
 					{
-						UpdateCamera(camera, input, deltaTime);
+						UpdateCamera(camera, input, deltaTime, streamer);
 
 						if (input.GetKeyPressed(Key.E))
-							ToggleBoundaryBlock(world, materials);
+							ToggleBoundaryBlock(streamer, materials);
 
 						if (input.GetKeyPressed(Key.C))
 						{
@@ -109,14 +108,23 @@ namespace FishGfx.VoxelTest
 						}
 
 						if (input.GetKeyPressed(Key.MouseLeft))
-							DestroyTargetedVoxel(world, camera);
+							DestroyTargetedVoxel(streamer, world, camera);
 
 						if (input.GetKeyPressed(Key.MouseRight))
-							PlaceTargetedVoxel(world, camera, materials.Stone);
+							PlaceTargetedVoxel(streamer, world, camera, materials.Stone);
 					}
 
 					if (window.ShouldClose)
 						break;
+
+					streamer.Update(camera.Position);
+
+					if (autoMode && streamer.IsSettled && !staleEditsForced)
+					{
+						renderer.UpdateMeshing(0);
+						ForceStaleMeshEdits(world, materials);
+						staleEditsForced = true;
+					}
 
 					bool underwater = VoxelMediumQuery.IsInsideMaterial(world, camera.Position, materials.Water);
 					renderer.Fog = underwater ? UnderwaterFog : VoxelFogSettings.Disabled;
@@ -124,7 +132,7 @@ namespace FishGfx.VoxelTest
 					renderQueue.BeginFrame();
 					Gfx.Clear(underwater ? UnderwaterClearColor : AirClearColor);
 
-					if (!autoMode || renderer.IsIdle)
+					if (!autoMode || (streamer.IsSettled && renderer.IsIdle))
 					{
 						renderer.SubmitVisible(renderQueue, camera);
 						ShaderUniforms.Current.Camera = camera;
@@ -150,14 +158,20 @@ namespace FishGfx.VoxelTest
 						uiCamera,
 						camera,
 						overlayState,
+						streamer,
+						frameRate,
 						renderer.Statistics,
+						renderer.FrameDiagnostics,
 						renderer.CullingEnabled
 					);
 					window.SwapBuffers();
 
 					VoxelRendererStatistics statistics = renderer.Statistics;
+					VoxelRendererFrameDiagnostics diagnostics = renderer.FrameDiagnostics;
 
-					bool renderValidationReady = renderer.IsIdle
+					bool renderValidationReady = streamer.IsSettled
+						&& staleEditsForced
+						&& renderer.IsIdle
 						&& statistics.AcceptedMeshes > 0
 						&& statistics.DiscardedMeshes > 0
 						&& statistics.VisibleChunks > 0
@@ -167,12 +181,26 @@ namespace FishGfx.VoxelTest
 
 					if (
 						autoMode
+						&& renderValidationReady
+						&& (diagnostics.PassSubmissions > 3 || diagnostics.ShaderBinds > 3 || diagnostics.TextureBinds > 3)
+					)
+						throw new InvalidOperationException("Voxel rendering issued redundant pass submissions or common resource binds.");
+
+					if (
+						autoMode
 						&& autoValidationStage == 0
 						&& renderValidationReady
+						&& diagnostics.TransparentCacheHit
 					)
 					{
 						if (underwater || renderer.Fog.Enabled)
 							throw new InvalidOperationException("The normal voxel validation frame unexpectedly used underwater fog.");
+						if (
+							streamer.LoadedHorizontalCount > streamer.MaximumResidentHorizontalCount
+							|| statistics.LoadedChunks > streamer.MaximumResidentChunkCount
+							|| statistics.GpuChunks > streamer.MaximumResidentChunkCount
+						)
+							throw new InvalidOperationException("Voxel streaming exceeded its bounded resident chunk budget.");
 
 						autoGpuChunkCount = statistics.GpuChunks;
 						camera.Position = worldData.UnderwaterCameraPosition;
@@ -190,17 +218,28 @@ namespace FishGfx.VoxelTest
 						if (statistics.GpuChunks != autoGpuChunkCount)
 							throw new InvalidOperationException("Changing voxel fog unexpectedly recreated GPU chunk meshes.");
 
+						autoValidationStage = 2;
+					}
+					else if (
+						autoMode
+						&& autoValidationStage == 2
+						&& renderValidationReady
+						&& underwater
+						&& diagnostics.TransparentCacheHit
+					)
+					{
 						underwaterValidated = true;
 						window.ShouldClose = true;
 					}
-					else if (autoMode && timer.Elapsed.TotalSeconds > 30)
+					else if (autoMode && timer.Elapsed.TotalSeconds > 60)
 						throw new TimeoutException(
-							$"Voxel renderer did not become idle within 30 seconds; pending={statistics.PendingJobs}, "
-								+ $"accepted={statistics.AcceptedMeshes}, stale={statistics.DiscardedMeshes}."
+							$"Voxel streaming validation did not settle within 60 seconds; stream={streamer.PendingHorizontalCount}, "
+								+ $"meshes={statistics.PendingJobs}, accepted={statistics.AcceptedMeshes}, stale={statistics.DiscardedMeshes}."
 						);
 				}
 
 				finalStatistics = renderer.Statistics;
+				finalDiagnostics = renderer.FrameDiagnostics;
 			}
 			finally
 			{
@@ -214,6 +253,9 @@ namespace FishGfx.VoxelTest
 			Console.WriteLine(
 				$"Voxel test completed using {RenderAPI.Renderer}; accepted={finalStatistics.AcceptedMeshes}; "
 					+ $"discarded={finalStatistics.DiscardedMeshes}; underwater={(underwaterValidated ? "validated" : "interactive")}"
+					+ $"; stream={streamer.LoadedHorizontalCount}; fps={frameRate.FramesPerSecond:F1}"
+					+ $"; prep={finalDiagnostics.CullingMilliseconds + finalDiagnostics.TransparentBuildMilliseconds:F2}ms"
+					+ $"; draws={finalDiagnostics.DrawCalls}; binds={finalDiagnostics.ShaderBinds}"
 			);
 		}
 
@@ -237,14 +279,19 @@ namespace FishGfx.VoxelTest
 			}
 		}
 
-		private void UpdateCamera(Camera camera, InputManager input, float deltaTime)
+		private void UpdateCamera(
+			Camera camera,
+			InputManager input,
+			float deltaTime,
+			VoxelTestChunkStreamer streamer
+		)
 		{
 			camera.MouseMovement = true;
 			// RenderWindow reports the previous cursor position minus the current one.
 			// Camera.Update expects movement in the current-minus-previous direction.
 			camera.Update(-mouseDelta);
 			mouseDelta = Vector2.Zero;
-			float speed = input.GetKeyDown(Key.LeftShift) ? 28 : 14;
+			float speed = input.GetKeyDown(Key.LeftShift) ? 80 : 20;
 			Vector3 movement = Vector3.Zero;
 
 			if (input.GetKeyDown(Key.W))
@@ -261,13 +308,15 @@ namespace FishGfx.VoxelTest
 				movement -= Vector3.UnitY;
 
 			if (movement.LengthSquared() > 0)
-				camera.Position += Vector3.Normalize(movement) * speed * deltaTime;
+				camera.Position = streamer.ClampPosition(
+					camera.Position + Vector3.Normalize(movement) * speed * deltaTime
+				);
 		}
 
-		private void ToggleBoundaryBlock(VoxelWorld world, VoxelTestMaterialIds materials)
+		private void ToggleBoundaryBlock(VoxelTestChunkStreamer streamer, VoxelTestMaterialIds materials)
 		{
 			boundaryBlockEnabled = !boundaryBlockEnabled;
-			world.SetVoxel(
+			streamer.SetVoxel(
 				VoxelTestWorldGenerator.BoundaryEditX,
 				VoxelTestWorldGenerator.BoundaryEditY,
 				VoxelTestWorldGenerator.BoundaryEditZ,
@@ -275,19 +324,28 @@ namespace FishGfx.VoxelTest
 			);
 		}
 
-		private static void DestroyTargetedVoxel(VoxelWorld world, Camera camera)
+		private static void DestroyTargetedVoxel(
+			VoxelTestChunkStreamer streamer,
+			VoxelWorld world,
+			Camera camera
+		)
 		{
 			if (VoxelRaycast.Cast(world, camera.Position, camera.WorldForwardNormal, EditReach, out VoxelRaycastHit hit))
-				world.SetVoxel(hit.X, hit.Y, hit.Z, VoxelCell.Air);
+				streamer.SetVoxel(hit.X, hit.Y, hit.Z, VoxelCell.Air);
 		}
 
-		private static void PlaceTargetedVoxel(VoxelWorld world, Camera camera, ushort materialId)
+		private static void PlaceTargetedVoxel(
+			VoxelTestChunkStreamer streamer,
+			VoxelWorld world,
+			Camera camera,
+			ushort materialId
+		)
 		{
 			if (
 				VoxelRaycast.Cast(world, camera.Position, camera.WorldForwardNormal, EditReach, out VoxelRaycastHit hit)
 				&& hit.HasSurfaceNormal
 			)
-				world.SetVoxel(hit.AdjacentX, hit.AdjacentY, hit.AdjacentZ, new VoxelCell(materialId));
+				streamer.SetVoxel(hit.AdjacentX, hit.AdjacentY, hit.AdjacentZ, new VoxelCell(materialId));
 		}
 
 		private static void ForceStaleMeshEdits(VoxelWorld world, VoxelTestMaterialIds materials)
@@ -306,12 +364,13 @@ namespace FishGfx.VoxelTest
 			}
 		}
 
-		private static Camera CreateCamera()
+		private static Camera CreateCamera(VoxelTestWorldData worldData)
 		{
 			Camera camera = new Camera();
 			camera.SetPerspective(Width, Height, MathF.PI / 2.2f, 0.1f, 500);
-			camera.Position = new Vector3(38, 28, 52);
-			camera.LookAt(new Vector3(0, 5, 0));
+			Vector3 water = worldData.UnderwaterCameraPosition;
+			camera.Position = new Vector3(water.X, water.Y + 45, water.Z);
+			camera.LookAt(new Vector3(water.X + 18, water.Y, water.Z + 18));
 
 			return camera;
 		}
@@ -377,7 +436,10 @@ namespace FishGfx.VoxelTest
 			Camera uiCamera,
 			Camera worldCamera,
 			RenderState overlayState,
+			VoxelTestChunkStreamer streamer,
+			RollingFrameRateCounter frameRate,
 			VoxelRendererStatistics stats,
+			VoxelRendererFrameDiagnostics diagnostics,
 			bool cullingEnabled
 		)
 		{
@@ -386,15 +448,25 @@ namespace FishGfx.VoxelTest
 			try
 			{
 				ShaderUniforms.Current.Camera = uiCamera;
-				Gfx.FilledRoundedRectangle(20, 740, 670, 310, new CornerRadii(16), new Color(10, 14, 24, 210));
+				Gfx.FilledRoundedRectangle(20, 700, 670, 350, new CornerRadii(16), new Color(10, 14, 24, 210));
 				Gfx.DrawText(font, new Vector2(45, 980), "FishGfx voxel chunks", new Color(110, 205, 255), 34);
 				Gfx.DrawText(
 					font,
-					new Vector2(45, 780),
-					$"chunks loaded/gpu/visible: {stats.LoadedChunks} / {stats.GpuChunks} / {stats.VisibleChunks}\n"
+					new Vector2(400, 985),
+					$"FPS: {frameRate.FramesPerSecond:F1} | {frameRate.FrameMilliseconds:F1} ms",
+					new Color(145, 255, 170),
+					22
+				);
+				Gfx.DrawText(
+					font,
+					new Vector2(45, 735),
+					$"stream loaded/pending: {streamer.LoadedHorizontalCount} / {streamer.PendingHorizontalCount}\n"
+						+ $"chunks loaded/gpu/visible: {stats.LoadedChunks} / {stats.GpuChunks} / {stats.VisibleChunks}\n"
 						+ $"jobs: {stats.PendingJobs}   accepted: {stats.AcceptedMeshes}   stale: {stats.DiscardedMeshes}\n"
 						+ $"vertices opaque/cutout: {stats.OpaqueVertices} / {stats.CutoutVertices}\n"
 						+ $"transparent faces/vertices: {stats.TransparentFaces} / {stats.TransparentVertices}\n"
+						+ $"render prep: {diagnostics.CullingMilliseconds:F2} + {diagnostics.TransparentBuildMilliseconds:F2} ms"
+						+ $"   draws/binds: {diagnostics.DrawCalls} / {diagnostics.ShaderBinds}\n"
 						+ $"culling: {(cullingEnabled ? "on" : "off")}   C toggles, E edits a chunk boundary\n"
 						+ "Left destroy, Right place stone\n"
 						+ "WASD + mouse, Space/Ctrl vertical, Shift fast",

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 
 namespace FishGfx.Voxels
@@ -11,19 +10,22 @@ namespace FishGfx.Voxels
 			ChunkCoordinate coordinate,
 			int faceIndex,
 			Vector3 origin,
-			VoxelTransparentFace face
+			VoxelTransparentFace face,
+			float depth = 0
 		)
 		{
 			Coordinate = coordinate;
 			FaceIndex = faceIndex;
 			Origin = origin;
 			Face = face ?? throw new ArgumentNullException(nameof(face));
+			Depth = depth;
 		}
 
 		internal ChunkCoordinate Coordinate { get; }
 		internal int FaceIndex { get; }
 		internal Vector3 Origin { get; }
 		internal VoxelTransparentFace Face { get; }
+		internal float Depth { get; }
 		internal Vector3 WorldCenter => Face.Center + Origin;
 	}
 
@@ -43,8 +45,52 @@ namespace FishGfx.Voxels
 				throw new ArgumentOutOfRangeException(nameof(cameraForward));
 
 			cameraForward = Vector3.Normalize(cameraForward);
-			faces.Sort((left, right) => Compare(left, right, cameraPosition, cameraForward));
-			VoxelVertex[] vertices = new VoxelVertex[faces.Sum(face => face.Face.Vertices.Count)];
+
+			for (int i = 0; i < faces.Count; i++)
+			{
+				VoxelTransparentFaceInstance face = faces[i];
+				faces[i] = new VoxelTransparentFaceInstance(
+					face.Coordinate,
+					face.FaceIndex,
+					face.Origin,
+					face.Face,
+					Vector3.Dot(face.WorldCenter - cameraPosition, cameraForward)
+				);
+			}
+
+			int vertexCount = CountVertices(faces);
+			VoxelVertex[] vertices = new VoxelVertex[vertexCount];
+			BuildSorted(faces, vertices);
+
+			return vertices;
+		}
+
+		internal static int CountVertices(List<VoxelTransparentFaceInstance> faces)
+		{
+			int count = 0;
+
+			for (int i = 0; i < faces.Count; i++)
+				count = checked(count + faces[i].Face.Vertices.Count);
+
+			return count;
+		}
+
+		internal static int BuildSorted(
+			List<VoxelTransparentFaceInstance> faces,
+			VoxelVertex[] vertices
+		)
+		{
+			if (faces == null)
+				throw new ArgumentNullException(nameof(faces));
+			if (vertices == null)
+				throw new ArgumentNullException(nameof(vertices));
+
+			faces.Sort(Compare);
+			int required = CountVertices(faces);
+
+			if (vertices.Length < required)
+				throw new ArgumentException("The destination is too small for the transparent stream.", nameof(vertices));
+
 			int destination = 0;
 
 			foreach (VoxelTransparentFaceInstance visibleFace in faces)
@@ -55,19 +101,15 @@ namespace FishGfx.Voxels
 					vertices[destination++] = vertex;
 				}
 
-			return vertices;
+			return destination;
 		}
 
-		private static int Compare(
+		internal static int Compare(
 			VoxelTransparentFaceInstance left,
-			VoxelTransparentFaceInstance right,
-			Vector3 cameraPosition,
-			Vector3 cameraForward
+			VoxelTransparentFaceInstance right
 		)
 		{
-			float leftDepth = Vector3.Dot(left.WorldCenter - cameraPosition, cameraForward);
-			float rightDepth = Vector3.Dot(right.WorldCenter - cameraPosition, cameraForward);
-			int result = rightDepth.CompareTo(leftDepth);
+			int result = right.Depth.CompareTo(left.Depth);
 
 			if (result == 0)
 				result = left.Coordinate.X.CompareTo(right.Coordinate.X);

@@ -1,4 +1,6 @@
-using System.Collections.Generic;
+using System;
+using System.Linq;
+using System.Numerics;
 using FishGfx.VoxelTest;
 using FishGfx.Voxels;
 using Xunit;
@@ -7,78 +9,247 @@ namespace FishGfx.Tests;
 
 public class VoxelTestWorldTests
 {
+	private static readonly Lazy<GeneratedWorld> Generated = new Lazy<GeneratedWorld>(CreateGeneratedWorld);
+
 	[Fact]
-	public void GeneratedWorldHasExpectedExtentAndBoundedLakes()
+	public void GeneratedWorldHasExpandedBoundsAndBoundedLakes()
 	{
-		VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(out VoxelTestMaterialIds materials);
-		VoxelTestWorldData data = VoxelTestWorldGenerator.Generate(materials);
-		HashSet<(int X, int Z)> horizontalChunks = new();
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestWorldData data = generated.Data;
+		int minimumHeight = int.MaxValue;
+		int maximumHeight = int.MinValue;
 
-		foreach (VoxelChunk chunk in data.World.LoadedChunks)
-			horizontalChunks.Add((chunk.Coordinate.X, chunk.Coordinate.Z));
-
-		Assert.Equal(64, horizontalChunks.Count);
-
-		for (int z = -4; z <= 3; z++)
-			for (int x = -4; x <= 3; x++)
-				Assert.Contains((x, z), horizontalChunks);
-
-		Assert.True(data.LakeCount >= 2);
-		Assert.True(data.WaterColumnCount >= VoxelTestWorldGenerator.MinimumLakeArea * 2);
-		VoxelTestWorldGenerator.ValidateWaterContainment(data, materials.Water);
-
-		HashSet<(int X, int Z)> waterChunks = new();
+		Assert.Equal(-640, VoxelTestWorldGenerator.WorldMinimum);
+		Assert.Equal(640, VoxelTestWorldGenerator.WorldMaximum);
+		Assert.Equal(1280, VoxelTestWorldGenerator.WorldSize);
+		Assert.Equal(-40, VoxelTestWorldGenerator.MinimumChunkCoordinate);
+		Assert.Equal(39, VoxelTestWorldGenerator.MaximumChunkCoordinate);
 
 		for (int z = VoxelTestWorldGenerator.WorldMinimum; z < VoxelTestWorldGenerator.WorldMaximum; z++)
 			for (int x = VoxelTestWorldGenerator.WorldMinimum; x < VoxelTestWorldGenerator.WorldMaximum; x++)
 			{
-				int? waterSurface = data.GetWaterSurface(x, z);
-
-				if (!waterSurface.HasValue)
-					continue;
-
-				ChunkCoordinate coordinate = ChunkCoordinate.FromWorld(x, waterSurface.Value, z, out _, out _, out _);
-				waterChunks.Add((coordinate.X, coordinate.Z));
-				Assert.Equal(materials.Dirt, data.World.GetVoxel(x, data.GetSurfaceHeight(x, z), z).MaterialId);
+				int height = data.GetSurfaceHeight(x, z);
+				minimumHeight = Math.Min(minimumHeight, height);
+				maximumHeight = Math.Max(maximumHeight, height);
 			}
 
-		Assert.True(waterChunks.Count > 1);
-		Assert.True(
-			VoxelMediumQuery.IsInsideMaterial(
-				data.World,
-				data.UnderwaterCameraPosition,
-				materials.Water
-			)
-		);
-
-		foreach ((int x, _, int z) in data.TreeBases)
-			Assert.Null(data.GetWaterSurface(x, z));
-
-		Assert.NotNull(palette);
+		Assert.InRange(minimumHeight, VoxelTestWorldGenerator.MinimumSurfaceHeight, 10);
+		Assert.InRange(maximumHeight, 140, VoxelTestWorldGenerator.MaximumSurfaceHeight);
+		Assert.True(data.LakeCount >= 2);
+		Assert.True(data.WaterColumnCount >= VoxelTestWorldGenerator.MinimumLakeArea * 2);
+		VoxelTestWorldGenerator.ValidateWaterContainment(data);
 	}
 
 	[Fact]
-	public void GeneratedHeightFieldAndLakeAnalysisAreDeterministic()
+	public void GeneratedChunksAndLakeLocationsAreDeterministic()
 	{
-		int[,] firstHeights = VoxelTestWorldGenerator.CreateHeightField();
-		int[,] secondHeights = VoxelTestWorldGenerator.CreateHeightField();
-		VoxelLakeMap firstLakes = VoxelLakeAnalyzer.FindEnclosedBasins(
-			firstHeights,
-			VoxelTestWorldGenerator.MinimumLakeArea
-		);
-		VoxelLakeMap secondLakes = VoxelLakeAnalyzer.FindEnclosedBasins(
-			secondHeights,
-			VoxelTestWorldGenerator.MinimumLakeArea
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestWorldData data = generated.Data;
+		ChunkCoordinate[] coordinates =
+		{
+			new ChunkCoordinate(-40, -5, -40),
+			new ChunkCoordinate(-8, 2, -6),
+			new ChunkCoordinate(0, 4, 0),
+			new ChunkCoordinate(39, 6, 39),
+		};
+
+		foreach (ChunkCoordinate coordinate in coordinates)
+		{
+			VoxelCell[] first = data.GenerateChunk(coordinate, generated.Materials);
+			VoxelCell[] second = data.GenerateChunk(coordinate, generated.Materials);
+
+			Assert.Equal(first, second);
+		}
+
+		Vector3 water = data.UnderwaterCameraPosition;
+		Assert.NotNull(data.GetWaterSurface((int)MathF.Floor(water.X), (int)MathF.Floor(water.Z)));
+	}
+
+	[Fact]
+	public void StreamerLoadsNearestChunksWithinBudgetAndClipsAtWorldBoundary()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 1,
+			unloadRadius: 2,
+			generationBudget: 2
 		);
 
-		Assert.Equal(firstLakes.BasinCount, secondLakes.BasinCount);
-		Assert.Equal(firstLakes.WaterColumnCount, secondLakes.WaterColumnCount);
+		Assert.Equal(2, streamer.Update(new Vector3(0.5f, 100, 0.5f)));
+		Assert.Equal((0, 0), streamer.GeneratedThisFrame[0]);
+		Assert.Equal(2, streamer.LoadedHorizontalCount);
+		Assert.Equal(7, streamer.PendingHorizontalCount);
 
-		for (int z = 0; z < VoxelTestWorldGenerator.WorldSize; z++)
-			for (int x = 0; x < VoxelTestWorldGenerator.WorldSize; x++)
+		while (!streamer.IsSettled)
+			streamer.Update(new Vector3(0.5f, 100, 0.5f));
+
+		Assert.Equal(9, streamer.LoadedHorizontalCount);
+
+		VoxelTestChunkStreamer boundary = new VoxelTestChunkStreamer(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 1,
+			unloadRadius: 2,
+			generationBudget: 8
+		);
+		boundary.Update(new Vector3(639.5f, 100, 639.5f));
+
+		Assert.True(boundary.IsSettled);
+		Assert.Equal(4, boundary.LoadedHorizontalCount);
+		Assert.All(
+			boundary.World.LoadedChunks,
+			chunk =>
 			{
-				Assert.Equal(firstHeights[x, z], secondHeights[x, z]);
-				Assert.Equal(firstLakes.GetWaterSurface(x, z), secondLakes.GetWaterSurface(x, z));
+				Assert.InRange(chunk.Coordinate.X, 38, 39);
+				Assert.InRange(chunk.Coordinate.Z, 38, 39);
 			}
+		);
+	}
+
+	[Fact]
+	public void StreamerPreservesEditsAcrossUnloadAndRegeneration()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 0,
+			unloadRadius: 0,
+			generationBudget: 1
+		);
+		int x = 0;
+		int z = 0;
+		int y = generated.Data.GetSurfaceHeight(x, z);
+		streamer.Update(new Vector3(0.5f, y + 10, 0.5f));
+
+		Assert.False(streamer.World.GetVoxel(x, y, z).IsAir);
+		Assert.True(streamer.SetVoxel(x, y, z, VoxelCell.Air));
+		Assert.True(streamer.SetVoxel(x, 185, z, new VoxelCell(generated.Materials.Stone)));
+		Assert.True(streamer.World.GetVoxel(x, y, z).IsAir);
+		Assert.Equal(2, streamer.OverrideCount);
+
+		streamer.Update(new Vector3(64.5f, y + 10, 0.5f));
+		Assert.True(streamer.World.GetVoxel(x, y, z).IsAir);
+		streamer.Update(new Vector3(0.5f, y + 10, 0.5f));
+
+		Assert.True(streamer.World.GetVoxel(x, y, z).IsAir);
+		Assert.Equal(generated.Materials.Stone, streamer.World.GetVoxel(x, 185, z).MaterialId);
+		Assert.Equal(1, streamer.LoadedHorizontalCount);
+	}
+
+	[Fact]
+	public void CrossChunkTreeGeometryDoesNotForceNeighborLoading()
+	{
+		GeneratedWorld generated = Generated.Value;
+		(int X, int Y, int Z) root = generated.Data
+			.GetTreeRoots(
+				VoxelTestWorldGenerator.WorldMinimum + 2,
+				VoxelTestWorldGenerator.WorldMinimum + 2,
+				VoxelTestWorldGenerator.WorldMaximum - 3,
+				VoxelTestWorldGenerator.WorldMaximum - 3
+			)
+			.First(item => IsNearChunkEdge(item.X) || IsNearChunkEdge(item.Z));
+		int targetX = root.X;
+		int targetZ = root.Z;
+
+		if (PositiveModulo(root.X, VoxelWorld.ChunkSize) <= 1)
+			targetX -= 2;
+		else if (PositiveModulo(root.X, VoxelWorld.ChunkSize) >= 14)
+			targetX += 2;
+		else if (PositiveModulo(root.Z, VoxelWorld.ChunkSize) <= 1)
+			targetZ -= 2;
+		else
+			targetZ += 2;
+
+		ChunkCoordinate rootChunk = ChunkCoordinate.FromWorld(root.X, root.Y, root.Z, out _, out _, out _);
+		ChunkCoordinate targetChunk = ChunkCoordinate.FromWorld(targetX, root.Y + 4, targetZ, out _, out _, out _);
+		VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 0,
+			unloadRadius: 1,
+			generationBudget: 1
+		);
+		streamer.Update(new Vector3(root.X + 0.5f, root.Y + 10, root.Z + 0.5f));
+
+		Assert.Equal(1, streamer.LoadedHorizontalCount);
+		Assert.DoesNotContain(
+			streamer.World.LoadedChunks,
+			chunk => chunk.Coordinate.X == targetChunk.X && chunk.Coordinate.Z == targetChunk.Z
+		);
+
+		streamer.Update(new Vector3(targetX + 0.5f, root.Y + 10, targetZ + 0.5f));
+
+		Assert.Equal(generated.Materials.Leaves, streamer.World.GetVoxel(targetX, root.Y + 4, targetZ).MaterialId);
+		Assert.NotEqual(rootChunk, targetChunk);
+	}
+
+	[Fact]
+	public void RollingFrameRateUsesOnlyRecentSamples()
+	{
+		RollingFrameRateCounter counter = new RollingFrameRateCounter(0.5);
+
+		for (int i = 1; i <= 30; i++)
+			counter.Update(i / 60.0, 1 / 60.0);
+
+		Assert.InRange(counter.FramesPerSecond, 59.9, 60.1);
+		Assert.InRange(counter.FrameMilliseconds, 16.6, 16.7);
+		Assert.Equal(30, counter.SampleCount);
+
+		counter.Update(1.1, 0.1);
+
+		Assert.True(counter.SampleCount < 30);
+		Assert.True(counter.FramesPerSecond < 60);
+		Assert.Throws<ArgumentOutOfRangeException>(() => counter.Update(2, 0));
+	}
+
+	[Fact]
+	public void StreamerClampsCameraToExpandedWorldBounds()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(generated.Data, generated.Materials);
+		Vector3 clamped = streamer.ClampPosition(new Vector3(-10000, 10000, 10000));
+
+		Assert.InRange(clamped.X, -640, -639.9f);
+		Assert.InRange(clamped.Y, 191.9f, 192);
+		Assert.InRange(clamped.Z, 639.9f, 640);
+	}
+
+	private static GeneratedWorld CreateGeneratedWorld()
+	{
+		VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(out VoxelTestMaterialIds materials);
+		return new GeneratedWorld(palette, materials, VoxelTestWorldGenerator.Generate(materials));
+	}
+
+	private static bool IsNearChunkEdge(int coordinate)
+	{
+		int local = PositiveModulo(coordinate, VoxelWorld.ChunkSize);
+		return local <= 1 || local >= 14;
+	}
+
+	private static int PositiveModulo(int value, int divisor)
+	{
+		int remainder = value % divisor;
+		return remainder < 0 ? remainder + divisor : remainder;
+	}
+
+	private sealed class GeneratedWorld
+	{
+		internal GeneratedWorld(
+			VoxelPalette palette,
+			VoxelTestMaterialIds materials,
+			VoxelTestWorldData data
+		)
+		{
+			Palette = palette;
+			Materials = materials;
+			Data = data;
+		}
+
+		internal VoxelPalette Palette { get; }
+		internal VoxelTestMaterialIds Materials { get; }
+		internal VoxelTestWorldData Data { get; }
 	}
 }

@@ -43,22 +43,33 @@ namespace FishGfx.Voxels
 
 		public void Update(VoxelVertex[] vertices)
 		{
+			Update(vertices, vertices?.Length ?? throw new ArgumentNullException(nameof(vertices)));
+		}
+
+		internal void Update(VoxelVertex[] vertices, int count)
+		{
 			ThrowIfDisposed();
 
 			if (vertices == null)
 				throw new ArgumentNullException(nameof(vertices));
+			if (count < 0 || count > vertices.Length)
+				throw new ArgumentOutOfRangeException(nameof(count));
 
-			if (vertices.Length > Capacity)
+			if (count > Capacity)
 			{
-				Capacity = CalculateCapacity(Capacity, vertices.Length);
-				VoxelVertex[] allocation = new VoxelVertex[Capacity];
-				Array.Copy(vertices, allocation, vertices.Length);
-				vertexBuffer.SetData(allocation, Usage);
+				Capacity = CalculateCapacity(Capacity, count);
+				vertexBuffer.SetData(
+					(uint)(Capacity * Marshal.SizeOf<VoxelVertex>()),
+					IntPtr.Zero,
+					Capacity,
+					Usage
+				);
 			}
-			else if (vertices.Length > 0)
-				vertexBuffer.SetSubData(vertices);
 
-			VertexCount = vertices.Length;
+			if (count > 0)
+				vertexBuffer.SetSubData(vertices, count);
+
+			VertexCount = count;
 		}
 
 		public void Draw()

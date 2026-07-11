@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Numerics;
 using FishGfx.Graphics;
 
@@ -63,6 +63,70 @@ namespace FishGfx.Voxels
 		public int TransparentVertices { get; }
 	}
 
+	public readonly struct VoxelRendererFrameDiagnostics
+	{
+		internal VoxelRendererFrameDiagnostics(
+			double cullingMilliseconds,
+			double transparentBuildMilliseconds,
+			int opaqueDrawCalls,
+			int cutoutDrawCalls,
+			int transparentDrawCalls,
+			int shaderBinds,
+			int textureBinds,
+			int passSubmissions,
+			int transparentUploadBytes,
+			bool transparentCacheHit
+		)
+		{
+			CullingMilliseconds = cullingMilliseconds;
+			TransparentBuildMilliseconds = transparentBuildMilliseconds;
+			OpaqueDrawCalls = opaqueDrawCalls;
+			CutoutDrawCalls = cutoutDrawCalls;
+			TransparentDrawCalls = transparentDrawCalls;
+			ShaderBinds = shaderBinds;
+			TextureBinds = textureBinds;
+			PassSubmissions = passSubmissions;
+			TransparentUploadBytes = transparentUploadBytes;
+			TransparentCacheHit = transparentCacheHit;
+		}
+
+		public double CullingMilliseconds { get; }
+		public double TransparentBuildMilliseconds { get; }
+		public int OpaqueDrawCalls { get; }
+		public int CutoutDrawCalls { get; }
+		public int TransparentDrawCalls { get; }
+		public int DrawCalls => OpaqueDrawCalls + CutoutDrawCalls + TransparentDrawCalls;
+		public int ShaderBinds { get; }
+		public int TextureBinds { get; }
+		public int PassSubmissions { get; }
+		public int TransparentUploadBytes { get; }
+		public bool TransparentCacheHit { get; }
+	}
+
+	internal readonly struct VoxelTransparentCacheKey : IEquatable<VoxelTransparentCacheKey>
+	{
+		internal VoxelTransparentCacheKey(long geometryRevision, ulong visibleSignature, Matrix4x4 view)
+		{
+			GeometryRevision = geometryRevision;
+			VisibleSignature = visibleSignature;
+			View = view;
+		}
+
+		internal long GeometryRevision { get; }
+		internal ulong VisibleSignature { get; }
+		internal Matrix4x4 View { get; }
+
+		public bool Equals(VoxelTransparentCacheKey other)
+		{
+			return GeometryRevision == other.GeometryRevision
+				&& VisibleSignature == other.VisibleSignature
+				&& View == other.View;
+		}
+
+		public override bool Equals(object obj) => obj is VoxelTransparentCacheKey other && Equals(other);
+		public override int GetHashCode() => HashCode.Combine(GeometryRevision, VisibleSignature, View);
+	}
+
 	public sealed class VoxelRenderer : IDisposable
 	{
 		private readonly VoxelWorld world;
@@ -70,12 +134,22 @@ namespace FishGfx.Voxels
 		private readonly VoxelRendererOptions options;
 		private readonly VoxelMeshingScheduler scheduler;
 		private readonly Dictionary<ChunkCoordinate, GpuChunk> gpuChunks = new Dictionary<ChunkCoordinate, GpuChunk>();
+		private readonly List<GpuChunk> orderedGpuChunks = new List<GpuChunk>();
+		private readonly List<VoxelPassEntry> visibleOpaque = new List<VoxelPassEntry>();
+		private readonly List<VoxelPassEntry> visibleCutout = new List<VoxelPassEntry>();
+		private readonly List<GpuChunk> visibleTransparentChunks = new List<GpuChunk>();
+		private readonly List<VoxelTransparentFaceInstance> transparentFaces =
+			new List<VoxelTransparentFaceInstance>();
 		private readonly ConcurrentQueue<ChunkCoordinate> removedChunks = new ConcurrentQueue<ChunkCoordinate>();
 		private readonly VoxelMesh transparentMesh;
 		private readonly ShaderProgram voxelShader;
 		private readonly ShaderStage vertexShader;
 		private readonly ShaderStage fragmentShader;
 		private GraphicsCommandBatch transparentBatch;
+		private readonly DrawVoxelPassCommand opaquePassCommand;
+		private readonly DrawVoxelPassCommand cutoutPassCommand;
+		private readonly GraphicsCommandBatch opaquePassBatch;
+		private readonly GraphicsCommandBatch cutoutPassBatch;
 		private readonly RenderState opaqueState;
 		private readonly RenderState transparentState;
 		private bool disposed;
@@ -84,6 +158,13 @@ namespace FishGfx.Voxels
 		private int visibleChunks;
 		private int visibleTransparentFaces;
 		private int visibleTransparentVertices;
+		private int opaqueVertices;
+		private int cutoutVertices;
+		private long transparentGeometryRevision;
+		private VoxelTransparentCacheKey transparentCacheKey;
+		private bool hasTransparentCache;
+		private VoxelVertex[] transparentVertexBuffer = Array.Empty<VoxelVertex>();
+		private VoxelRendererFrameDiagnostics frameDiagnostics;
 		private bool cullingEnabled = true;
 		private VoxelFogSettings fog = VoxelFogSettings.Disabled;
 
@@ -121,6 +202,24 @@ namespace FishGfx.Voxels
 
 			opaqueState = CreateState(transparent: false);
 			transparentState = CreateState(transparent: true);
+			opaquePassCommand = new DrawVoxelPassCommand(
+				atlasTexture,
+				voxelShader,
+				opaqueState,
+				this.options.LightDirection,
+				this.options.AmbientLight,
+				alphaCutoff: -1
+			);
+			cutoutPassCommand = new DrawVoxelPassCommand(
+				atlasTexture,
+				voxelShader,
+				opaqueState,
+				this.options.LightDirection,
+				this.options.AmbientLight,
+				this.options.AlphaCutoff
+			);
+			opaquePassBatch = new GraphicsCommandBatch(new GraphicsCommand[] { opaquePassCommand });
+			cutoutPassBatch = new GraphicsCommandBatch(new GraphicsCommand[] { cutoutPassCommand });
 			transparentBatch = CreateBatch(transparentMesh, transparentState, alphaCutoff: -1);
 		}
 
@@ -147,19 +246,23 @@ namespace FishGfx.Voxels
 					return;
 
 				fog = value;
-				RebuildCommandBatches();
+				opaquePassCommand.Fog = value;
+				cutoutPassCommand.Fog = value;
+				transparentBatch = CreateBatch(transparentMesh, transparentState, alphaCutoff: -1);
 			}
 		}
 
+		public VoxelRendererFrameDiagnostics FrameDiagnostics => frameDiagnostics;
+
 		public VoxelRendererStatistics Statistics => new VoxelRendererStatistics(
-			world.LoadedChunks.Count,
+			world.LoadedChunkCount,
 			gpuChunks.Count,
 			visibleChunks,
 			scheduler.PendingCount,
 			acceptedMeshes,
 			discardedMeshes,
-			gpuChunks.Values.Sum(chunk => chunk.Opaque?.VertexCount ?? 0),
-			gpuChunks.Values.Sum(chunk => chunk.Cutout?.VertexCount ?? 0),
+			opaqueVertices,
+			cutoutVertices,
 			visibleTransparentFaces,
 			visibleTransparentVertices
 		);
@@ -223,19 +326,24 @@ namespace FishGfx.Voxels
 			if (!float.IsFinite(distance) || distance <= 0)
 				throw new ArgumentOutOfRangeException(nameof(renderDistance));
 
+			long cullingStart = Stopwatch.GetTimestamp();
 			ViewFrustum frustum = ViewFrustum.FromCamera(camera);
 			float distanceSquared = distance * distance;
-			List<VoxelTransparentFaceInstance> transparentFaces = new List<VoxelTransparentFaceInstance>();
+			Vector3 cameraForward = camera.WorldForwardNormal;
+			visibleOpaque.Clear();
+			visibleCutout.Clear();
+			visibleTransparentChunks.Clear();
 			visibleChunks = 0;
+			ulong transparentSignature = 14695981039346656037UL;
 
-			foreach (KeyValuePair<ChunkCoordinate, GpuChunk> pair in gpuChunks.OrderBy(pair => pair.Key.X).ThenBy(pair => pair.Key.Y).ThenBy(pair => pair.Key.Z))
+			for (int chunkIndex = 0; chunkIndex < orderedGpuChunks.Count; chunkIndex++)
 			{
-				GpuChunk chunk = pair.Value;
+				GpuChunk chunk = orderedGpuChunks[chunkIndex];
 
 				if (chunk.Bounds.IsEmpty)
 					continue;
 
-				Vector3 origin = pair.Key.WorldOrigin;
+				Vector3 origin = chunk.Coordinate.WorldOrigin;
 				AABB worldBounds = chunk.Bounds + origin;
 				Vector3 center = worldBounds.Center;
 
@@ -249,24 +357,92 @@ namespace FishGfx.Voxels
 
 				visibleChunks++;
 				Matrix4x4 model = Matrix4x4.CreateTranslation(origin);
+				float depth = Vector3.Dot(center - camera.Position, cameraForward);
 
-				if (chunk.OpaqueBatch != null && chunk.Opaque.VertexCount > 0)
-					queue.SubmitOpaque(chunk.OpaqueBatch, model, center, sortKey: voxelShader.ID, tag: pair.Key);
+				if (chunk.Opaque?.VertexCount > 0)
+					visibleOpaque.Add(new VoxelPassEntry(chunk.Opaque, model, chunk.Coordinate, depth));
 
-				if (chunk.CutoutBatch != null && chunk.Cutout.VertexCount > 0)
-					queue.Submit(VoxelRenderBuckets.Cutout, chunk.CutoutBatch, model, center, sortKey: voxelShader.ID, tag: pair.Key);
+				if (chunk.Cutout?.VertexCount > 0)
+					visibleCutout.Add(new VoxelPassEntry(chunk.Cutout, model, chunk.Coordinate, depth));
 
-				for (int faceIndex = 0; faceIndex < chunk.TransparentFaces.Length; faceIndex++)
+				if (chunk.TransparentFaces.Length > 0)
 				{
-					VoxelTransparentFace face = chunk.TransparentFaces[faceIndex];
-					transparentFaces.Add(new VoxelTransparentFaceInstance(pair.Key, faceIndex, origin, face));
+					visibleTransparentChunks.Add(chunk);
+					transparentSignature = AddSignature(transparentSignature, chunk.Coordinate);
+					transparentSignature = AddSignature(transparentSignature, chunk.Revision);
 				}
 			}
 
-			BuildTransparentStream(camera, transparentFaces);
+			visibleOpaque.Sort(ComparePassEntries);
+			visibleCutout.Sort(ComparePassEntries);
+			opaquePassCommand.Update(visibleOpaque);
+			cutoutPassCommand.Update(visibleCutout);
+
+			int passSubmissions = 0;
+
+			if (visibleOpaque.Count > 0)
+			{
+				queue.SubmitOpaque(
+					opaquePassBatch,
+					Matrix4x4.Identity,
+					camera.Position,
+					sortKey: voxelShader.ID,
+					tag: this
+				);
+				passSubmissions++;
+			}
+
+			if (visibleCutout.Count > 0)
+			{
+				queue.Submit(
+					VoxelRenderBuckets.Cutout,
+					cutoutPassBatch,
+					Matrix4x4.Identity,
+					camera.Position,
+					sortKey: voxelShader.ID,
+					tag: this
+				);
+				passSubmissions++;
+			}
+
+			double cullingMilliseconds = Stopwatch.GetElapsedTime(cullingStart).TotalMilliseconds;
+			VoxelTransparentCacheKey currentCacheKey = new VoxelTransparentCacheKey(
+				transparentGeometryRevision,
+				transparentSignature,
+				camera.View
+			);
+			bool transparentCacheHit = hasTransparentCache && transparentCacheKey.Equals(currentCacheKey);
+			double transparentBuildMilliseconds = 0;
+			int transparentUploadBytes = 0;
+
+			if (!transparentCacheHit)
+			{
+				long transparentStart = Stopwatch.GetTimestamp();
+				transparentUploadBytes = BuildTransparentStream(camera);
+				transparentBuildMilliseconds = Stopwatch.GetElapsedTime(transparentStart).TotalMilliseconds;
+				transparentCacheKey = currentCacheKey;
+				hasTransparentCache = true;
+			}
 
 			if (transparentMesh.VertexCount > 0)
+			{
 				queue.SubmitTransparent(transparentBatch, Matrix4x4.Identity, camera.Position, sortKey: voxelShader.ID, tag: this);
+				passSubmissions++;
+			}
+
+			int transparentDrawCalls = transparentMesh.VertexCount > 0 ? 1 : 0;
+			frameDiagnostics = new VoxelRendererFrameDiagnostics(
+				cullingMilliseconds,
+				transparentBuildMilliseconds,
+				visibleOpaque.Count,
+				visibleCutout.Count,
+				transparentDrawCalls,
+				passSubmissions,
+				passSubmissions,
+				passSubmissions,
+				transparentUploadBytes,
+				transparentCacheHit
+			);
 		}
 
 		public void Dispose()
@@ -282,6 +458,7 @@ namespace FishGfx.Voxels
 				chunk.Dispose();
 
 			gpuChunks.Clear();
+			orderedGpuChunks.Clear();
 			transparentMesh.Dispose();
 			voxelShader.Dispose();
 			vertexShader.Dispose();
@@ -290,39 +467,41 @@ namespace FishGfx.Voxels
 
 		private void Upload(VoxelMeshData result)
 		{
+			if (
+				result.OpaqueVertices.Length == 0
+				&& result.CutoutVertices.Length == 0
+				&& result.TransparentFaces.Length == 0
+			)
+			{
+				RemoveGpuChunk(result.Coordinate);
+				return;
+			}
+
 			if (!gpuChunks.TryGetValue(result.Coordinate, out GpuChunk gpuChunk))
 			{
-				gpuChunk = new GpuChunk();
+				gpuChunk = new GpuChunk(result.Coordinate);
 				gpuChunks.Add(result.Coordinate, gpuChunk);
+				InsertOrderedGpuChunk(gpuChunk);
 			}
+
+			opaqueVertices -= gpuChunk.Opaque?.VertexCount ?? 0;
+			cutoutVertices -= gpuChunk.Cutout?.VertexCount ?? 0;
 
 			gpuChunk.Revision = result.Revision;
 			gpuChunk.Bounds = result.Bounds;
 			gpuChunk.TransparentFaces = result.TransparentFaces;
 
-			UpdateMesh(ref gpuChunk.Opaque, ref gpuChunk.OpaqueBatch, result.OpaqueVertices, opaqueState, -1);
-			UpdateMesh(
-				ref gpuChunk.Cutout,
-				ref gpuChunk.CutoutBatch,
-				result.CutoutVertices,
-				opaqueState,
-				options.AlphaCutoff
-			);
+			UpdateMesh(ref gpuChunk.Opaque, result.OpaqueVertices);
+			UpdateMesh(ref gpuChunk.Cutout, result.CutoutVertices);
+			opaqueVertices += gpuChunk.Opaque?.VertexCount ?? 0;
+			cutoutVertices += gpuChunk.Cutout?.VertexCount ?? 0;
+			transparentGeometryRevision++;
 		}
 
-		private void UpdateMesh(
-			ref VoxelMesh mesh,
-			ref GraphicsCommandBatch batch,
-			VoxelVertex[] vertices,
-			RenderState state,
-			float alphaCutoff
-		)
+		private static void UpdateMesh(ref VoxelMesh mesh, VoxelVertex[] vertices)
 		{
 			if (mesh == null && vertices.Length > 0)
-			{
 				mesh = new VoxelMesh(BufferUsage.DynamicDraw);
-				batch = CreateBatch(mesh, state, alphaCutoff);
-			}
 
 			mesh?.Update(vertices);
 		}
@@ -347,31 +526,49 @@ namespace FishGfx.Voxels
 			);
 		}
 
-		private void RebuildCommandBatches()
+		private int BuildTransparentStream(Camera camera)
 		{
-			transparentBatch = CreateBatch(transparentMesh, transparentState, alphaCutoff: -1);
+			transparentFaces.Clear();
+			Vector3 cameraForward = camera.WorldForwardNormal;
 
-			foreach (GpuChunk chunk in gpuChunks.Values)
+			for (int chunkIndex = 0; chunkIndex < visibleTransparentChunks.Count; chunkIndex++)
 			{
-				if (chunk.Opaque != null)
-					chunk.OpaqueBatch = CreateBatch(chunk.Opaque, opaqueState, alphaCutoff: -1);
+				GpuChunk chunk = visibleTransparentChunks[chunkIndex];
+				Vector3 origin = chunk.Coordinate.WorldOrigin;
 
-				if (chunk.Cutout != null)
-					chunk.CutoutBatch = CreateBatch(chunk.Cutout, opaqueState, options.AlphaCutoff);
+				for (int faceIndex = 0; faceIndex < chunk.TransparentFaces.Length; faceIndex++)
+				{
+					VoxelTransparentFace face = chunk.TransparentFaces[faceIndex];
+					float depth = Vector3.Dot(face.Center + origin - camera.Position, cameraForward);
+					transparentFaces.Add(
+						new VoxelTransparentFaceInstance(
+							chunk.Coordinate,
+							faceIndex,
+							origin,
+							face,
+							depth
+						)
+					);
+				}
 			}
-		}
 
-		private void BuildTransparentStream(Camera camera, List<VoxelTransparentFaceInstance> faces)
-		{
-			VoxelVertex[] vertices = VoxelTransparentStreamBuilder.Build(
-				camera.Position,
-				camera.WorldForwardNormal,
-				faces
+			int required = VoxelTransparentStreamBuilder.CountVertices(transparentFaces);
+
+			if (transparentVertexBuffer.Length < required)
+				Array.Resize(
+					ref transparentVertexBuffer,
+					VoxelMesh.CalculateCapacity(transparentVertexBuffer.Length, required)
+				);
+
+			int vertexCount = VoxelTransparentStreamBuilder.BuildSorted(
+				transparentFaces,
+				transparentVertexBuffer
 			);
+			transparentMesh.Update(transparentVertexBuffer, vertexCount);
+			visibleTransparentFaces = transparentFaces.Count;
+			visibleTransparentVertices = vertexCount;
 
-			transparentMesh.Update(vertices);
-			visibleTransparentFaces = faces.Count;
-			visibleTransparentVertices = vertices.Length;
+			return checked(vertexCount * System.Runtime.InteropServices.Marshal.SizeOf<VoxelVertex>());
 		}
 
 		private void ProcessRemovedChunks()
@@ -385,6 +582,10 @@ namespace FishGfx.Voxels
 			if (!gpuChunks.Remove(coordinate, out GpuChunk chunk))
 				return;
 
+			opaqueVertices -= chunk.Opaque?.VertexCount ?? 0;
+			cutoutVertices -= chunk.Cutout?.VertexCount ?? 0;
+			orderedGpuChunks.Remove(chunk);
+			transparentGeometryRevision++;
 			chunk.Dispose();
 		}
 
@@ -429,6 +630,56 @@ namespace FishGfx.Voxels
 			return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 		}
 
+		private static int CompareGpuChunks(GpuChunk left, GpuChunk right)
+		{
+			return CompareCoordinates(left.Coordinate, right.Coordinate);
+		}
+
+		private void InsertOrderedGpuChunk(GpuChunk chunk)
+		{
+			int index = orderedGpuChunks.BinarySearch(chunk, GpuChunkComparer.Instance);
+
+			if (index < 0)
+				index = ~index;
+
+			orderedGpuChunks.Insert(index, chunk);
+		}
+
+		internal static int ComparePassEntries(VoxelPassEntry left, VoxelPassEntry right)
+		{
+			int result = left.Depth.CompareTo(right.Depth);
+
+			return result != 0 ? result : CompareCoordinates(left.Coordinate, right.Coordinate);
+		}
+
+		private static int CompareCoordinates(ChunkCoordinate left, ChunkCoordinate right)
+		{
+			int result = left.X.CompareTo(right.X);
+
+			if (result == 0)
+				result = left.Y.CompareTo(right.Y);
+			if (result == 0)
+				result = left.Z.CompareTo(right.Z);
+
+			return result;
+		}
+
+		private static ulong AddSignature(ulong signature, ChunkCoordinate coordinate)
+		{
+			signature = AddSignature(signature, coordinate.X);
+			signature = AddSignature(signature, coordinate.Y);
+			return AddSignature(signature, coordinate.Z);
+		}
+
+		private static ulong AddSignature(ulong signature, long value)
+		{
+			unchecked
+			{
+				signature ^= (ulong)value;
+				return signature * 1099511628211UL;
+			}
+		}
+
 		private void ThrowIfDisposed()
 		{
 			if (disposed)
@@ -437,12 +688,16 @@ namespace FishGfx.Voxels
 
 		private sealed class GpuChunk : IDisposable
 		{
+			internal GpuChunk(ChunkCoordinate coordinate)
+			{
+				Coordinate = coordinate;
+			}
+
+			public ChunkCoordinate Coordinate { get; }
 			public long Revision;
 			public AABB Bounds;
 			public VoxelMesh Opaque;
 			public VoxelMesh Cutout;
-			public GraphicsCommandBatch OpaqueBatch;
-			public GraphicsCommandBatch CutoutBatch;
 			public VoxelTransparentFace[] TransparentFaces = Array.Empty<VoxelTransparentFace>();
 
 			public void Dispose()
@@ -450,6 +705,13 @@ namespace FishGfx.Voxels
 				Opaque?.Dispose();
 				Cutout?.Dispose();
 			}
+		}
+
+		private sealed class GpuChunkComparer : IComparer<GpuChunk>
+		{
+			internal static readonly GpuChunkComparer Instance = new GpuChunkComparer();
+
+			public int Compare(GpuChunk left, GpuChunk right) => CompareGpuChunks(left, right);
 		}
 
 	}

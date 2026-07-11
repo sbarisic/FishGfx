@@ -62,6 +62,47 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void BulkChunkReplacementCopiesDataAndInvalidatesNeighborsOnce()
+	{
+		VoxelWorld world = new();
+		ChunkCoordinate center = new(0, 0, 0);
+		ChunkCoordinate neighbor = new(1, 0, 0);
+		world.SetVoxel(16, 1, 1, new VoxelCell(1));
+		long neighborRevision = world.LoadedChunks.Single(chunk => chunk.Coordinate == neighbor).Revision;
+		List<ChunkCoordinate> invalidated = new();
+		world.ChunkInvalidated += (coordinate, _) => invalidated.Add(coordinate);
+		VoxelCell[] cells = new VoxelCell[VoxelWorld.ChunkVolume];
+		cells[1 + VoxelWorld.ChunkSize * (2 + VoxelWorld.ChunkSize * 3)] = new VoxelCell(2);
+
+		Assert.True(world.SetChunk(center, cells));
+		cells[1 + VoxelWorld.ChunkSize * (2 + VoxelWorld.ChunkSize * 3)] = VoxelCell.Air;
+
+		Assert.Equal(new VoxelCell(2), world.GetVoxel(1, 2, 3));
+		Assert.Equal(1, invalidated.Count(coordinate => coordinate == center));
+		Assert.Equal(1, invalidated.Count(coordinate => coordinate == neighbor));
+		Assert.True(world.TryGetChunk(neighbor, out VoxelChunk neighborChunk));
+		Assert.Equal(neighborRevision + 1, neighborChunk.Revision);
+		Assert.False(world.SetChunk(center, CreateChunkData((1, 2, 3, 2))));
+	}
+
+	[Fact]
+	public void BulkAirChunkRemovesExistingChunkAndValidatesLength()
+	{
+		VoxelWorld world = new();
+		ChunkCoordinate coordinate = new(-2, 3, 4);
+		VoxelCell[] cells = CreateChunkData((0, 0, 0, 1));
+		world.SetChunk(coordinate, cells);
+		ChunkCoordinate? removed = null;
+		world.ChunkRemoved += value => removed = value;
+
+		Assert.True(world.SetChunk(coordinate, new VoxelCell[VoxelWorld.ChunkVolume]));
+		Assert.Equal(coordinate, removed);
+		Assert.False(world.TryGetChunk(coordinate, out _));
+		Assert.False(world.SetChunk(coordinate, new VoxelCell[VoxelWorld.ChunkVolume]));
+		Assert.Throws<ArgumentException>(() => world.SetChunk(coordinate, new VoxelCell[1]));
+	}
+
+	[Fact]
 	public void PaletteReservesAirAndBecomesImmutable()
 	{
 		VoxelPaletteBuilder builder = new();
@@ -575,6 +616,43 @@ public class VoxelTests
 		Assert.Equal(new Vector3(11, 0, 0), stream[1].Position);
 	}
 
+	[Fact]
+	public void TransparentStreamUsesPrecomputedDepthAndStableCoordinateTies()
+	{
+		VoxelTransparentFace face = new VoxelTransparentFace(
+			Vector3.Zero,
+			new[] { new VoxelVertex(Vector3.Zero, Color.White, Vector2.Zero, Vector3.UnitY) }
+		);
+		List<VoxelTransparentFaceInstance> faces = new()
+		{
+			new VoxelTransparentFaceInstance(new ChunkCoordinate(1, 0, 0), 0, Vector3.Zero, face, 5),
+			new VoxelTransparentFaceInstance(new ChunkCoordinate(0, 0, 0), 0, Vector3.Zero, face, 5),
+			new VoxelTransparentFaceInstance(new ChunkCoordinate(2, 0, 0), 0, Vector3.Zero, face, 10),
+		};
+		VoxelVertex[] destination = new VoxelVertex[3];
+
+		int count = VoxelTransparentStreamBuilder.BuildSorted(faces, destination);
+
+		Assert.Equal(3, count);
+		Assert.Equal(new ChunkCoordinate(2, 0, 0), faces[0].Coordinate);
+		Assert.Equal(new ChunkCoordinate(0, 0, 0), faces[1].Coordinate);
+		Assert.Equal(new ChunkCoordinate(1, 0, 0), faces[2].Coordinate);
+	}
+
+	[Fact]
+	public void TransparentCacheKeyChangesForCameraVisibilityAndGeometry()
+	{
+		VoxelTransparentCacheKey baseline = new VoxelTransparentCacheKey(4, 10, Matrix4x4.Identity);
+
+		Assert.Equal(baseline, new VoxelTransparentCacheKey(4, 10, Matrix4x4.Identity));
+		Assert.NotEqual(baseline, new VoxelTransparentCacheKey(5, 10, Matrix4x4.Identity));
+		Assert.NotEqual(baseline, new VoxelTransparentCacheKey(4, 11, Matrix4x4.Identity));
+		Assert.NotEqual(
+			baseline,
+			new VoxelTransparentCacheKey(4, 10, Matrix4x4.CreateTranslation(1, 0, 0))
+		);
+	}
+
 	[Theory]
 	[InlineData(0, 1, 64)]
 	[InlineData(64, 64, 64)]
@@ -636,5 +714,15 @@ public class VoxelTests
 				heights[x, z] = rim;
 
 		heights[centerX, centerZ] = floor;
+	}
+
+	private static VoxelCell[] CreateChunkData(params (int X, int Y, int Z, ushort Material)[] voxels)
+	{
+		VoxelCell[] result = new VoxelCell[VoxelWorld.ChunkVolume];
+
+		foreach ((int x, int y, int z, ushort material) in voxels)
+			result[x + VoxelWorld.ChunkSize * (y + VoxelWorld.ChunkSize * z)] = new VoxelCell(material);
+
+		return result;
 	}
 }

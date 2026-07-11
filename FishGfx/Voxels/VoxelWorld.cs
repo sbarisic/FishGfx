@@ -52,6 +52,27 @@ namespace FishGfx.Voxels
 			NonAirCount = value.IsAir ? 0 : cells.Length;
 		}
 
+		internal bool ReplaceUnchecked(ReadOnlySpan<VoxelCell> values)
+		{
+			bool changed = false;
+			int nonAirCount = 0;
+
+			for (int i = 0; i < cells.Length; i++)
+			{
+				changed |= cells[i] != values[i];
+
+				if (!values[i].IsAir)
+					nonAirCount++;
+			}
+
+			if (!changed)
+				return false;
+
+			values.CopyTo(cells);
+			NonAirCount = nonAirCount;
+			return true;
+		}
+
 		private static int Index(int x, int y, int z) => x + VoxelWorld.ChunkSize * (y + VoxelWorld.ChunkSize * z);
 
 		private static void ValidateLocal(int x, int y, int z)
@@ -111,6 +132,15 @@ namespace FishGfx.Voxels
 
 		public event Action<ChunkCoordinate, long> ChunkInvalidated;
 		public event Action<ChunkCoordinate> ChunkRemoved;
+
+		public int LoadedChunkCount
+		{
+			get
+			{
+				lock (sync)
+					return chunks.Count;
+			}
+		}
 
 		public IReadOnlyList<VoxelChunk> LoadedChunks
 		{
@@ -181,6 +211,43 @@ namespace FishGfx.Voxels
 			}
 
 			RaiseInvalidated(invalidated);
+		}
+
+		public bool SetChunk(ChunkCoordinate coordinate, ReadOnlySpan<VoxelCell> cells)
+		{
+			if (cells.Length != ChunkVolume)
+				throw new ArgumentException($"Chunk data must contain exactly {ChunkVolume} voxels.", nameof(cells));
+
+			bool hasNonAir = false;
+
+			for (int i = 0; i < cells.Length; i++)
+				if (!cells[i].IsAir)
+				{
+					hasNonAir = true;
+					break;
+				}
+
+			if (!hasNonAir)
+				return RemoveChunk(coordinate);
+
+			List<(ChunkCoordinate Coordinate, long Revision)> invalidated;
+
+			lock (sync)
+			{
+				if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
+				{
+					chunk = new VoxelChunk(coordinate);
+					chunks.Add(coordinate, chunk);
+				}
+
+				if (!chunk.ReplaceUnchecked(cells))
+					return false;
+
+				invalidated = InvalidateAllNeighbors(coordinate, includeCenter: true);
+			}
+
+			RaiseInvalidated(invalidated);
+			return true;
 		}
 
 		public bool RemoveChunk(ChunkCoordinate coordinate)

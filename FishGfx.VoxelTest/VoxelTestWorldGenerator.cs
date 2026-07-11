@@ -17,32 +17,26 @@ namespace FishGfx.VoxelTest
 
 	internal sealed class VoxelTestWorldData
 	{
+		private const int TreeSpacing = 32;
 		private readonly int[,] surfaceHeights;
 		private readonly int[,] waterSurfaces;
-		private readonly List<(int X, int Y, int Z)> treeBases;
 
 		internal VoxelTestWorldData(
-			VoxelWorld world,
 			int[,] surfaceHeights,
 			int[,] waterSurfaces,
 			int lakeCount,
-			int waterColumnCount,
-			List<(int X, int Y, int Z)> treeBases
+			int waterColumnCount
 		)
 		{
-			World = world;
 			this.surfaceHeights = surfaceHeights;
 			this.waterSurfaces = waterSurfaces;
 			LakeCount = lakeCount;
 			WaterColumnCount = waterColumnCount;
-			this.treeBases = treeBases;
 			UnderwaterCameraPosition = FindUnderwaterCameraPosition();
 		}
 
-		internal VoxelWorld World { get; }
 		internal int LakeCount { get; }
 		internal int WaterColumnCount { get; }
-		internal IReadOnlyList<(int X, int Y, int Z)> TreeBases => treeBases;
 		internal Vector3 UnderwaterCameraPosition { get; }
 
 		internal int GetSurfaceHeight(int worldX, int worldZ)
@@ -56,12 +50,197 @@ namespace FishGfx.VoxelTest
 			return surface == int.MinValue ? null : surface;
 		}
 
-		private static int ToIndex(int coordinate)
+		internal (int Minimum, int Maximum) GetVerticalChunkRange(int chunkX, int chunkZ)
 		{
-			if (coordinate < VoxelTestWorldGenerator.WorldMinimum || coordinate >= VoxelTestWorldGenerator.WorldMaximum)
-				throw new ArgumentOutOfRangeException(nameof(coordinate));
+			int maximumY = VoxelTestWorldGenerator.TerrainBottom;
+			int minimumX = chunkX * VoxelWorld.ChunkSize;
+			int minimumZ = chunkZ * VoxelWorld.ChunkSize;
 
-			return coordinate - VoxelTestWorldGenerator.WorldMinimum;
+			for (int z = minimumZ; z < minimumZ + VoxelWorld.ChunkSize; z++)
+				for (int x = minimumX; x < minimumX + VoxelWorld.ChunkSize; x++)
+					maximumY = Math.Max(maximumY, GetSurfaceHeight(x, z));
+
+			maximumY += 8;
+
+			if (IntersectsGlassWall(minimumX, minimumZ))
+				for (
+					int x = Math.Max(minimumX, VoxelTestWorldGenerator.GlassMinimumX);
+					x <= Math.Min(minimumX + VoxelWorld.ChunkSize - 1, VoxelTestWorldGenerator.GlassMaximumX);
+					x++
+				)
+					maximumY = Math.Max(
+						maximumY,
+						GetSurfaceHeight(x, VoxelTestWorldGenerator.GlassZ) + VoxelTestWorldGenerator.GlassHeight
+					);
+			if (ContainsBoundaryEdit(minimumX, minimumZ))
+				maximumY = Math.Max(maximumY, VoxelTestWorldGenerator.BoundaryEditY);
+
+			return (
+				FloorDivide(VoxelTestWorldGenerator.TerrainBottom, VoxelWorld.ChunkSize),
+				FloorDivide(maximumY, VoxelWorld.ChunkSize)
+			);
+		}
+
+		internal VoxelCell[] GenerateChunk(ChunkCoordinate coordinate, VoxelTestMaterialIds materials)
+		{
+			VoxelCell[] cells = new VoxelCell[VoxelWorld.ChunkVolume];
+			int originX = coordinate.X * VoxelWorld.ChunkSize;
+			int originY = coordinate.Y * VoxelWorld.ChunkSize;
+			int originZ = coordinate.Z * VoxelWorld.ChunkSize;
+
+			for (int localZ = 0; localZ < VoxelWorld.ChunkSize; localZ++)
+				for (int localY = 0; localY < VoxelWorld.ChunkSize; localY++)
+					for (int localX = 0; localX < VoxelWorld.ChunkSize; localX++)
+					{
+						int worldX = originX + localX;
+						int worldY = originY + localY;
+						int worldZ = originZ + localZ;
+						ushort material = GetTerrainMaterial(worldX, worldY, worldZ, materials);
+
+						if (material != 0)
+							cells[Index(localX, localY, localZ)] = new VoxelCell(material);
+					}
+
+			OverlayTrees(cells, coordinate, materials);
+			OverlayValidationFeatures(cells, coordinate, materials);
+
+			return cells;
+		}
+
+		internal IEnumerable<(int X, int Y, int Z)> GetTreeRoots(
+			int minimumX,
+			int minimumZ,
+			int maximumX,
+			int maximumZ
+		)
+		{
+			int minimumCellX = FloorDivide(minimumX, TreeSpacing);
+			int maximumCellX = FloorDivide(maximumX, TreeSpacing);
+			int minimumCellZ = FloorDivide(minimumZ, TreeSpacing);
+			int maximumCellZ = FloorDivide(maximumZ, TreeSpacing);
+
+			for (int cellZ = minimumCellZ; cellZ <= maximumCellZ; cellZ++)
+				for (int cellX = minimumCellX; cellX <= maximumCellX; cellX++)
+				{
+					uint hash = Hash(cellX, cellZ);
+					int x = cellX * TreeSpacing + 4 + (int)(hash % 24);
+					int z = cellZ * TreeSpacing + 4 + (int)((hash >> 8) % 24);
+
+					if (!IsInsideWorld(x, z) || !IsDry(x, z, clearance: 2))
+						continue;
+
+					yield return (x, GetSurfaceHeight(x, z) + 1, z);
+				}
+		}
+
+		private ushort GetTerrainMaterial(
+			int worldX,
+			int worldY,
+			int worldZ,
+			VoxelTestMaterialIds materials
+		)
+		{
+			if (!IsInsideWorld(worldX, worldZ) || worldY < VoxelTestWorldGenerator.TerrainBottom)
+				return 0;
+
+			int surface = GetSurfaceHeight(worldX, worldZ);
+			int? waterSurface = GetWaterSurface(worldX, worldZ);
+
+			if (worldY <= surface)
+			{
+				if (worldY == surface)
+					return waterSurface.HasValue ? materials.Dirt : materials.Grass;
+				if (worldY >= surface - 20)
+					return materials.Dirt;
+
+				return materials.Stone;
+			}
+
+			return waterSurface.HasValue && worldY <= waterSurface.Value ? materials.Water : (ushort)0;
+		}
+
+		private void OverlayTrees(
+			VoxelCell[] cells,
+			ChunkCoordinate coordinate,
+			VoxelTestMaterialIds materials
+		)
+		{
+			int originX = coordinate.X * VoxelWorld.ChunkSize;
+			int originY = coordinate.Y * VoxelWorld.ChunkSize;
+			int originZ = coordinate.Z * VoxelWorld.ChunkSize;
+
+			foreach ((int rootX, int rootY, int rootZ) in GetTreeRoots(
+				originX - 2,
+				originZ - 2,
+				originX + VoxelWorld.ChunkSize + 1,
+				originZ + VoxelWorld.ChunkSize + 1
+			))
+			{
+				for (int y = rootY; y < rootY + 5; y++)
+					SetIfInside(cells, coordinate, rootX, y, rootZ, materials.Dirt);
+
+				for (int offsetY = 3; offsetY <= 6; offsetY++)
+					for (int offsetZ = -2; offsetZ <= 2; offsetZ++)
+						for (int offsetX = -2; offsetX <= 2; offsetX++)
+							if (Math.Abs(offsetX) + Math.Abs(offsetZ) < 4)
+								SetIfInside(
+									cells,
+									coordinate,
+									rootX + offsetX,
+									rootY + offsetY,
+									rootZ + offsetZ,
+									materials.Leaves
+								);
+			}
+		}
+
+		private void OverlayValidationFeatures(
+			VoxelCell[] cells,
+			ChunkCoordinate coordinate,
+			VoxelTestMaterialIds materials
+		)
+		{
+			for (int x = VoxelTestWorldGenerator.GlassMinimumX; x <= VoxelTestWorldGenerator.GlassMaximumX; x++)
+			{
+				int minimumY = GetSurfaceHeight(x, VoxelTestWorldGenerator.GlassZ) + 1;
+
+				for (int y = minimumY; y < minimumY + VoxelTestWorldGenerator.GlassHeight; y++)
+					SetIfInside(
+						cells,
+						coordinate,
+						x,
+						y,
+						VoxelTestWorldGenerator.GlassZ,
+						materials.Glass
+					);
+			}
+
+			SetIfInside(
+				cells,
+				coordinate,
+				VoxelTestWorldGenerator.BoundaryEditX,
+				VoxelTestWorldGenerator.BoundaryEditY,
+				VoxelTestWorldGenerator.BoundaryEditZ,
+				materials.Glass
+			);
+		}
+
+		private bool IsDry(int worldX, int worldZ, int clearance)
+		{
+			if (
+				worldX < VoxelTestWorldGenerator.WorldMinimum + clearance
+				|| worldX >= VoxelTestWorldGenerator.WorldMaximum - clearance
+				|| worldZ < VoxelTestWorldGenerator.WorldMinimum + clearance
+				|| worldZ >= VoxelTestWorldGenerator.WorldMaximum - clearance
+			)
+				return false;
+
+			for (int z = worldZ - clearance; z <= worldZ + clearance; z++)
+				for (int x = worldX - clearance; x <= worldX + clearance; x++)
+					if (GetWaterSurface(x, z).HasValue)
+						return false;
+
+			return true;
 		}
 
 		private Vector3 FindUnderwaterCameraPosition()
@@ -95,28 +274,106 @@ namespace FishGfx.VoxelTest
 
 			return result;
 		}
+
+		private static void SetIfInside(
+			VoxelCell[] cells,
+			ChunkCoordinate coordinate,
+			int worldX,
+			int worldY,
+			int worldZ,
+			ushort material
+		)
+		{
+			ChunkCoordinate target = ChunkCoordinate.FromWorld(
+				worldX,
+				worldY,
+				worldZ,
+				out int localX,
+				out int localY,
+				out int localZ
+			);
+
+			if (target != coordinate)
+				return;
+
+			cells[Index(localX, localY, localZ)] = new VoxelCell(material);
+		}
+
+		private static bool IntersectsGlassWall(int minimumX, int minimumZ)
+		{
+			return VoxelTestWorldGenerator.GlassZ >= minimumZ
+				&& VoxelTestWorldGenerator.GlassZ < minimumZ + VoxelWorld.ChunkSize
+				&& VoxelTestWorldGenerator.GlassMaximumX >= minimumX
+				&& VoxelTestWorldGenerator.GlassMinimumX < minimumX + VoxelWorld.ChunkSize;
+		}
+
+		private static bool ContainsBoundaryEdit(int minimumX, int minimumZ)
+		{
+			return VoxelTestWorldGenerator.BoundaryEditX >= minimumX
+				&& VoxelTestWorldGenerator.BoundaryEditX < minimumX + VoxelWorld.ChunkSize
+				&& VoxelTestWorldGenerator.BoundaryEditZ >= minimumZ
+				&& VoxelTestWorldGenerator.BoundaryEditZ < minimumZ + VoxelWorld.ChunkSize;
+		}
+
+		private static bool IsInsideWorld(int x, int z)
+		{
+			return x >= VoxelTestWorldGenerator.WorldMinimum
+				&& x < VoxelTestWorldGenerator.WorldMaximum
+				&& z >= VoxelTestWorldGenerator.WorldMinimum
+				&& z < VoxelTestWorldGenerator.WorldMaximum;
+		}
+
+		private static int ToIndex(int coordinate)
+		{
+			if (coordinate < VoxelTestWorldGenerator.WorldMinimum || coordinate >= VoxelTestWorldGenerator.WorldMaximum)
+				throw new ArgumentOutOfRangeException(nameof(coordinate));
+
+			return coordinate - VoxelTestWorldGenerator.WorldMinimum;
+		}
+
+		private static int Index(int x, int y, int z)
+		{
+			return x + VoxelWorld.ChunkSize * (y + VoxelWorld.ChunkSize * z);
+		}
+
+		private static int FloorDivide(int value, int divisor)
+		{
+			int quotient = Math.DivRem(value, divisor, out int remainder);
+
+			return remainder < 0 ? quotient - 1 : quotient;
+		}
+
+		private static uint Hash(int x, int z)
+		{
+			uint value = unchecked((uint)(x * 0x1f1f1f1f) ^ (uint)(z * 0x6c8e9cf5));
+			value ^= value >> 16;
+			value *= 0x7feb352d;
+			value ^= value >> 15;
+			value *= 0x846ca68b;
+			return value ^ (value >> 16);
+		}
 	}
 
 	internal static class VoxelTestWorldGenerator
 	{
-		internal const int WorldMinimum = -64;
-		internal const int WorldMaximum = 64;
+		internal const int WorldMinimum = -640;
+		internal const int WorldMaximum = 640;
 		internal const int WorldSize = WorldMaximum - WorldMinimum;
-		internal const int TerrainBottom = -8;
+		internal const int TerrainBottom = -80;
+		internal const int WorldMinimumY = -80;
+		internal const int WorldMaximumY = 192;
+		internal const int MinimumChunkCoordinate = WorldMinimum / VoxelWorld.ChunkSize;
+		internal const int MaximumChunkCoordinate = WorldMaximum / VoxelWorld.ChunkSize - 1;
+		internal const int MinimumSurfaceHeight = -10;
+		internal const int MaximumSurfaceHeight = 160;
 		internal const int MinimumLakeArea = 24;
 		internal const int BoundaryEditX = 15;
-		internal const int BoundaryEditY = 18;
+		internal const int BoundaryEditY = 180;
 		internal const int BoundaryEditZ = 0;
-
-		private static readonly (int X, int Z)[] TreeCandidates =
-		{
-			(-48, -38),
-			(-42, 35),
-			(-5, 38),
-			(4, -45),
-			(43, -28),
-			(48, 42),
-		};
+		internal const int GlassMinimumX = 36;
+		internal const int GlassMaximumX = 39;
+		internal const int GlassZ = -12;
+		internal const int GlassHeight = 20;
 
 		internal static VoxelPalette CreatePalette(out VoxelTestMaterialIds ids)
 		{
@@ -165,84 +422,57 @@ namespace FishGfx.VoxelTest
 
 		internal static VoxelTestWorldData Generate(VoxelTestMaterialIds materials)
 		{
+			_ = materials;
 			int[,] heights = CreateHeightField();
 			VoxelLakeMap lakes = VoxelLakeAnalyzer.FindEnclosedBasins(heights, MinimumLakeArea);
 
 			if (lakes.BasinCount < 2)
 				throw new InvalidOperationException("The deterministic validation terrain must produce at least two lakes.");
 
-			VoxelWorld world = new VoxelWorld();
 			int[,] waterSurfaces = new int[WorldSize, WorldSize];
+
+			for (int z = 0; z < WorldSize; z++)
+				for (int x = 0; x < WorldSize; x++)
+					waterSurfaces[x, z] = lakes.GetWaterSurface(x, z) ?? int.MinValue;
+
+			VoxelTestWorldData result = new VoxelTestWorldData(
+				heights,
+				waterSurfaces,
+				lakes.BasinCount,
+				lakes.WaterColumnCount
+			);
+			ValidateWaterContainment(result);
+
+			return result;
+		}
+
+		internal static int[,] CreateHeightField()
+		{
+			int[,] heights = new int[WorldSize, WorldSize];
 
 			for (int z = 0; z < WorldSize; z++)
 				for (int x = 0; x < WorldSize; x++)
 				{
 					int worldX = x + WorldMinimum;
 					int worldZ = z + WorldMinimum;
-					int surface = heights[x, z];
-					int? waterSurface = lakes.GetWaterSurface(x, z);
-					waterSurfaces[x, z] = waterSurface ?? int.MinValue;
-
-					for (int y = TerrainBottom; y <= surface; y++)
-					{
-						ushort material;
-
-						if (y == surface)
-							material = waterSurface.HasValue ? materials.Dirt : materials.Grass;
-						else if (y >= surface - 2)
-							material = materials.Dirt;
-						else
-							material = materials.Stone;
-
-						world.SetVoxel(worldX, y, worldZ, new VoxelCell(material));
-					}
-
-					if (waterSurface.HasValue)
-						for (int y = surface + 1; y <= waterSurface.Value; y++)
-							world.SetVoxel(worldX, y, worldZ, new VoxelCell(materials.Water));
+					float broad = MathF.Sin(worldX * 0.012f) * 48
+						+ MathF.Cos(worldZ * 0.0105f) * 39
+						+ MathF.Sin((worldX + worldZ) * 0.0065f) * 28;
+					float detail = MathF.Sin(worldX * 0.038f + worldZ * 0.024f) * 12
+						+ MathF.Cos(worldX * 0.021f - worldZ * 0.033f) * 9;
+					float depressions = Depression(worldX, worldZ, -120, -90, 88, 62)
+						+ Depression(worldX, worldZ, 145, 110, 76, 55);
+					heights[x, z] = Math.Clamp(
+						55 + (int)MathF.Round(broad + detail - depressions),
+						MinimumSurfaceHeight,
+						MaximumSurfaceHeight
+					);
 				}
 
-			List<(int X, int Y, int Z)> treeBases = new List<(int, int, int)>();
-
-			foreach ((int preferredX, int preferredZ) in TreeCandidates)
-			{
-				(int x, int z) = FindDryColumn(lakes, preferredX, preferredZ, clearance: 2);
-				int y = heights[x - WorldMinimum, z - WorldMinimum] + 1;
-				CreateTree(world, materials, x, y, z);
-				treeBases.Add((x, y, z));
-			}
-
-			(int glassX, int glassZ) = FindDryRectangle(lakes, preferredX: 36, preferredZ: -12, width: 4);
-
-			for (int x = glassX; x < glassX + 4; x++)
-			{
-				int baseY = heights[x - WorldMinimum, glassZ - WorldMinimum] + 1;
-
-				for (int y = baseY; y < baseY + 10; y++)
-					world.SetVoxel(x, y, glassZ, new VoxelCell(materials.Glass));
-			}
-
-			world.SetVoxel(
-				BoundaryEditX,
-				BoundaryEditY,
-				BoundaryEditZ,
-				new VoxelCell(materials.Glass)
-			);
-
-			VoxelTestWorldData result = new VoxelTestWorldData(
-				world,
-				heights,
-				waterSurfaces,
-				lakes.BasinCount,
-				lakes.WaterColumnCount,
-				treeBases
-			);
-			ValidateWaterContainment(result, materials.Water);
-
-			return result;
+			return heights;
 		}
 
-		internal static void ValidateWaterContainment(VoxelTestWorldData data, ushort waterMaterial)
+		internal static void ValidateWaterContainment(VoxelTestWorldData data)
 		{
 			if (data == null)
 				throw new ArgumentNullException(nameof(data));
@@ -260,14 +490,8 @@ namespace FishGfx.VoxelTest
 
 					int terrainSurface = data.GetSurfaceHeight(x, z);
 
-					if (data.World.GetVoxel(x, terrainSurface, z).IsAir)
-						throw new InvalidOperationException("Every lake column must have a solid floor.");
-
 					for (int y = terrainSurface + 1; y <= waterSurface.Value; y++)
 					{
-						if (data.World.GetVoxel(x, y, z).MaterialId != waterMaterial)
-							throw new InvalidOperationException("A lake column contains a gap or a non-water voxel.");
-
 						ValidateHorizontalNeighbor(x - 1, y, z);
 						ValidateHorizontalNeighbor(x + 1, y, z);
 						ValidateHorizontalNeighbor(x, y, z - 1);
@@ -277,33 +501,12 @@ namespace FishGfx.VoxelTest
 
 			void ValidateHorizontalNeighbor(int x, int y, int z)
 			{
-				VoxelCell neighbor = data.World.GetVoxel(x, y, z);
+				int terrainSurface = data.GetSurfaceHeight(x, z);
+				int? waterSurface = data.GetWaterSurface(x, z);
 
-				if (neighbor.IsAir)
+				if (terrainSurface < y && (!waterSurface.HasValue || waterSurface.Value < y))
 					throw new InvalidOperationException("Lake water has a horizontally exposed side.");
 			}
-		}
-
-		internal static int[,] CreateHeightField()
-		{
-			int[,] heights = new int[WorldSize, WorldSize];
-
-			for (int z = 0; z < WorldSize; z++)
-				for (int x = 0; x < WorldSize; x++)
-				{
-					int worldX = x + WorldMinimum;
-					int worldZ = z + WorldMinimum;
-					float broad = MathF.Sin(worldX * 0.075f) * 3.2f
-						+ MathF.Cos(worldZ * 0.068f) * 2.7f
-						+ MathF.Sin((worldX + worldZ) * 0.043f) * 2.1f;
-					float detail = MathF.Sin(worldX * 0.21f + worldZ * 0.13f) * 1.1f
-						+ MathF.Cos(worldX * 0.11f - worldZ * 0.19f) * 0.8f;
-					float depressions = Depression(worldX, worldZ, -22, -14, 18, 7.5f)
-						+ Depression(worldX, worldZ, 25, 18, 16, 6.5f);
-					heights[x, z] = Math.Clamp(7 + (int)MathF.Round(broad + detail - depressions), -1, 16);
-				}
-
-			return heights;
 		}
 
 		private static float Depression(
@@ -324,91 +527,6 @@ namespace FishGfx.VoxelTest
 
 			float influence = 1 - normalizedDistanceSquared;
 			return depth * influence * influence;
-		}
-
-		private static (int X, int Z) FindDryColumn(
-			VoxelLakeMap lakes,
-			int preferredX,
-			int preferredZ,
-			int clearance
-		)
-		{
-			for (int radius = 0; radius <= 16; radius++)
-				for (int z = preferredZ - radius; z <= preferredZ + radius; z++)
-					for (int x = preferredX - radius; x <= preferredX + radius; x++)
-					{
-						if (Math.Max(Math.Abs(x - preferredX), Math.Abs(z - preferredZ)) != radius)
-							continue;
-						if (IsDry(lakes, x, z, clearance))
-							return (x, z);
-					}
-
-			throw new InvalidOperationException("Could not find dry terrain for a validation-world feature.");
-		}
-
-		private static (int X, int Z) FindDryRectangle(
-			VoxelLakeMap lakes,
-			int preferredX,
-			int preferredZ,
-			int width
-		)
-		{
-			for (int radius = 0; radius <= 24; radius++)
-				for (int z = preferredZ - radius; z <= preferredZ + radius; z++)
-					for (int x = preferredX - radius; x <= preferredX + radius; x++)
-					{
-						if (Math.Max(Math.Abs(x - preferredX), Math.Abs(z - preferredZ)) != radius)
-							continue;
-
-						bool dry = true;
-
-						for (int offset = 0; offset < width && dry; offset++)
-							dry = IsDry(lakes, x + offset, z, clearance: 1);
-
-						if (dry)
-							return (x, z);
-					}
-
-			throw new InvalidOperationException("Could not find dry terrain for the glass validation wall.");
-		}
-
-		private static bool IsDry(VoxelLakeMap lakes, int worldX, int worldZ, int clearance)
-		{
-			int centerX = worldX - WorldMinimum;
-			int centerZ = worldZ - WorldMinimum;
-
-			if (
-				centerX < clearance
-				|| centerX >= WorldSize - clearance
-				|| centerZ < clearance
-				|| centerZ >= WorldSize - clearance
-			)
-				return false;
-
-			for (int z = centerZ - clearance; z <= centerZ + clearance; z++)
-				for (int x = centerX - clearance; x <= centerX + clearance; x++)
-					if (lakes.GetWaterSurface(x, z).HasValue)
-						return false;
-
-			return true;
-		}
-
-		private static void CreateTree(
-			VoxelWorld world,
-			VoxelTestMaterialIds materials,
-			int x,
-			int y,
-			int z
-		)
-		{
-			for (int trunkY = y; trunkY < y + 5; trunkY++)
-				world.SetVoxel(x, trunkY, z, new VoxelCell(materials.Dirt));
-
-			for (int offsetY = 3; offsetY <= 6; offsetY++)
-				for (int offsetZ = -2; offsetZ <= 2; offsetZ++)
-					for (int offsetX = -2; offsetX <= 2; offsetX++)
-						if (Math.Abs(offsetX) + Math.Abs(offsetZ) < 4)
-							world.SetVoxel(x + offsetX, y + offsetY, z + offsetZ, new VoxelCell(materials.Leaves));
 		}
 	}
 }
