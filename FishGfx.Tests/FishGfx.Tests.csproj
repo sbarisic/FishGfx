@@ -14,5 +14,6 @@
     <ProjectReference Include="..\FishGfx\FishGfx.csproj" />
     <ProjectReference Include="..\FishGfx.NodeEditor\FishGfx.NodeEditor.csproj" />
     <ProjectReference Include="..\FishGfx.SmokeTest\FishGfx.SmokeTest.csproj" />
+    <ProjectReference Include="..\FishGfx.VoxelTest\FishGfx.VoxelTest.csproj" />
   </ItemGroup>
 </Project>

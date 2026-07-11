@@ -361,6 +361,70 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void PriorityFloodLeavesBoundaryConnectedDepressionsDry()
+	{
+		int[,] heights = CreateHeightField(5, 5, 5);
+
+		for (int x = 0; x <= 2; x++)
+			heights[x, 2] = 0;
+
+		VoxelLakeMap lakes = VoxelLakeAnalyzer.FindEnclosedBasins(heights, minimumArea: 1);
+
+		Assert.Equal(0, lakes.BasinCount);
+		Assert.Equal(0, lakes.WaterColumnCount);
+		Assert.Null(lakes.GetWaterSurface(2, 2));
+	}
+
+	[Fact]
+	public void PriorityFloodFillsEnclosedDepressionsToTheirSpillElevation()
+	{
+		int[,] heights = CreateHeightField(5, 5, 5);
+
+		for (int z = 1; z <= 3; z++)
+			for (int x = 1; x <= 3; x++)
+				heights[x, z] = 1;
+
+		VoxelLakeMap lakes = VoxelLakeAnalyzer.FindEnclosedBasins(heights, minimumArea: 1);
+
+		Assert.Equal(1, lakes.BasinCount);
+		Assert.Equal(9, lakes.WaterColumnCount);
+		Assert.Equal(5, lakes.GetWaterSurface(2, 2));
+		Assert.Null(lakes.GetWaterSurface(0, 2));
+	}
+
+	[Fact]
+	public void PriorityFloodKeepsSeparateBasinsAtIndependentLevels()
+	{
+		int[,] heights = CreateHeightField(11, 7, 0);
+		SetEnclosedCell(heights, 3, 3, floor: 1, rim: 4);
+		SetEnclosedCell(heights, 7, 3, floor: 2, rim: 7);
+
+		VoxelLakeMap lakes = VoxelLakeAnalyzer.FindEnclosedBasins(heights, minimumArea: 1);
+
+		Assert.Equal(2, lakes.BasinCount);
+		Assert.Equal(4, lakes.GetWaterSurface(3, 3));
+		Assert.Equal(7, lakes.GetWaterSurface(7, 3));
+	}
+
+	[Fact]
+	public void PriorityFloodFiltersSmallPuddlesAndIsDeterministic()
+	{
+		int[,] heights = CreateHeightField(11, 7, 0);
+		SetEnclosedCell(heights, 3, 3, floor: 1, rim: 4);
+		SetEnclosedCell(heights, 7, 3, floor: 2, rim: 7);
+
+		VoxelLakeMap first = VoxelLakeAnalyzer.FindEnclosedBasins(heights, minimumArea: 2);
+		VoxelLakeMap second = VoxelLakeAnalyzer.FindEnclosedBasins(heights, minimumArea: 2);
+
+		Assert.Equal(0, first.BasinCount);
+		Assert.Equal(0, first.WaterColumnCount);
+
+		for (int z = 0; z < heights.GetLength(1); z++)
+			for (int x = 0; x < heights.GetLength(0); x++)
+				Assert.Equal(first.GetWaterSurface(x, z), second.GetWaterSurface(x, z));
+	}
+
+	[Fact]
 	public void MeshingSchedulerProducesRevisionedResultsAndReschedulesEdits()
 	{
 		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
@@ -495,5 +559,25 @@ public class VoxelTests
 
 		Assert.True(completed, "Timed out waiting for voxel meshing worker.");
 		return result;
+	}
+
+	private static int[,] CreateHeightField(int width, int height, int value)
+	{
+		int[,] result = new int[width, height];
+
+		for (int z = 0; z < height; z++)
+			for (int x = 0; x < width; x++)
+				result[x, z] = value;
+
+		return result;
+	}
+
+	private static void SetEnclosedCell(int[,] heights, int centerX, int centerZ, int floor, int rim)
+	{
+		for (int z = centerZ - 1; z <= centerZ + 1; z++)
+			for (int x = centerX - 1; x <= centerX + 1; x++)
+				heights[x, z] = rim;
+
+		heights[centerX, centerZ] = floor;
 	}
 }

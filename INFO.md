@@ -163,9 +163,11 @@ Automatic mode captures the complete 1920×1080 frame before buffer swap, writes
 
 `VoxelRaycast` provides bounded DDA traversal through positive and negative voxel coordinates. A hit reports the occupied cell, entry-face normal, distance, world position, and adjacent cell used for placement.
 
-`FishGfx.VoxelTest` generates deterministic multi-chunk terrain spanning negative coordinates and demonstrates opaque blocks, cutout foliage, glass/water transparency, ambient occlusion, neighbor culling, and boundary edits. Interactive controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, left click to destroy, right click to place stone, E fixed boundary editing, and C culling disable/enable. `--auto -debug` forces stale revisions and neighbor rebuilds, waits for accepted GPU meshes, renders all three passes, and exits without user input.
+`FishGfx.VoxelTest` generates a deterministic 128×128 terrain spanning 8×8 horizontal chunks and negative coordinates. A priority-flood pass treats the height-field boundary as drainage outlets, calculates the lowest spill elevation of each depression, and retains connected lakes of at least 24 columns. Water is generated only above solid lakebeds and behind solid banks; submerged grass becomes dirt. Trees and the glass demonstration are placed on dry terrain using height-derived elevations.
 
-The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, voxel coordinates/palettes/meshing/revisions/culling/sorting, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
+The application demonstrates opaque blocks, cutout foliage, glass/water transparency, ambient occlusion, neighbor culling, boundary edits, and block raycasting. Interactive controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, left click to destroy, right click to place stone, E fixed boundary editing, and C culling disable/enable. `--auto -debug` forces stale revisions and neighbor rebuilds, waits for accepted GPU meshes, renders all three passes, and exits without user input.
+
+The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, voxel coordinates/palettes/meshing/revisions/culling/sorting, priority-flood lake drainage and containment, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
 
 ## Roadmap and known defects
 

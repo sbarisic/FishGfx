@@ -34,12 +34,13 @@ namespace FishGfx.VoxelTest
 			InputManager input = new InputManager(window);
 			window.CaptureCursor = !autoMode;
 			window.OnMouseMoveDelta += (_, x, y) => mouseDelta += new Vector2(x, y);
+			VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(out VoxelTestMaterialIds materials);
+			VoxelTestWorldData worldData = VoxelTestWorldGenerator.Generate(materials);
+			VoxelWorld world = worldData.World;
 			Camera camera = CreateCamera();
 			Camera uiCamera = new Camera();
 			uiCamera.SetOrthogonal(0, 0, Width, Height);
 			ShaderUniforms.Current.Resolution = new Vector2(Width, Height);
-			VoxelPalette palette = CreatePalette(out MaterialIds materials);
-			VoxelWorld world = CreateWorld(materials);
 			Texture atlas = CreateAtlasTexture();
 			TTFFont font = new TTFFont(AssetPath("fonts", "Consolas-Regular.ttf"));
 			VoxelRenderer renderer = new VoxelRenderer(
@@ -51,7 +52,7 @@ namespace FishGfx.VoxelTest
 				{
 					MaxWorkers = 2,
 					RenderDistance = 180,
-					UploadBudget = 6,
+					UploadBudget = 12,
 				}
 			);
 			DeferredRenderQueue renderQueue = new DeferredRenderQueue();
@@ -67,7 +68,7 @@ namespace FishGfx.VoxelTest
 			if (autoMode)
 			{
 				renderer.UpdateMeshing(0);
-				ForceStaleBoundaryEdit(world, materials);
+				ForceStaleMeshEdits(world, materials);
 			}
 
 			try
@@ -108,21 +109,25 @@ namespace FishGfx.VoxelTest
 
 					renderer.UpdateMeshing();
 					renderQueue.BeginFrame();
-					renderer.SubmitVisible(renderQueue, camera);
 					Gfx.Clear(new Color(14, 19, 30));
-					ShaderUniforms.Current.Camera = camera;
-					renderQueue.Execute(
-						RenderBucket.Opaque,
-						RenderSubmissionComparers.OpaqueFrontToBack(camera)
-					);
-					renderQueue.Execute(
-						VoxelRenderBuckets.Cutout,
-						RenderSubmissionComparers.OpaqueFrontToBack(camera)
-					);
-					renderQueue.Execute(
-						RenderBucket.Transparent,
-						RenderSubmissionComparers.TransparentBackToFront(camera)
-					);
+
+					if (!autoMode || renderer.IsIdle)
+					{
+						renderer.SubmitVisible(renderQueue, camera);
+						ShaderUniforms.Current.Camera = camera;
+						renderQueue.Execute(
+							RenderBucket.Opaque,
+							RenderSubmissionComparers.OpaqueFrontToBack(camera)
+						);
+						renderQueue.Execute(
+							VoxelRenderBuckets.Cutout,
+							RenderSubmissionComparers.OpaqueFrontToBack(camera)
+						);
+						renderQueue.Execute(
+							RenderBucket.Transparent,
+							RenderSubmissionComparers.TransparentBackToFront(camera)
+						);
+					}
 
 					DrawOverlay(
 						font,
@@ -147,8 +152,11 @@ namespace FishGfx.VoxelTest
 						&& statistics.TransparentFaces > 0
 					)
 						window.ShouldClose = true;
-					else if (autoMode && timer.Elapsed.TotalSeconds > 20)
-						throw new TimeoutException("Voxel renderer did not become idle within 20 seconds.");
+					else if (autoMode && timer.Elapsed.TotalSeconds > 30)
+						throw new TimeoutException(
+							$"Voxel renderer did not become idle within 30 seconds; pending={statistics.PendingJobs}, "
+								+ $"accepted={statistics.AcceptedMeshes}, stale={statistics.DiscardedMeshes}."
+						);
 				}
 
 				finalStatistics = renderer.Statistics;
@@ -194,10 +202,15 @@ namespace FishGfx.VoxelTest
 				camera.Position += Vector3.Normalize(movement) * speed * deltaTime;
 		}
 
-		private void ToggleBoundaryBlock(VoxelWorld world, MaterialIds materials)
+		private void ToggleBoundaryBlock(VoxelWorld world, VoxelTestMaterialIds materials)
 		{
 			boundaryBlockEnabled = !boundaryBlockEnabled;
-			world.SetVoxel(15, 8, 0, boundaryBlockEnabled ? new VoxelCell(materials.Glass) : VoxelCell.Air);
+			world.SetVoxel(
+				VoxelTestWorldGenerator.BoundaryEditX,
+				VoxelTestWorldGenerator.BoundaryEditY,
+				VoxelTestWorldGenerator.BoundaryEditZ,
+				boundaryBlockEnabled ? new VoxelCell(materials.Glass) : VoxelCell.Air
+			);
 		}
 
 		private static void DestroyTargetedVoxel(VoxelWorld world, Camera camera)
@@ -215,12 +228,20 @@ namespace FishGfx.VoxelTest
 				world.SetVoxel(hit.AdjacentX, hit.AdjacentY, hit.AdjacentZ, new VoxelCell(materialId));
 		}
 
-		private static void ForceStaleBoundaryEdit(VoxelWorld world, MaterialIds materials)
+		private static void ForceStaleMeshEdits(VoxelWorld world, VoxelTestMaterialIds materials)
 		{
-			const int coordinate = -17;
-			world.SetVoxel(coordinate, -1, coordinate, VoxelCell.Air);
-			world.SetVoxel(coordinate, -1, coordinate, new VoxelCell(materials.Stone));
-			world.SetVoxel(coordinate, -1, coordinate, VoxelCell.Air);
+			foreach (VoxelChunk chunk in world.LoadedChunks)
+			{
+				Vector3 origin = chunk.Coordinate.WorldOrigin;
+				int x = (int)origin.X + 8;
+				int y = (int)origin.Y + 8;
+				int z = (int)origin.Z + 8;
+				VoxelCell original = world.GetVoxel(x, y, z);
+				VoxelCell temporary = original.IsAir ? new VoxelCell(materials.Stone) : VoxelCell.Air;
+
+				world.SetVoxel(x, y, z, temporary);
+				world.SetVoxel(x, y, z, original);
+			}
 		}
 
 		private static Camera CreateCamera()
@@ -233,93 +254,6 @@ namespace FishGfx.VoxelTest
 			return camera;
 		}
 
-		private static VoxelPalette CreatePalette(out MaterialIds ids)
-		{
-			VoxelPaletteBuilder builder = new VoxelPaletteBuilder();
-			ids = new MaterialIds
-			{
-				Stone = builder.Add(new VoxelMaterial("Stone", VoxelRenderMode.Opaque, new VoxelFaceTiles(0))),
-				Dirt = builder.Add(new VoxelMaterial("Dirt", VoxelRenderMode.Opaque, new VoxelFaceTiles(1))),
-				Grass = builder.Add(
-					new VoxelMaterial(
-						"Grass",
-						VoxelRenderMode.Opaque,
-						new VoxelFaceTiles(1, 1, 2, 1, 1, 1)
-					)
-				),
-				Leaves = builder.Add(
-					new VoxelMaterial(
-						"Leaves",
-						VoxelRenderMode.Cutout,
-						new VoxelFaceTiles(3),
-						occludesFaces: false,
-						doubleSided: true
-					)
-				),
-				Glass = builder.Add(
-					new VoxelMaterial(
-						"Glass",
-						VoxelRenderMode.Transparent,
-						new VoxelFaceTiles(4),
-						occludesFaces: false,
-						doubleSided: true
-					)
-				),
-				Water = builder.Add(
-					new VoxelMaterial(
-						"Water",
-						VoxelRenderMode.Transparent,
-						new VoxelFaceTiles(5),
-						occludesFaces: false
-					)
-				),
-			};
-
-			return builder.Build();
-		}
-
-		private static VoxelWorld CreateWorld(MaterialIds materials)
-		{
-			VoxelWorld world = new VoxelWorld();
-
-			for (int z = -32; z < 32; z++)
-				for (int x = -32; x < 32; x++)
-				{
-					int height = 3 + (int)MathF.Round(MathF.Sin(x * 0.17f) * 1.4f + MathF.Cos(z * 0.14f) * 1.2f);
-
-					for (int y = -2; y <= height; y++)
-					{
-						ushort material = y == height ? materials.Grass : y >= height - 2 ? materials.Dirt : materials.Stone;
-						world.SetVoxel(x, y, z, new VoxelCell(material));
-					}
-				}
-
-			for (int x = -8; x <= 8; x++)
-				for (int z = -8; z <= 8; z++)
-					for (int y = 4; y <= 6; y++)
-						world.SetVoxel(x, y, z, new VoxelCell(materials.Water));
-
-			for (int y = 4; y <= 13; y++)
-				for (int x = 14; x <= 17; x++)
-					world.SetVoxel(x, y, -4, new VoxelCell(materials.Glass));
-
-			CreateTree(world, materials, -15, 5, -10);
-			CreateTree(world, materials, 10, 5, 12);
-
-			return world;
-		}
-
-		private static void CreateTree(VoxelWorld world, MaterialIds materials, int x, int y, int z)
-		{
-			for (int trunkY = y; trunkY < y + 5; trunkY++)
-				world.SetVoxel(x, trunkY, z, new VoxelCell(materials.Dirt));
-
-			for (int offsetY = 3; offsetY <= 6; offsetY++)
-				for (int offsetZ = -2; offsetZ <= 2; offsetZ++)
-					for (int offsetX = -2; offsetX <= 2; offsetX++)
-						if (Math.Abs(offsetX) + Math.Abs(offsetZ) < 4)
-							world.SetVoxel(x + offsetX, y + offsetY, z + offsetZ, new VoxelCell(materials.Leaves));
-		}
 
 		private static Texture CreateAtlasTexture()
 		{
@@ -428,14 +362,5 @@ namespace FishGfx.VoxelTest
 			return Path.Combine(new[] { AppContext.BaseDirectory, "data" }.Concat(parts).ToArray());
 		}
 
-		private struct MaterialIds
-		{
-			public ushort Stone;
-			public ushort Dirt;
-			public ushort Grass;
-			public ushort Leaves;
-			public ushort Glass;
-			public ushort Water;
-		}
 	}
 }
