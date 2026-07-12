@@ -72,7 +72,11 @@ namespace FishGfx.Voxels
 				new Vector3(1, 1, 0),
 				new Vector3(1, 1, 1),
 				new Vector3(1, 0, 1),
-				new Vector3(1, 0, 0)
+				new Vector3(1, 0, 0),
+				new Vector2(1, 0),
+				new Vector2(0, 0),
+				new Vector2(0, 1),
+				new Vector2(1, 1)
 			),
 			new FaceDefinition(
 				VoxelFace.NegativeX,
@@ -83,7 +87,11 @@ namespace FishGfx.Voxels
 				new Vector3(0, 1, 1),
 				new Vector3(0, 1, 0),
 				new Vector3(0, 0, 0),
-				new Vector3(0, 0, 1)
+				new Vector3(0, 0, 1),
+				new Vector2(1, 0),
+				new Vector2(0, 0),
+				new Vector2(0, 1),
+				new Vector2(1, 1)
 			),
 			new FaceDefinition(
 				VoxelFace.PositiveY,
@@ -94,7 +102,11 @@ namespace FishGfx.Voxels
 				new Vector3(1, 1, 0),
 				new Vector3(0, 1, 0),
 				new Vector3(0, 1, 1),
-				new Vector3(1, 1, 1)
+				new Vector3(1, 1, 1),
+				new Vector2(1, 0),
+				new Vector2(0, 0),
+				new Vector2(0, 1),
+				new Vector2(1, 1)
 			),
 			new FaceDefinition(
 				VoxelFace.NegativeY,
@@ -105,7 +117,11 @@ namespace FishGfx.Voxels
 				new Vector3(1, 0, 1),
 				new Vector3(0, 0, 1),
 				new Vector3(0, 0, 0),
-				new Vector3(1, 0, 0)
+				new Vector3(1, 0, 0),
+				new Vector2(0, 1),
+				new Vector2(1, 1),
+				new Vector2(1, 0),
+				new Vector2(0, 0)
 			),
 			new FaceDefinition(
 				VoxelFace.PositiveZ,
@@ -116,7 +132,11 @@ namespace FishGfx.Voxels
 				new Vector3(1, 0, 1),
 				new Vector3(1, 1, 1),
 				new Vector3(0, 1, 1),
-				new Vector3(0, 0, 1)
+				new Vector3(0, 0, 1),
+				new Vector2(1, 1),
+				new Vector2(1, 0),
+				new Vector2(0, 0),
+				new Vector2(0, 1)
 			),
 			new FaceDefinition(
 				VoxelFace.NegativeZ,
@@ -127,7 +147,11 @@ namespace FishGfx.Voxels
 				new Vector3(1, 1, 0),
 				new Vector3(1, 0, 0),
 				new Vector3(0, 0, 0),
-				new Vector3(0, 1, 0)
+				new Vector3(0, 1, 0),
+				new Vector2(0, 0),
+				new Vector2(0, 1),
+				new Vector2(1, 1),
+				new Vector2(1, 0)
 			),
 		};
 
@@ -356,9 +380,15 @@ namespace FishGfx.Voxels
 			if (tile >= atlas.TileCount)
 				throw new InvalidOperationException($"Voxel material '{material.Name}' references atlas tile {tile}, but only {atlas.TileCount} tiles exist.");
 
-			GetUVs(tile, atlas, out Vector2 uv0, out Vector2 uv1, out Vector2 uv2, out Vector2 uv3);
+			GetUVBounds(tile, atlas, out float u0, out float v0, out float u1, out float v1);
 			Vector3[] corners = { face.Q0, face.Q1, face.Q2, face.Q3 };
-			Vector2[] uvs = { uv0, uv1, uv2, uv3 };
+			Vector2[] uvs =
+			{
+				MapFaceUv(face.UV0, u0, v0, u1, v1),
+				MapFaceUv(face.UV1, u0, v0, u1, v1),
+				MapFaceUv(face.UV2, u0, v0, u1, v1),
+				MapFaceUv(face.UV3, u0, v0, u1, v1),
+			};
 			VoxelVertex[] front = new VoxelVertex[6];
 			int[] order = { 0, 1, 2, 3, 0, 2 };
 
@@ -470,28 +500,31 @@ namespace FishGfx.Voxels
 			return (face.Q0 + face.Q1 + face.Q2 + face.Q3) / 4;
 		}
 
-		private static void GetUVs(
+		private static void GetUVBounds(
 			int tile,
 			VoxelAtlasLayout atlas,
-			out Vector2 uv0,
-			out Vector2 uv1,
-			out Vector2 uv2,
-			out Vector2 uv3
+			out float u0,
+			out float v0,
+			out float u1,
+			out float v1
 		)
 		{
 			int column = tile % atlas.Columns;
 			int row = tile / atlas.Columns;
 			float insetU = 0.5f / atlas.TextureWidth;
 			float insetV = 0.5f / atlas.TextureHeight;
-			float u0 = column / (float)atlas.Columns + insetU;
-			float u1 = (column + 1) / (float)atlas.Columns - insetU;
-			float v1 = 1 - row / (float)atlas.Rows - insetV;
-			float v0 = 1 - (row + 1) / (float)atlas.Rows + insetV;
+			u0 = column / (float)atlas.Columns + insetU;
+			u1 = (column + 1) / (float)atlas.Columns - insetU;
+			v1 = 1 - row / (float)atlas.Rows - insetV;
+			v0 = 1 - (row + 1) / (float)atlas.Rows + insetV;
+		}
 
-			uv0 = new Vector2(u1, v1);
-			uv1 = new Vector2(u0, v1);
-			uv2 = new Vector2(u0, v0);
-			uv3 = new Vector2(u1, v0);
+		private static Vector2 MapFaceUv(Vector2 sourceUv, float u0, float v0, float u1, float v1)
+		{
+			return new Vector2(
+				float.Lerp(u0, u1, sourceUv.X),
+				float.Lerp(v1, v0, sourceUv.Y)
+			);
 		}
 
 		private readonly struct FaceDefinition
@@ -505,7 +538,11 @@ namespace FishGfx.Voxels
 				Vector3 q0,
 				Vector3 q1,
 				Vector3 q2,
-				Vector3 q3
+				Vector3 q3,
+				Vector2 uv0,
+				Vector2 uv1,
+				Vector2 uv2,
+				Vector2 uv3
 			)
 			{
 				Face = face;
@@ -517,6 +554,10 @@ namespace FishGfx.Voxels
 				Q1 = q1;
 				Q2 = q2;
 				Q3 = q3;
+				UV0 = uv0;
+				UV1 = uv1;
+				UV2 = uv2;
+				UV3 = uv3;
 			}
 
 			public VoxelFace Face { get; }
@@ -528,6 +569,10 @@ namespace FishGfx.Voxels
 			public Vector3 Q1 { get; }
 			public Vector3 Q2 { get; }
 			public Vector3 Q3 { get; }
+			public Vector2 UV0 { get; }
+			public Vector2 UV1 { get; }
+			public Vector2 UV2 { get; }
+			public Vector2 UV3 { get; }
 		}
 
 		private readonly struct Int3

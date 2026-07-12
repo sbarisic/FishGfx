@@ -47,14 +47,14 @@ namespace FishGfx.VoxelTest
 
 		internal static VoxelTestModelAssets LoadModels()
 		{
-			VoxelModel barrel = LoadModel("barrel", "barrel.json", BarrelRegion);
-			VoxelModel campfire = LoadModel("campfire", "campfire.json", CampfireRegion);
-			VoxelModel torch = LoadModel("torch", "torch.json", TorchRegion);
+			VoxelModel barrel = LoadModel("barrel", "barrel.json", "barrel_tex.png", BarrelRegion);
+			VoxelModel campfire = LoadModel("campfire", "campfire.json", "campfire_tex.png", CampfireRegion);
+			VoxelModel torch = LoadModel("torch", "torch.json", "torch_tex.png", TorchRegion);
 			VoxelModel[] foliage =
 			{
-				LoadModel("grass", "grass1.json", FoliageRegion),
-				LoadModel("grass", "grass2.json", FoliageRegion),
-				LoadModel("grass", "grass3.json", FoliageRegion),
+				LoadModel("grass", "grass1.json", "grass1_tex.png", FoliageRegion),
+				LoadModel("grass", "grass2.json", "grass1_tex.png", FoliageRegion),
+				LoadModel("grass", "grass3.json", "grass1_tex.png", FoliageRegion),
 			};
 
 			return new VoxelTestModelAssets
@@ -79,15 +79,10 @@ namespace FishGfx.VoxelTest
 		internal static Bitmap CreateBitmap()
 		{
 			Bitmap result = new Bitmap(AssetPath("atlas.png"));
-
-			using (System.Drawing.Graphics graphics = System.Drawing.Graphics.FromImage(result))
-			{
-				graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-				DrawAsset(graphics, ModelAssetPath("barrel", "barrel_tex.png"), BarrelRegion.X, BarrelRegion.Y, padded: true);
-				DrawAsset(graphics, ModelAssetPath("campfire", "campfire_tex.png"), CampfireRegion.X, CampfireRegion.Y, padded: true);
-				DrawAsset(graphics, ModelAssetPath("torch", "torch_tex.png"), TorchRegion.X, TorchRegion.Y, padded: true);
-				DrawAsset(graphics, ModelAssetPath("grass", "grass1_tex.png"), FoliageRegion.X, FoliageRegion.Y, padded: true);
-			}
+			DrawAsset(result, ModelAssetPath("barrel", "barrel_tex.png"), BarrelRegion.X, BarrelRegion.Y, padded: true);
+			DrawAsset(result, ModelAssetPath("campfire", "campfire_tex.png"), CampfireRegion.X, CampfireRegion.Y, padded: true);
+			DrawAsset(result, ModelAssetPath("torch", "torch_tex.png"), TorchRegion.X, TorchRegion.Y, padded: true);
+			DrawAsset(result, ModelAssetPath("grass", "grass1_tex.png"), FoliageRegion.X, FoliageRegion.Y, padded: true);
 
 			return result;
 		}
@@ -105,8 +100,23 @@ namespace FishGfx.VoxelTest
 			return Path.Combine(path);
 		}
 
-		private static VoxelModel LoadModel(string directory, string fileName, VoxelTextureRegion region)
+		private static VoxelModel LoadModel(
+			string directory,
+			string fileName,
+			string textureFileName,
+			VoxelTextureRegion region
+		)
 		{
+			using Bitmap texture = new Bitmap(ModelAssetPath(directory, textureFileName));
+
+			if (texture.Width != region.Width || texture.Height != region.Height)
+			{
+				throw new InvalidDataException(
+					$"Model texture '{textureFileName}' is {texture.Width}x{texture.Height}, "
+					+ $"but its atlas region is {region.Width}x{region.Height}."
+				);
+			}
+
 			Dictionary<string, VoxelTextureRegion> regions = new Dictionary<string, VoxelTextureRegion>
 			{
 				["0"] = region,
@@ -120,18 +130,37 @@ namespace FishGfx.VoxelTest
 			return AssetPath("models", directory, fileName);
 		}
 
-		private static void DrawAsset(System.Drawing.Graphics graphics, string path, int x, int y, bool padded)
+		private static void DrawAsset(Bitmap destination, string path, int x, int y, bool padded)
 		{
 			using Bitmap bitmap = new Bitmap(path);
-			graphics.DrawImageUnscaled(bitmap, x, y);
+
+			for (int sourceY = 0; sourceY < bitmap.Height; sourceY++)
+				for (int sourceX = 0; sourceX < bitmap.Width; sourceX++)
+					destination.SetPixel(x + sourceX, y + sourceY, bitmap.GetPixel(sourceX, sourceY));
 
 			if (!padded)
 				return;
 
-			graphics.DrawImage(bitmap, new Rectangle(x - 1, y, 1, bitmap.Height), 0, 0, 1, bitmap.Height, GraphicsUnit.Pixel);
-			graphics.DrawImage(bitmap, new Rectangle(x + bitmap.Width, y, 1, bitmap.Height), bitmap.Width - 1, 0, 1, bitmap.Height, GraphicsUnit.Pixel);
-			graphics.DrawImage(bitmap, new Rectangle(x, y - 1, bitmap.Width, 1), 0, 0, bitmap.Width, 1, GraphicsUnit.Pixel);
-			graphics.DrawImage(bitmap, new Rectangle(x, y + bitmap.Height, bitmap.Width, 1), 0, bitmap.Height - 1, bitmap.Width, 1, GraphicsUnit.Pixel);
+			for (int sourceY = 0; sourceY < bitmap.Height; sourceY++)
+			{
+				destination.SetPixel(x - 1, y + sourceY, bitmap.GetPixel(0, sourceY));
+				destination.SetPixel(x + bitmap.Width, y + sourceY, bitmap.GetPixel(bitmap.Width - 1, sourceY));
+			}
+
+			for (int sourceX = 0; sourceX < bitmap.Width; sourceX++)
+			{
+				destination.SetPixel(x + sourceX, y - 1, bitmap.GetPixel(sourceX, 0));
+				destination.SetPixel(x + sourceX, y + bitmap.Height, bitmap.GetPixel(sourceX, bitmap.Height - 1));
+			}
+
+			destination.SetPixel(x - 1, y - 1, bitmap.GetPixel(0, 0));
+			destination.SetPixel(x + bitmap.Width, y - 1, bitmap.GetPixel(bitmap.Width - 1, 0));
+			destination.SetPixel(x - 1, y + bitmap.Height, bitmap.GetPixel(0, bitmap.Height - 1));
+			destination.SetPixel(
+				x + bitmap.Width,
+				y + bitmap.Height,
+				bitmap.GetPixel(bitmap.Width - 1, bitmap.Height - 1)
+			);
 		}
 	}
 

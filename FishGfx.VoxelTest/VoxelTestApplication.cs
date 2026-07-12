@@ -213,24 +213,38 @@ namespace FishGfx.VoxelTest
 							throw new InvalidOperationException("Voxel streaming exceeded its bounded resident chunk budget.");
 
 						autoGpuChunkCount = statistics.GpuChunks;
-						camera.Position = worldData.UnderwaterCameraPosition;
-						camera.LookAt(camera.Position + Vector3.UnitX);
+						camera.Position = worldData.ShowcaseSouthCameraPosition;
+						camera.LookAt(worldData.ShowcaseTarget);
 						autoValidationStage = 1;
 					}
 					else if (
 						autoMode
 						&& autoValidationStage == 1
 						&& renderValidationReady
-						&& underwater
-						&& renderer.Fog == UnderwaterFog
+						&& !underwater
+						&& !renderer.Fog.Enabled
+						&& diagnostics.TransparentCacheHit
 					)
 					{
-						autoGpuChunkCount = statistics.GpuChunks;
+						ValidateCompatibilityShowcase(world, worldData, materials);
+						camera.Position = worldData.UnderwaterCameraPosition;
+						camera.LookAt(camera.Position + Vector3.Normalize(new Vector3(0.2f, 1, 0.1f)));
 						autoValidationStage = 2;
 					}
 					else if (
 						autoMode
 						&& autoValidationStage == 2
+						&& renderValidationReady
+						&& underwater
+						&& renderer.Fog == UnderwaterFog
+					)
+					{
+						autoGpuChunkCount = statistics.GpuChunks;
+						autoValidationStage = 3;
+					}
+					else if (
+						autoMode
+						&& autoValidationStage == 3
 						&& renderValidationReady
 						&& underwater
 						&& diagnostics.TransparentCacheHit
@@ -402,6 +416,15 @@ namespace FishGfx.VoxelTest
 
 				if (world.GetVoxel(x, y, z).MaterialId != materials.Placeable[index].Id)
 					throw new InvalidOperationException($"Compatibility showcase material '{materials.Placeable[index].Name}' is missing.");
+			}
+
+			for (int index = 0; index < VoxelTestWorldGenerator.OrientationShowcaseCount; index++)
+			{
+				(int x, int y, int z) = worldData.GetOrientationShowcasePosition(index);
+				ushort expectedMaterial = VoxelTestWorldGenerator.GetOrientationShowcaseMaterial(materials, index);
+
+				if (world.GetVoxel(x, y, z).MaterialId != expectedMaterial)
+					throw new InvalidOperationException("The voxel texture-orientation showcase is incomplete.");
 			}
 		}
 

@@ -27,14 +27,16 @@ namespace FishGfx.VoxelTest
 			ShowcaseOriginX = (int)MathF.Floor(UnderwaterCameraPosition.X) - 10;
 			ShowcaseOriginZ = (int)MathF.Floor(UnderwaterCameraPosition.Z) - 8;
 			ShowcaseY = CalculateShowcaseY();
-			ShowcaseTarget = new Vector3(ShowcaseOriginX + 10, ShowcaseY + 0.5f, ShowcaseOriginZ + 1.5f);
-			ShowcaseCameraPosition = ShowcaseTarget + new Vector3(0, 10, -22);
+			ShowcaseTarget = new Vector3(ShowcaseOriginX + 10, ShowcaseY + 0.5f, ShowcaseOriginZ + 3);
+			ShowcaseCameraPosition = ShowcaseTarget + new Vector3(0, 11, -26);
+			ShowcaseSouthCameraPosition = ShowcaseTarget + new Vector3(0, 11, 26);
 		}
 
 		internal int LakeCount { get; }
 		internal int WaterColumnCount { get; }
 		internal Vector3 UnderwaterCameraPosition { get; }
 		internal Vector3 ShowcaseCameraPosition { get; }
+		internal Vector3 ShowcaseSouthCameraPosition { get; }
 		internal Vector3 ShowcaseTarget { get; }
 		internal int ShowcaseOriginX { get; }
 		internal int ShowcaseOriginZ { get; }
@@ -50,6 +52,14 @@ namespace FishGfx.VoxelTest
 				ShowcaseY,
 				ShowcaseOriginZ + index / 11 * 3
 			);
+		}
+
+		internal (int X, int Y, int Z) GetOrientationShowcasePosition(int index)
+		{
+			if (index < 0 || index >= VoxelTestWorldGenerator.OrientationShowcaseCount)
+				throw new ArgumentOutOfRangeException(nameof(index));
+
+			return (ShowcaseOriginX + 1 + index * 3, ShowcaseY, ShowcaseOriginZ + 6);
 		}
 
 		internal int GetSurfaceHeight(int worldX, int worldZ)
@@ -90,7 +100,7 @@ namespace FishGfx.VoxelTest
 			if (
 				minimumX <= ShowcaseOriginX + 20
 				&& minimumX + VoxelWorld.ChunkSize - 1 >= ShowcaseOriginX
-				&& minimumZ <= ShowcaseOriginZ + 3
+				&& minimumZ <= ShowcaseOriginZ + 6
 				&& minimumZ + VoxelWorld.ChunkSize - 1 >= ShowcaseOriginZ
 			)
 				maximumY = Math.Max(maximumY, ShowcaseY);
@@ -249,13 +259,20 @@ namespace FishGfx.VoxelTest
 				(int x, int y, int z) = GetShowcasePosition(index);
 				SetIfInside(cells, coordinate, x, y, z, materials.Placeable[index].Id);
 			}
+
+			for (int index = 0; index < VoxelTestWorldGenerator.OrientationShowcaseCount; index++)
+			{
+				(int x, int y, int z) = GetOrientationShowcasePosition(index);
+				ushort material = VoxelTestWorldGenerator.GetOrientationShowcaseMaterial(materials, index);
+				SetIfInside(cells, coordinate, x, y, z, material);
+			}
 		}
 
 		private int CalculateShowcaseY()
 		{
 			int maximumY = int.MinValue;
 
-			for (int z = ShowcaseOriginZ; z <= ShowcaseOriginZ + 3; z++)
+			for (int z = ShowcaseOriginZ; z <= ShowcaseOriginZ + 6; z++)
 				for (int x = ShowcaseOriginX; x <= ShowcaseOriginX + 20; x++)
 				{
 					maximumY = Math.Max(maximumY, GetSurfaceHeight(x, z));
@@ -398,6 +415,7 @@ namespace FishGfx.VoxelTest
 
 	internal static class VoxelTestWorldGenerator
 	{
+		internal const int OrientationShowcaseCount = 7;
 		internal const int WorldMinimum = -640;
 		internal const int WorldMaximum = 640;
 		internal const int WorldSize = WorldMaximum - WorldMinimum;
@@ -416,6 +434,24 @@ namespace FishGfx.VoxelTest
 		internal const int GlassMaximumX = 39;
 		internal const int GlassZ = -12;
 		internal const int GlassHeight = 20;
+
+		internal static ushort GetOrientationShowcaseMaterial(VoxelTestMaterialIds materials, int index)
+		{
+			if (materials == null)
+				throw new ArgumentNullException(nameof(materials));
+
+			return index switch
+			{
+				0 => materials.Grass,
+				1 => materials.Wood,
+				2 => materials.CraftingTable,
+				3 => materials.Barrel,
+				4 => materials.Campfire,
+				5 => materials.Torch,
+				6 => materials.Foliage,
+				_ => throw new ArgumentOutOfRangeException(nameof(index)),
+			};
+		}
 
 		internal static VoxelPalette CreatePalette(VoxelTestModelAssets models, out VoxelTestMaterialIds ids)
 		{
@@ -463,7 +499,8 @@ namespace FishGfx.VoxelTest
 					"Water",
 					VoxelRenderMode.Transparent,
 					new VoxelFaceTiles(10),
-					occludesFaces: false
+					occludesFaces: false,
+					doubleSided: true
 				)
 			);
 			ids.Glass = Add(

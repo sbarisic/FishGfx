@@ -20,6 +20,11 @@ No open defects are currently recorded here. This does not imply that the projec
 | BUG-008 | Low | Return a structured load failure for null JSON content. | `NullJsonReturnsStructuredFailure`. |
 | BUG-009 | Medium | Preserve floating-point texture parameters on the pre-4.5 OpenGL path. | Typed code path, Debug/Release builds, and smoke validation. |
 | BUG-010 | Medium | Correct 3D AABB center, bounds, maximum, union, and overlap calculations. | `AabbUsesThreeDimensionalSizeAndUnion` and `FrustumRejectsDistantBounds`. |
+| BUG-011 | Medium | Apply RaylibGame's distinct UV corner orientation to every cube face. | `CubeFacesUseRaylibGameCornerOrientations`. |
+| BUG-012 | Low | Parse and apply supported Blockbench/Minecraft per-face UV rotations. | `MinecraftLoaderAppliesFaceRotationsAndPreservesReversedUvEndpoints`. |
+| BUG-013 | Medium | Correct the mirrored south face in imported Blockbench voxel models. | `MinecraftLoaderUsesBlockbenchUvOrientationForEveryDirection`. |
+| BUG-014 | Medium | Preserve exact RGBA values while packing custom-model textures. | `PackedModelRegionsPreserveCompleteAlphaMasksAndPadding`. |
+| BUG-015 | Medium | Emit camera-facing back triangles for exposed water boundaries. | `DoubleSidedMaterialsEmitReversedTriangles` and `DoubleSidedWaterVolumeOnlyDoublesExposedBoundaryGeometry`. |
 
 ## Resolution notes
 
@@ -62,3 +67,23 @@ The legacy bind-to-edit branch of `Texture.TextureParam` converted a boxed float
 ### BUG-010: Incorrect 3D AABB operations
 
 `AABB.Bounds` returned the absolute maximum rather than the box size, `Center` added the full size instead of half, and `Maxs` mixed incorrect center/bounds values. Union delegated to a two-dimensional `System.Drawing` rectangle and lost the Z extent, while collision could report intersection when only selected corners overlapped. The implementation now uses component-wise three-dimensional minima/maxima and interval overlap on all axes. Frustum culling and voxel chunk bounds rely on these corrected operations.
+
+### BUG-011: Uniform cube-face UV orientation
+
+The voxel mesher reused the positive-X UV corner order for every cube face. The bottom, positive-Z, and negative-Z faces use different vertex orders, so asymmetric textures were flipped or rotated and grass side bands could appear vertically. Each face definition now stores the source-image UV associated with each geometry corner while retaining the existing half-texel atlas inset.
+
+### BUG-012: Ignored custom-model face rotation
+
+The Minecraft/Blockbench model loader honored element rotations but ignored a face's optional UV `rotation`. It now accepts 0, 90, 180, and 270 degrees, rotates UVs around the face center, and rejects unsupported values. Reversed UV rectangle endpoints remain supported, while coordinates outside the logical 0..16 model texture region are rejected before they can sample another atlas region.
+
+### BUG-013: Mirrored Blockbench south faces
+
+The custom-model loader inherited RaylibGame's south-face UV corner order, which horizontally mirrored that face relative to the Blockbench/Minecraft convention used to author the imported barrel, campfire, torch, and foliage models. The south mapping now follows the source convention while all other face mappings, top-down atlas conversion, element pivots, and reversed UV rectangles remain unchanged.
+
+### BUG-014: Altered model-texture alpha during atlas composition
+
+The compatibility-atlas builder used `Graphics.DrawImageUnscaled` to copy model sheets. GDI+ color conversion changed some source channel and alpha values, turning fully opaque or transparent cutout texels into partial coverage. Atlas composition now copies exact pixels and duplicates exact edge pixels into the padding, preserving the campfire and torch alpha masks.
+
+### BUG-015: Missing underwater-facing water surface
+
+Water emitted only outward-facing triangles while the transparent voxel pass kept back-face culling enabled. The lake surface therefore disappeared when viewed from below. Water is now a double-sided material: exposed boundaries include reversed triangles, shared faces between adjacent water voxels remain omitted, and culling still ensures only the camera-facing copy contributes to blending.

@@ -188,10 +188,11 @@ namespace FishGfx.Voxels
 				if (!root.TryGetProperty("elements", out JsonElement elements) || elements.ValueKind != JsonValueKind.Array)
 					throw new FormatException("Minecraft voxel models require an elements array.");
 
+				(int Width, int Height)? textureSize = ReadTextureSize(root);
 				List<VoxelVertex> vertices = new List<VoxelVertex>();
 
 				foreach (JsonElement element in elements.EnumerateArray())
-					AppendElement(element, textureRegions, vertices);
+					AppendElement(element, textureRegions, textureSize, vertices);
 
 				return new VoxelModel(vertices);
 			}
@@ -204,6 +205,7 @@ namespace FishGfx.Voxels
 		private static void AppendElement(
 			JsonElement element,
 			IReadOnlyDictionary<string, VoxelTextureRegion> regions,
+			(int Width, int Height)? textureSize,
 			List<VoxelVertex> destination
 		)
 		{
@@ -222,7 +224,12 @@ namespace FishGfx.Voxels
 			{
 				GetFace(faceProperty.Name, from, to, out Vector3 normal, out Vector3[] corners, out Vector2[] cornerUvs);
 				JsonElement face = faceProperty.Value;
-				Vector4 uv = ReadVector4(face, "uv") / 16;
+				Vector4 sourceUv = ReadVector4(face, "uv");
+
+				ValidateSourceUv(sourceUv);
+
+				Vector4 uv = sourceUv / 16;
+				int faceRotation = ReadFaceRotation(face);
 
 				if (!face.TryGetProperty("texture", out JsonElement textureElement))
 					throw new FormatException("Every model face requires a texture reference.");
@@ -232,12 +239,14 @@ namespace FishGfx.Voxels
 				if (string.IsNullOrWhiteSpace(textureKey) || !regions.TryGetValue(textureKey, out VoxelTextureRegion region))
 					throw new FormatException($"Model face references unresolved texture '{textureKey}'.");
 
+				ValidateTextureRegion(textureKey, region, textureSize);
+
 				for (int i = 0; i < TriangleOrder.Length; i++)
 				{
 					int cornerIndex = TriangleOrder[i];
 					Vector3 position = TransformAround(corners[cornerIndex], origin, rotation);
 					Vector3 transformedNormal = Vector3.Normalize(Vector3.TransformNormal(normal, rotation));
-					Vector2 localUv = cornerUvs[cornerIndex];
+					Vector2 localUv = RotateFaceUv(cornerUvs[cornerIndex], faceRotation);
 					Vector2 faceUv = new Vector2(
 						float.Lerp(uv.X, uv.Z, localUv.X),
 						float.Lerp(uv.Y, uv.W, localUv.Y)
@@ -245,6 +254,74 @@ namespace FishGfx.Voxels
 					destination.Add(new VoxelVertex(position, Color.White, region.Map(faceUv), transformedNormal));
 				}
 			}
+		}
+
+		private static (int Width, int Height)? ReadTextureSize(JsonElement root)
+		{
+			if (!root.TryGetProperty("texture_size", out JsonElement value))
+				return null;
+			if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 2)
+				throw new FormatException("Model texture_size must contain exactly two integer dimensions.");
+			if (!value[0].TryGetInt32(out int width) || !value[1].TryGetInt32(out int height))
+				throw new FormatException("Model texture_size dimensions must be integers.");
+			if (width <= 0 || height <= 0)
+				throw new FormatException("Model texture_size dimensions must be positive.");
+
+			return (width, height);
+		}
+
+		private static void ValidateTextureRegion(
+			string textureKey,
+			VoxelTextureRegion region,
+			(int Width, int Height)? textureSize
+		)
+		{
+			if (!textureSize.HasValue)
+				return;
+			if (region.Width != textureSize.Value.Width || region.Height != textureSize.Value.Height)
+			{
+				throw new FormatException(
+					$"Model texture '#{textureKey}' requires a {textureSize.Value.Width}x{textureSize.Value.Height} "
+					+ $"region, but the supplied region is {region.Width}x{region.Height}."
+				);
+			}
+		}
+
+		private static void ValidateSourceUv(Vector4 uv)
+		{
+			if (
+				uv.X < 0 || uv.X > 16
+				|| uv.Y < 0 || uv.Y > 16
+				|| uv.Z < 0 || uv.Z > 16
+				|| uv.W < 0 || uv.W > 16
+			)
+			{
+				throw new FormatException("Model face UV coordinates must remain within the logical 0..16 texture region.");
+			}
+		}
+
+		private static int ReadFaceRotation(JsonElement face)
+		{
+			if (!face.TryGetProperty("rotation", out JsonElement rotationElement))
+				return 0;
+			if (rotationElement.ValueKind != JsonValueKind.Number || !rotationElement.TryGetInt32(out int rotation))
+				throw new FormatException("Model face rotation must be an integer number of degrees.");
+			if (rotation != 0 && rotation != 90 && rotation != 180 && rotation != 270)
+				throw new FormatException("Model face rotation must be 0, 90, 180, or 270 degrees.");
+
+			return rotation;
+		}
+
+		private static Vector2 RotateFaceUv(Vector2 uv, int rotation)
+		{
+			return rotation switch
+			{
+				0 => uv,
+				90 => new Vector2(uv.Y, 1 - uv.X),
+				180 => Vector2.One - uv,
+				270 => new Vector2(1 - uv.Y, uv.X),
+				_ => throw new ArgumentOutOfRangeException(nameof(rotation)),
+			};
 		}
 
 		private static void ReadRotation(JsonElement element, out Vector3 origin, out Matrix4x4 rotation)
@@ -343,7 +420,7 @@ namespace FishGfx.Voxels
 						new Vector3(max.X, min.Y, max.Z), new Vector3(max.X, max.Y, max.Z),
 						new Vector3(min.X, max.Y, max.Z), new Vector3(min.X, min.Y, max.Z),
 					};
-					uvs = new[] { new Vector2(0, 1), Vector2.Zero, new Vector2(1, 0), Vector2.One };
+					uvs = new[] { Vector2.One, new Vector2(1, 0), Vector2.Zero, new Vector2(0, 1) };
 					break;
 				case "north":
 					normal = -Vector3.UnitZ;

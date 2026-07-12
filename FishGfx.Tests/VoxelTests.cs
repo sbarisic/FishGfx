@@ -209,6 +209,44 @@ public class VoxelTests
 		Assert.Equal(6, mesh.TransparentFaces.Length);
 		Assert.All(mesh.TransparentFaces, face => Assert.Equal(12, face.Vertices.Count));
 		Assert.Equal(-mesh.TransparentFaces[0].Vertices[0].Normal, mesh.TransparentFaces[0].Vertices[6].Normal);
+		VoxelTransparentFace top = mesh.TransparentFaces[2];
+		Assert.All(top.Vertices.Take(6), vertex => Assert.Equal(Vector3.UnitY, vertex.Normal));
+		Assert.All(top.Vertices.Skip(6), vertex => Assert.Equal(-Vector3.UnitY, vertex.Normal));
+
+		for (int triangle = 0; triangle < top.Vertices.Count; triangle += 3)
+		{
+			VoxelVertex a = top.Vertices[triangle];
+			VoxelVertex b = top.Vertices[triangle + 1];
+			VoxelVertex c = top.Vertices[triangle + 2];
+			Vector3 geometricNormal = Vector3.Cross(b.Position - a.Position, c.Position - a.Position);
+
+			Assert.True(Vector3.Dot(geometricNormal, a.Normal) > 0);
+		}
+	}
+
+	[Fact]
+	public void DoubleSidedWaterVolumeOnlyDoublesExposedBoundaryGeometry()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort water = builder.Add(
+			new VoxelMaterial(
+				"Water",
+				VoxelRenderMode.Transparent,
+				new VoxelFaceTiles(0),
+				occludesFaces: false,
+				doubleSided: true
+			)
+		);
+		VoxelPalette palette = builder.Build();
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(water));
+		world.SetVoxel(2, 1, 1, new VoxelCell(water));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(10, mesh.TransparentFaces.Length);
+		Assert.Equal(120, mesh.TransparentVertexCount);
+		Assert.All(mesh.TransparentFaces, face => Assert.Equal(12, face.Vertices.Count));
 	}
 
 	[Fact]
@@ -248,6 +286,38 @@ public class VoxelTests
 		Assert.Equal(0.984375f, maxU, 6);
 		Assert.Equal(0.515625f, minV, 6);
 		Assert.Equal(0.984375f, maxV, 6);
+	}
+
+	[Fact]
+	public void CubeFacesUseRaylibGameCornerOrientations()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+		const float MinimumU = 0.015625f;
+		const float MaximumU = 0.484375f;
+		const float MinimumV = 0.515625f;
+		const float MaximumV = 0.984375f;
+		Vector2 topRight = new(MaximumU, MaximumV);
+		Vector2 topLeft = new(MinimumU, MaximumV);
+		Vector2 bottomLeft = new(MinimumU, MinimumV);
+		Vector2 bottomRight = new(MaximumU, MinimumV);
+		Vector2[][] expected =
+		{
+			new[] { topRight, topLeft, bottomLeft, bottomRight },
+			new[] { topRight, topLeft, bottomLeft, bottomRight },
+			new[] { topRight, topLeft, bottomLeft, bottomRight },
+			new[] { bottomLeft, bottomRight, topRight, topLeft },
+			new[] { bottomRight, topRight, topLeft, bottomLeft },
+			new[] { topLeft, bottomLeft, bottomRight, topRight },
+		};
+
+		for (int face = 0; face < expected.Length; face++)
+		{
+			for (int corner = 0; corner < 4; corner++)
+				Assert.Equal(expected[face][corner], mesh.OpaqueVertices[face * 6 + corner].UV);
+		}
 	}
 
 	[Fact]
