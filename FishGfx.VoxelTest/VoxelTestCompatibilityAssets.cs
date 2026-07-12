@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using FishGfx.Graphics;
 using FishGfx.Voxels;
@@ -31,13 +30,13 @@ namespace FishGfx.VoxelTest
 
 	internal static class VoxelTestCompatibilityAssets
 	{
-		internal const int AtlasSize = 1024;
-		internal const int CubeColumns = 32;
-		internal const int CubeRows = 32;
-		internal static readonly VoxelTextureRegion BarrelRegion = new VoxelTextureRegion(520, 8, 64, 64, AtlasSize, AtlasSize);
-		internal static readonly VoxelTextureRegion CampfireRegion = new VoxelTextureRegion(592, 8, 64, 64, AtlasSize, AtlasSize);
-		internal static readonly VoxelTextureRegion TorchRegion = new VoxelTextureRegion(664, 8, 16, 16, AtlasSize, AtlasSize);
-		internal static readonly VoxelTextureRegion FoliageRegion = new VoxelTextureRegion(688, 8, 16, 16, AtlasSize, AtlasSize);
+		internal const int AtlasSize = 512;
+		internal const int CubeColumns = 16;
+		internal const int CubeRows = 16;
+		internal static readonly VoxelTextureRegion BarrelRegion = new VoxelTextureRegion(8, 72, 64, 64, AtlasSize, AtlasSize);
+		internal static readonly VoxelTextureRegion CampfireRegion = new VoxelTextureRegion(88, 72, 64, 64, AtlasSize, AtlasSize);
+		internal static readonly VoxelTextureRegion TorchRegion = new VoxelTextureRegion(168, 72, 16, 16, AtlasSize, AtlasSize);
+		internal static readonly VoxelTextureRegion FoliageRegion = new VoxelTextureRegion(200, 72, 16, 16, AtlasSize, AtlasSize);
 
 		internal static VoxelAtlasLayout AtlasLayout => new VoxelAtlasLayout(
 			CubeColumns,
@@ -45,14 +44,6 @@ namespace FishGfx.VoxelTest
 			AtlasSize,
 			AtlasSize
 		);
-
-		internal static int RemapCubeTile(int raylibTile)
-		{
-			if (raylibTile < 0 || raylibTile >= 16 * 16)
-				throw new ArgumentOutOfRangeException(nameof(raylibTile));
-
-			return raylibTile / 16 * CubeColumns + raylibTile % 16;
-		}
 
 		internal static VoxelTestModelAssets LoadModels()
 		{
@@ -87,13 +78,11 @@ namespace FishGfx.VoxelTest
 
 		internal static Bitmap CreateBitmap()
 		{
-			Bitmap result = new Bitmap(AtlasSize, AtlasSize, PixelFormat.Format32bppArgb);
+			Bitmap result = new Bitmap(AssetPath("atlas.png"));
 
 			using (System.Drawing.Graphics graphics = System.Drawing.Graphics.FromImage(result))
 			{
 				graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-				graphics.Clear(System.Drawing.Color.Transparent);
-				DrawAsset(graphics, AssetPath("atlas.png"), 0, 0, padded: false);
 				DrawAsset(graphics, ModelAssetPath("barrel", "barrel_tex.png"), BarrelRegion.X, BarrelRegion.Y, padded: true);
 				DrawAsset(graphics, ModelAssetPath("campfire", "campfire_tex.png"), CampfireRegion.X, CampfireRegion.Y, padded: true);
 				DrawAsset(graphics, ModelAssetPath("torch", "torch_tex.png"), TorchRegion.X, TorchRegion.Y, padded: true);

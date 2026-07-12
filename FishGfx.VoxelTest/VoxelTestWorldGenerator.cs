@@ -438,7 +438,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Ice",
 					VoxelRenderMode.Transparent,
-					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(7)),
+					new VoxelFaceTiles(7),
 					occludesFaces: false,
 					doubleSided: true
 				)
@@ -451,7 +451,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Leaf",
 					VoxelRenderMode.Transparent,
-					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(9)),
+					new VoxelFaceTiles(9),
 					occludesFaces: false
 				)
 			);
@@ -462,7 +462,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Water",
 					VoxelRenderMode.Transparent,
-					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(10)),
+					new VoxelFaceTiles(10),
 					occludesFaces: false
 				)
 			);
@@ -473,7 +473,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Glass",
 					VoxelRenderMode.Transparent,
-					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(11)),
+					new VoxelFaceTiles(11),
 					occludesFaces: false,
 					doubleSided: true
 				)
@@ -487,7 +487,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Grass",
 					VoxelRenderMode.Opaque,
-					new VoxelFaceTiles(481, 481, 480, 1, 481, 481)
+					new VoxelFaceTiles(241, 241, 240, 1, 241, 241)
 				)
 			);
 			ids.Wood = Add(
@@ -497,7 +497,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Wood",
 					VoxelRenderMode.Opaque,
-					new VoxelFaceTiles(482, 482, 483, 483, 482, 482)
+					new VoxelFaceTiles(242, 242, 243, 243, 242, 242)
 				)
 			);
 			ids.CraftingTable = Add(
@@ -507,7 +507,7 @@ namespace FishGfx.VoxelTest
 				new VoxelMaterial(
 					"Crafting Table",
 					VoxelRenderMode.Opaque,
-					new VoxelFaceTiles(485, 485, 484, 487, 486, 486)
+					new VoxelFaceTiles(245, 245, 244, 247, 246, 246)
 				)
 			);
 			ids.Barrel = Add(builder, ids, "Barrel", Custom("Barrel", VoxelRenderMode.Opaque, models.Barrel, true));
@@ -535,7 +535,7 @@ namespace FishGfx.VoxelTest
 			return new VoxelMaterial(
 				name,
 				VoxelRenderMode.Opaque,
-				new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(raylibTile))
+				new VoxelFaceTiles(raylibTile)
 			);
 		}
 
