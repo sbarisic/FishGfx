@@ -66,6 +66,43 @@ public class VoxelTestWorldTests
 	}
 
 	[Fact]
+	public void DryTerrainUsesGrassThenShallowDirtThenStone()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestWorldData data = generated.Data;
+		(int x, int z) = FindColumn(data, requireWater: false);
+		int surface = data.GetSurfaceHeight(x, z);
+
+		Assert.Equal(generated.Materials.Grass, data.GetTerrainMaterial(x, surface, z, generated.Materials));
+		Assert.Equal(generated.Materials.Dirt, data.GetTerrainMaterial(x, surface - 1, z, generated.Materials));
+		Assert.Equal(generated.Materials.Dirt, data.GetTerrainMaterial(x, surface - 3, z, generated.Materials));
+		Assert.Equal(generated.Materials.Stone, data.GetTerrainMaterial(x, surface - 4, z, generated.Materials));
+		Assert.Equal((ushort)0, data.GetTerrainMaterial(x, surface + 1, z, generated.Materials));
+	}
+
+	[Fact]
+	public void LakeColumnsUseDirtBedsStoneSubsurfaceAndWaterAboveTerrain()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestWorldData data = generated.Data;
+		Vector3 underwater = data.UnderwaterCameraPosition;
+		int x = (int)MathF.Floor(underwater.X);
+		int z = (int)MathF.Floor(underwater.Z);
+		int surface = data.GetSurfaceHeight(x, z);
+		int waterSurface = data.GetWaterSurface(x, z).Value;
+
+		Assert.True(waterSurface > surface);
+		Assert.Equal(generated.Materials.Dirt, data.GetTerrainMaterial(x, surface, z, generated.Materials));
+		Assert.Equal(generated.Materials.Dirt, data.GetTerrainMaterial(x, surface - 3, z, generated.Materials));
+		Assert.Equal(generated.Materials.Stone, data.GetTerrainMaterial(x, surface - 4, z, generated.Materials));
+
+		for (int y = surface + 1; y <= waterSurface; y++)
+			Assert.Equal(generated.Materials.Water, data.GetTerrainMaterial(x, y, z, generated.Materials));
+
+		Assert.Equal((ushort)0, data.GetTerrainMaterial(x, waterSurface + 1, z, generated.Materials));
+	}
+
+	[Fact]
 	public void StreamerLoadsNearestChunksWithinBudgetAndClipsAtWorldBoundary()
 	{
 		GeneratedWorld generated = Generated.Value;
@@ -219,8 +256,21 @@ public class VoxelTestWorldTests
 
 	private static GeneratedWorld CreateGeneratedWorld()
 	{
-		VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(out VoxelTestMaterialIds materials);
+		VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(
+			VoxelTestCompatibilityAssets.LoadModels(),
+			out VoxelTestMaterialIds materials
+		);
 		return new GeneratedWorld(palette, materials, VoxelTestWorldGenerator.Generate(materials));
+	}
+
+	private static (int X, int Z) FindColumn(VoxelTestWorldData data, bool requireWater)
+	{
+		for (int z = VoxelTestWorldGenerator.WorldMinimum + 1; z < VoxelTestWorldGenerator.WorldMaximum - 1; z++)
+			for (int x = VoxelTestWorldGenerator.WorldMinimum + 1; x < VoxelTestWorldGenerator.WorldMaximum - 1; x++)
+				if (data.GetWaterSurface(x, z).HasValue == requireWater)
+					return (x, z);
+
+		throw new InvalidOperationException("No matching terrain column was generated.");
 	}
 
 	private static bool IsNearChunkEdge(int coordinate)

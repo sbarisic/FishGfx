@@ -163,6 +163,26 @@ namespace FishGfx.Voxels
 						VoxelMaterial material = palette[materialId];
 						Vector3 blockPosition = new Vector3(x, y, z);
 
+						if (material.Models != null)
+						{
+							Vector3 worldOrigin = snapshot.Coordinate.WorldOrigin;
+							VoxelModel model = material.Models.Select(
+								(int)worldOrigin.X + x,
+								(int)worldOrigin.Y + y,
+								(int)worldOrigin.Z + z
+							);
+							AppendCustomModel(
+								model,
+								material,
+								blockPosition,
+								opaque,
+								cutout,
+								transparent,
+								boundsPoints
+							);
+							continue;
+						}
+
 						foreach (FaceDefinition face in Faces)
 						{
 							ushort neighborId = snapshot.GetMaterialUnchecked(
@@ -221,6 +241,82 @@ namespace FishGfx.Voxels
 				cutout.ToArray(),
 				transparent.ToArray(),
 				bounds
+			);
+		}
+
+		private static void AppendCustomModel(
+			VoxelModel model,
+			VoxelMaterial material,
+			Vector3 blockPosition,
+			List<VoxelVertex> opaque,
+			List<VoxelVertex> cutout,
+			List<VoxelTransparentFace> transparent,
+			List<Vector3> boundsPoints
+		)
+		{
+			VoxelVertex[] source = model.VertexArray;
+
+			for (int triangleStart = 0; triangleStart < source.Length; triangleStart += 3)
+			{
+				VoxelVertex[] triangle = new VoxelVertex[3];
+				Vector3 center = Vector3.Zero;
+
+				for (int i = 0; i < triangle.Length; i++)
+				{
+					VoxelVertex vertex = source[triangleStart + i];
+					vertex.Position += blockPosition;
+					vertex.Color = Multiply(vertex.Color, material.Tint);
+					triangle[i] = vertex;
+					center += vertex.Position;
+					boundsPoints.Add(vertex.Position);
+				}
+
+				AppendCustomTriangle(material.RenderMode, triangle, center / 3, opaque, cutout, transparent);
+
+				if (material.DoubleSided)
+				{
+					VoxelVertex[] back = { triangle[2], triangle[1], triangle[0] };
+
+					for (int i = 0; i < back.Length; i++)
+						back[i].Normal = -back[i].Normal;
+
+					AppendCustomTriangle(material.RenderMode, back, center / 3, opaque, cutout, transparent);
+				}
+			}
+		}
+
+		private static void AppendCustomTriangle(
+			VoxelRenderMode renderMode,
+			VoxelVertex[] triangle,
+			Vector3 center,
+			List<VoxelVertex> opaque,
+			List<VoxelVertex> cutout,
+			List<VoxelTransparentFace> transparent
+		)
+		{
+			switch (renderMode)
+			{
+				case VoxelRenderMode.Opaque:
+					opaque.AddRange(triangle);
+					break;
+				case VoxelRenderMode.Cutout:
+					cutout.AddRange(triangle);
+					break;
+				case VoxelRenderMode.Transparent:
+					transparent.Add(new VoxelTransparentFace(center, triangle));
+					break;
+				default:
+					throw new ArgumentOutOfRangeException(nameof(renderMode));
+			}
+		}
+
+		private static Color Multiply(Color left, Color right)
+		{
+			return new Color(
+				(byte)(left.R * right.R / 255),
+				(byte)(left.G * right.G / 255),
+				(byte)(left.B * right.B / 255),
+				(byte)(left.A * right.A / 255)
 			);
 		}
 

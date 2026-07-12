@@ -12,7 +12,8 @@ namespace FishGfx.Voxels
 			VoxelFaceTiles tiles,
 			Color? tint = null,
 			bool? occludesFaces = null,
-			bool doubleSided = false
+			bool doubleSided = false,
+			VoxelModelSet models = null
 		)
 		{
 			if (string.IsNullOrWhiteSpace(name))
@@ -24,6 +25,7 @@ namespace FishGfx.Voxels
 			Tint = tint ?? Color.White;
 			OccludesFaces = occludesFaces ?? renderMode == VoxelRenderMode.Opaque;
 			DoubleSided = doubleSided;
+			Models = models;
 		}
 
 		public string Name { get; }
@@ -32,6 +34,7 @@ namespace FishGfx.Voxels
 		public Color Tint { get; }
 		public bool OccludesFaces { get; }
 		public bool DoubleSided { get; }
+		public VoxelModelSet Models { get; }
 	}
 
 	public sealed class VoxelPaletteBuilder

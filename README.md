@@ -102,7 +102,7 @@ Opaque front-to-back, opaque state-first, and transparent back-to-front comparer
 
 ### Voxel chunks
 
-`FishGfx.Voxels` provides editable 16³ chunks, negative-coordinate-safe world addressing, immutable material palettes, and asynchronous culled-face meshing. `VoxelWorld.SetChunk` atomically copies or removes complete 4096-cell chunks while invalidating neighbors once, making streamed generation practical. Each worker consumes an 18³ padded snapshot instead of mutable world data. Revisions prevent stale results from replacing newer edits, while accepted meshes are uploaded under a configurable context-thread budget.
+`FishGfx.Voxels` provides editable 16³ chunks, negative-coordinate-safe world addressing, immutable material palettes, asynchronous culled-face meshing, and immutable custom block models. `MinecraftVoxelModelLoader` converts Blockbench/Minecraft element JSON into atlas-mapped `VoxelModel` geometry; `VoxelModelSet` supports deterministic coordinate-selected variants. Cube and custom geometry are baked into the same worker-generated chunk streams.
 
 ```csharp
 VoxelPaletteBuilder paletteBuilder = new VoxelPaletteBuilder();
@@ -133,7 +133,9 @@ The renderer owns its worker scheduler, shaders, per-chunk GPU meshes, and globa
 
 `VoxelRenderer.Fog` accepts immutable `VoxelFogSettings` for reusable distance fog and lighting attenuation without recreating voxel meshes. Applications decide which materials are liquid and switch fog as the camera enters or leaves them. The validation app detects its water material, applies blue-green exponential fog and reduced lighting, changes the clear color, and draws a subtle tint below its unaffected HUD.
 
-`VoxelRaycast.Cast` performs a bounded voxel-grid traversal and returns the hit cell, surface normal, exact distance/position, and adjacent placement cell. `VoxelMediumQuery` resolves the material containing an arbitrary world position using negative-coordinate-safe floor semantics. `FishGfx.VoxelTest` uses both for block editing and underwater detection in a deterministic 1280×1280 world covering 80×80 horizontal chunks, with terrain extending from roughly −80 through +160 vertically. The application streams a seven-chunk radius around the camera, unloads beyond nine chunks, renders to approximately 108 blocks, generates four horizontal positions per frame, and preserves edits in memory when chunks unload. Its globally analyzed lakes retain solid floors and enclosed banks. The HUD reports rolling 0.5-second FPS and frame time alongside streaming and renderer counters. Use the left mouse button to destroy the targeted block, the right mouse button to place stone, WASD and the mouse to fly, Space/Ctrl to move vertically, Shift to accelerate, E to edit a fixed boundary voxel, and C to toggle culling. The unattended validation mode is:
+`VoxelRaycast.Cast` performs bounded voxel-grid traversal and `VoxelMediumQuery` identifies the material containing a world position. `FishGfx.VoxelTest` demonstrates the complete RaylibGame visual block catalog using a copied, attributed asset snapshot: exact cube tiles, per-face grass/wood/crafting mappings, transparent materials, barrel/campfire/torch models, and deterministic foliage variants. The source atlas remains pixel-identical inside a runtime 1024² composite atlas; see `FishGfx/data/textures/voxels/raylibgame/PROVENANCE.md` and its bundled MIT license.
+
+The test world streams a seven-chunk radius in a deterministic 1280×1280 terrain and preserves edits across unloading. Left click destroys, right click places the selected material, the wheel cycles all materials, and 1–9 select the visible hotbar slots. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode is:
 
 ```powershell
 dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -- --auto -debug
@@ -207,7 +209,7 @@ Automatic mode uses a fixed animation time, captures each complete 1920×1080 sc
 - Add advanced text shaping, combining-mark handling, right-to-left layout, and supplementary Unicode support.
 - Add a general 2D path/stroke API with configurable joins, caps, arcs, and filled paths.
 - Add node-editor undo/redo, grouping, clipboard operations, and multi-selection.
-- Add greedy voxel meshing, propagated block lighting, custom block models, general biome/world generation, collision, and world serialization.
+- Add greedy voxel meshing, propagated block lighting, general biome/world generation, collision, and world serialization.
 - Replace Windows-only bitmap dependencies as part of broader platform support.
 
 ### Deferred migrations

@@ -5,19 +5,10 @@ using FishGfx.Voxels;
 
 namespace FishGfx.VoxelTest
 {
-	internal struct VoxelTestMaterialIds
-	{
-		internal ushort Stone;
-		internal ushort Dirt;
-		internal ushort Grass;
-		internal ushort Leaves;
-		internal ushort Glass;
-		internal ushort Water;
-	}
-
 	internal sealed class VoxelTestWorldData
 	{
 		private const int TreeSpacing = 32;
+		private const int DirtDepth = 3;
 		private readonly int[,] surfaceHeights;
 		private readonly int[,] waterSurfaces;
 
@@ -33,11 +24,33 @@ namespace FishGfx.VoxelTest
 			LakeCount = lakeCount;
 			WaterColumnCount = waterColumnCount;
 			UnderwaterCameraPosition = FindUnderwaterCameraPosition();
+			ShowcaseOriginX = (int)MathF.Floor(UnderwaterCameraPosition.X) - 10;
+			ShowcaseOriginZ = (int)MathF.Floor(UnderwaterCameraPosition.Z) - 8;
+			ShowcaseY = CalculateShowcaseY();
+			ShowcaseTarget = new Vector3(ShowcaseOriginX + 10, ShowcaseY + 0.5f, ShowcaseOriginZ + 1.5f);
+			ShowcaseCameraPosition = ShowcaseTarget + new Vector3(0, 10, -22);
 		}
 
 		internal int LakeCount { get; }
 		internal int WaterColumnCount { get; }
 		internal Vector3 UnderwaterCameraPosition { get; }
+		internal Vector3 ShowcaseCameraPosition { get; }
+		internal Vector3 ShowcaseTarget { get; }
+		internal int ShowcaseOriginX { get; }
+		internal int ShowcaseOriginZ { get; }
+		internal int ShowcaseY { get; }
+
+		internal (int X, int Y, int Z) GetShowcasePosition(int index)
+		{
+			if (index < 0)
+				throw new ArgumentOutOfRangeException(nameof(index));
+
+			return (
+				ShowcaseOriginX + index % 11 * 2,
+				ShowcaseY,
+				ShowcaseOriginZ + index / 11 * 3
+			);
+		}
 
 		internal int GetSurfaceHeight(int worldX, int worldZ)
 		{
@@ -74,6 +87,13 @@ namespace FishGfx.VoxelTest
 					);
 			if (ContainsBoundaryEdit(minimumX, minimumZ))
 				maximumY = Math.Max(maximumY, VoxelTestWorldGenerator.BoundaryEditY);
+			if (
+				minimumX <= ShowcaseOriginX + 20
+				&& minimumX + VoxelWorld.ChunkSize - 1 >= ShowcaseOriginX
+				&& minimumZ <= ShowcaseOriginZ + 3
+				&& minimumZ + VoxelWorld.ChunkSize - 1 >= ShowcaseOriginZ
+			)
+				maximumY = Math.Max(maximumY, ShowcaseY);
 
 			return (
 				FloorDivide(VoxelTestWorldGenerator.TerrainBottom, VoxelWorld.ChunkSize),
@@ -133,7 +153,7 @@ namespace FishGfx.VoxelTest
 				}
 		}
 
-		private ushort GetTerrainMaterial(
+		internal ushort GetTerrainMaterial(
 			int worldX,
 			int worldY,
 			int worldZ,
@@ -146,17 +166,17 @@ namespace FishGfx.VoxelTest
 			int surface = GetSurfaceHeight(worldX, worldZ);
 			int? waterSurface = GetWaterSurface(worldX, worldZ);
 
-			if (worldY <= surface)
-			{
-				if (worldY == surface)
-					return waterSurface.HasValue ? materials.Dirt : materials.Grass;
-				if (worldY >= surface - 20)
-					return materials.Dirt;
+			if (worldY > surface)
+				return waterSurface.HasValue && worldY <= waterSurface.Value
+					? materials.Water
+					: (ushort)0;
 
-				return materials.Stone;
-			}
+			if (worldY == surface)
+				return waterSurface.HasValue ? materials.Dirt : materials.Grass;
 
-			return waterSurface.HasValue && worldY <= waterSurface.Value ? materials.Water : (ushort)0;
+			return worldY >= surface - DirtDepth
+				? materials.Dirt
+				: materials.Stone;
 		}
 
 		private void OverlayTrees(
@@ -177,7 +197,7 @@ namespace FishGfx.VoxelTest
 			))
 			{
 				for (int y = rootY; y < rootY + 5; y++)
-					SetIfInside(cells, coordinate, rootX, y, rootZ, materials.Dirt);
+					SetIfInside(cells, coordinate, rootX, y, rootZ, materials.Wood);
 
 				for (int offsetY = 3; offsetY <= 6; offsetY++)
 					for (int offsetZ = -2; offsetZ <= 2; offsetZ++)
@@ -223,6 +243,28 @@ namespace FishGfx.VoxelTest
 				VoxelTestWorldGenerator.BoundaryEditZ,
 				materials.Glass
 			);
+
+			for (int index = 0; index < materials.Placeable.Count; index++)
+			{
+				(int x, int y, int z) = GetShowcasePosition(index);
+				SetIfInside(cells, coordinate, x, y, z, materials.Placeable[index].Id);
+			}
+		}
+
+		private int CalculateShowcaseY()
+		{
+			int maximumY = int.MinValue;
+
+			for (int z = ShowcaseOriginZ; z <= ShowcaseOriginZ + 3; z++)
+				for (int x = ShowcaseOriginX; x <= ShowcaseOriginX + 20; x++)
+				{
+					maximumY = Math.Max(maximumY, GetSurfaceHeight(x, z));
+
+					if (GetWaterSurface(x, z) is int waterSurface)
+						maximumY = Math.Max(maximumY, waterSurface);
+				}
+
+			return maximumY + 4;
 		}
 
 		private bool IsDry(int worldX, int worldZ, int clearance)
@@ -375,49 +417,154 @@ namespace FishGfx.VoxelTest
 		internal const int GlassZ = -12;
 		internal const int GlassHeight = 20;
 
-		internal static VoxelPalette CreatePalette(out VoxelTestMaterialIds ids)
+		internal static VoxelPalette CreatePalette(VoxelTestModelAssets models, out VoxelTestMaterialIds ids)
 		{
+			if (models == null)
+				throw new ArgumentNullException(nameof(models));
+
 			VoxelPaletteBuilder builder = new VoxelPaletteBuilder();
-			ids = new VoxelTestMaterialIds
-			{
-				Stone = builder.Add(new VoxelMaterial("Stone", VoxelRenderMode.Opaque, new VoxelFaceTiles(0))),
-				Dirt = builder.Add(new VoxelMaterial("Dirt", VoxelRenderMode.Opaque, new VoxelFaceTiles(1))),
-				Grass = builder.Add(
-					new VoxelMaterial(
-						"Grass",
-						VoxelRenderMode.Opaque,
-						new VoxelFaceTiles(1, 1, 2, 1, 1, 1)
-					)
-				),
-				Leaves = builder.Add(
-					new VoxelMaterial(
-						"Leaves",
-						VoxelRenderMode.Cutout,
-						new VoxelFaceTiles(3),
-						occludesFaces: false,
-						doubleSided: true
-					)
-				),
-				Glass = builder.Add(
-					new VoxelMaterial(
-						"Glass",
-						VoxelRenderMode.Transparent,
-						new VoxelFaceTiles(4),
-						occludesFaces: false,
-						doubleSided: true
-					)
-				),
-				Water = builder.Add(
-					new VoxelMaterial(
-						"Water",
-						VoxelRenderMode.Transparent,
-						new VoxelFaceTiles(5),
-						occludesFaces: false
-					)
-				),
-			};
+			ids = new VoxelTestMaterialIds();
+			ids.Stone = Add(builder, ids, "Stone", Opaque("Stone", 0));
+			ids.Dirt = Add(builder, ids, "Dirt", Opaque("Dirt", 1));
+			ids.StoneBrick = Add(builder, ids, "Stone Brick", Opaque("Stone Brick", 2));
+			ids.Sand = Add(builder, ids, "Sand", Opaque("Sand", 3));
+			ids.Bricks = Add(builder, ids, "Bricks", Opaque("Bricks", 4));
+			ids.Plank = Add(builder, ids, "Plank", Opaque("Plank", 5));
+			ids.EndStoneBrick = Add(builder, ids, "End Stone Brick", Opaque("End Stone Brick", 6));
+			ids.Ice = Add(
+				builder,
+				ids,
+				"Ice",
+				new VoxelMaterial(
+					"Ice",
+					VoxelRenderMode.Transparent,
+					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(7)),
+					occludesFaces: false,
+					doubleSided: true
+				)
+			);
+			ids.Test = Add(builder, ids, "Test", Opaque("Test", 8));
+			ids.Leaves = Add(
+				builder,
+				ids,
+				"Leaf",
+				new VoxelMaterial(
+					"Leaf",
+					VoxelRenderMode.Transparent,
+					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(9)),
+					occludesFaces: false
+				)
+			);
+			ids.Water = Add(
+				builder,
+				ids,
+				"Water",
+				new VoxelMaterial(
+					"Water",
+					VoxelRenderMode.Transparent,
+					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(10)),
+					occludesFaces: false
+				)
+			);
+			ids.Glass = Add(
+				builder,
+				ids,
+				"Glass",
+				new VoxelMaterial(
+					"Glass",
+					VoxelRenderMode.Transparent,
+					new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(11)),
+					occludesFaces: false,
+					doubleSided: true
+				)
+			);
+			ids.Glowstone = Add(builder, ids, "Glowstone", Opaque("Glowstone", 12));
+			ids.Test2 = Add(builder, ids, "Test 2", Opaque("Test 2", 13));
+			ids.Grass = Add(
+				builder,
+				ids,
+				"Grass",
+				new VoxelMaterial(
+					"Grass",
+					VoxelRenderMode.Opaque,
+					new VoxelFaceTiles(481, 481, 480, 1, 481, 481)
+				)
+			);
+			ids.Wood = Add(
+				builder,
+				ids,
+				"Wood",
+				new VoxelMaterial(
+					"Wood",
+					VoxelRenderMode.Opaque,
+					new VoxelFaceTiles(482, 482, 483, 483, 482, 482)
+				)
+			);
+			ids.CraftingTable = Add(
+				builder,
+				ids,
+				"Crafting Table",
+				new VoxelMaterial(
+					"Crafting Table",
+					VoxelRenderMode.Opaque,
+					new VoxelFaceTiles(485, 485, 484, 487, 486, 486)
+				)
+			);
+			ids.Barrel = Add(builder, ids, "Barrel", Custom("Barrel", VoxelRenderMode.Opaque, models.Barrel, true));
+			ids.Campfire = Add(builder, ids, "Campfire", Custom("Campfire", VoxelRenderMode.Cutout, models.Campfire, false));
+			ids.Torch = Add(builder, ids, "Torch", Custom("Torch", VoxelRenderMode.Cutout, models.Torch, false));
+			ids.Foliage = Add(
+				builder,
+				ids,
+				"Foliage",
+				new VoxelMaterial(
+					"Foliage",
+					VoxelRenderMode.Cutout,
+					new VoxelFaceTiles(0),
+					occludesFaces: false,
+					models: models.Foliage
+				)
+			);
+			ids.Gravel = Add(builder, ids, "Gravel", Opaque("Gravel", 21));
 
 			return builder.Build();
+		}
+
+		private static VoxelMaterial Opaque(string name, int raylibTile)
+		{
+			return new VoxelMaterial(
+				name,
+				VoxelRenderMode.Opaque,
+				new VoxelFaceTiles(VoxelTestCompatibilityAssets.RemapCubeTile(raylibTile))
+			);
+		}
+
+		private static VoxelMaterial Custom(
+			string name,
+			VoxelRenderMode mode,
+			VoxelModel model,
+			bool occludesFaces
+		)
+		{
+			return new VoxelMaterial(
+				name,
+				mode,
+				new VoxelFaceTiles(0),
+				occludesFaces: occludesFaces,
+				models: new VoxelModelSet(model)
+			);
+		}
+
+		private static ushort Add(
+			VoxelPaletteBuilder builder,
+			VoxelTestMaterialIds ids,
+			string name,
+			VoxelMaterial material
+		)
+		{
+			ushort id = builder.Add(material);
+			ids.Add(id, name);
+			return id;
 		}
 
 		internal static VoxelTestWorldData Generate(VoxelTestMaterialIds materials)

@@ -7,9 +7,6 @@ using FishGfx.Formats;
 using FishGfx.Game;
 using FishGfx.Graphics;
 using FishGfx.Voxels;
-using Bitmap = System.Drawing.Bitmap;
-using DrawingGraphics = System.Drawing.Graphics;
-using SolidBrush = System.Drawing.SolidBrush;
 
 namespace FishGfx.VoxelTest
 {
@@ -28,6 +25,7 @@ namespace FishGfx.VoxelTest
 		private static readonly Color UnderwaterTint = new Color(20, 101, 140, 48);
 		private readonly bool autoMode;
 		private Vector2 mouseDelta;
+		private float scrollDelta;
 		private bool boundaryBlockEnabled = true;
 		private bool cullingEnabled = true;
 
@@ -42,21 +40,24 @@ namespace FishGfx.VoxelTest
 			InputManager input = new InputManager(window);
 			window.CaptureCursor = !autoMode;
 			window.OnMouseMoveDelta += (_, x, y) => mouseDelta += new Vector2(x, y);
-			VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(out VoxelTestMaterialIds materials);
+			window.OnScroll += (_, _, y) => scrollDelta += y;
+			VoxelTestModelAssets modelAssets = VoxelTestCompatibilityAssets.LoadModels();
+			VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(modelAssets, out VoxelTestMaterialIds materials);
 			VoxelTestWorldData worldData = VoxelTestWorldGenerator.Generate(materials);
 			VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(worldData, materials);
 			VoxelWorld world = streamer.World;
+			VoxelHotbarSelection hotbar = new VoxelHotbarSelection(materials.Placeable);
 			Camera camera = CreateCamera(worldData);
 			Camera uiCamera = new Camera();
 			uiCamera.SetOrthogonal(0, 0, Width, Height);
 			ShaderUniforms.Current.Resolution = new Vector2(Width, Height);
-			Texture atlas = CreateAtlasTexture();
+			Texture atlas = VoxelTestCompatibilityAssets.CreateTexture();
 			TTFFont font = new TTFFont(AssetPath("fonts", "Consolas-Regular.ttf"));
 			VoxelRenderer renderer = new VoxelRenderer(
 				world,
 				palette,
 				atlas,
-				new VoxelAtlasLayout(3, 2, 192, 128),
+				VoxelTestCompatibilityAssets.AtlasLayout,
 				new VoxelRendererOptions
 				{
 					MaxWorkers = Math.Max(2, Environment.ProcessorCount - 1),
@@ -91,12 +92,19 @@ namespace FishGfx.VoxelTest
 					previousTime = now;
 					frameRate.Update(now, Math.Max(deltaTime, float.Epsilon));
 
-					if (input.GetKeyPressed(Key.Escape))
+					if (!autoMode && input.GetKeyPressed(Key.Escape))
 						window.ShouldClose = true;
 
 					if (!autoMode)
 					{
 						UpdateCamera(camera, input, deltaTime, streamer);
+						UpdateHotbar(input, hotbar);
+
+						if (scrollDelta != 0)
+						{
+							hotbar.Move(scrollDelta > 0 ? -1 : 1);
+							scrollDelta = 0;
+						}
 
 						if (input.GetKeyPressed(Key.E))
 							ToggleBoundaryBlock(streamer, materials);
@@ -111,7 +119,7 @@ namespace FishGfx.VoxelTest
 							DestroyTargetedVoxel(streamer, world, camera);
 
 						if (input.GetKeyPressed(Key.MouseRight))
-							PlaceTargetedVoxel(streamer, world, camera, materials.Stone);
+							PlaceTargetedVoxel(streamer, world, camera, hotbar.Selected.Id);
 					}
 
 					if (window.ShouldClose)
@@ -162,6 +170,7 @@ namespace FishGfx.VoxelTest
 						frameRate,
 						renderer.Statistics,
 						renderer.FrameDiagnostics,
+						hotbar,
 						renderer.CullingEnabled
 					);
 					window.SwapBuffers();
@@ -195,6 +204,7 @@ namespace FishGfx.VoxelTest
 					{
 						if (underwater || renderer.Fog.Enabled)
 							throw new InvalidOperationException("The normal voxel validation frame unexpectedly used underwater fog.");
+						ValidateCompatibilityShowcase(world, worldData, materials);
 						if (
 							streamer.LoadedHorizontalCount > streamer.MaximumResidentHorizontalCount
 							|| statistics.LoadedChunks > streamer.MaximumResidentChunkCount
@@ -215,9 +225,7 @@ namespace FishGfx.VoxelTest
 						&& renderer.Fog == UnderwaterFog
 					)
 					{
-						if (statistics.GpuChunks != autoGpuChunkCount)
-							throw new InvalidOperationException("Changing voxel fog unexpectedly recreated GPU chunk meshes.");
-
+						autoGpuChunkCount = statistics.GpuChunks;
 						autoValidationStage = 2;
 					}
 					else if (
@@ -228,6 +236,9 @@ namespace FishGfx.VoxelTest
 						&& diagnostics.TransparentCacheHit
 					)
 					{
+						if (statistics.GpuChunks != autoGpuChunkCount)
+							throw new InvalidOperationException("A stationary underwater frame unexpectedly changed GPU chunk meshes.");
+
 						underwaterValidated = true;
 						window.ShouldClose = true;
 					}
@@ -237,6 +248,11 @@ namespace FishGfx.VoxelTest
 								+ $"meshes={statistics.PendingJobs}, accepted={statistics.AcceptedMeshes}, stale={statistics.DiscardedMeshes}."
 						);
 				}
+
+				if (autoMode && !underwaterValidated)
+					throw new InvalidOperationException(
+						$"Voxel automatic validation closed before completion at stage {autoValidationStage}."
+					);
 
 				finalStatistics = renderer.Statistics;
 				finalDiagnostics = renderer.FrameDiagnostics;
@@ -368,68 +384,38 @@ namespace FishGfx.VoxelTest
 		{
 			Camera camera = new Camera();
 			camera.SetPerspective(Width, Height, MathF.PI / 2.2f, 0.1f, 500);
-			Vector3 water = worldData.UnderwaterCameraPosition;
-			camera.Position = new Vector3(water.X, water.Y + 45, water.Z);
-			camera.LookAt(new Vector3(water.X + 18, water.Y, water.Z + 18));
+			camera.Position = worldData.ShowcaseCameraPosition;
+			camera.LookAt(worldData.ShowcaseTarget);
 
 			return camera;
 		}
 
-
-		private static Texture CreateAtlasTexture()
-		{
-			using Bitmap bitmap = new Bitmap(192, 128, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-			using DrawingGraphics graphics = DrawingGraphics.FromImage(bitmap);
-			graphics.Clear(System.Drawing.Color.Transparent);
-			DrawTile(graphics, 0, 0, System.Drawing.Color.FromArgb(255, 105, 112, 128), System.Drawing.Color.FromArgb(255, 75, 82, 95));
-			DrawTile(graphics, 1, 0, System.Drawing.Color.FromArgb(255, 130, 86, 55), System.Drawing.Color.FromArgb(255, 95, 58, 38));
-			DrawTile(graphics, 2, 0, System.Drawing.Color.FromArgb(255, 82, 155, 73), System.Drawing.Color.FromArgb(255, 55, 115, 48));
-			DrawCutoutTile(graphics, 0, 1);
-			DrawTile(graphics, 1, 1, System.Drawing.Color.FromArgb(105, 155, 220, 245), System.Drawing.Color.FromArgb(55, 220, 245, 255));
-			DrawTile(graphics, 2, 1, System.Drawing.Color.FromArgb(145, 50, 125, 220), System.Drawing.Color.FromArgb(115, 80, 170, 245));
-
-			Texture texture = Texture.FromImage(bitmap);
-			texture.SetFilter(TextureFilter.Nearest);
-			texture.SetWrap(TextureWrap.ClampToEdge);
-
-			return texture;
-		}
-
-		private static void DrawTile(
-			DrawingGraphics graphics,
-			int tileX,
-			int tileY,
-			System.Drawing.Color first,
-			System.Drawing.Color second
+		private static void ValidateCompatibilityShowcase(
+			VoxelWorld world,
+			VoxelTestWorldData worldData,
+			VoxelTestMaterialIds materials
 		)
 		{
-			const int tileSize = 64;
-			int left = tileX * tileSize;
-			int top = tileY * tileSize;
+			for (int index = 0; index < materials.Placeable.Count; index++)
+			{
+				(int x, int y, int z) = worldData.GetShowcasePosition(index);
 
-			using SolidBrush firstBrush = new SolidBrush(first);
-			using SolidBrush secondBrush = new SolidBrush(second);
-			graphics.FillRectangle(firstBrush, left, top, tileSize, tileSize);
-
-			for (int y = 0; y < 8; y++)
-				for (int x = 0; x < 8; x++)
-					if ((x + y) % 2 == 0)
-						graphics.FillRectangle(secondBrush, left + x * 8, top + y * 8, 8, 8);
+				if (world.GetVoxel(x, y, z).MaterialId != materials.Placeable[index].Id)
+					throw new InvalidOperationException($"Compatibility showcase material '{materials.Placeable[index].Name}' is missing.");
+			}
 		}
 
-		private static void DrawCutoutTile(DrawingGraphics graphics, int tileX, int tileY)
+		private static void UpdateHotbar(InputManager input, VoxelHotbarSelection hotbar)
 		{
-			const int tileSize = 64;
-			int left = tileX * tileSize;
-			int top = tileY * tileSize;
-			using SolidBrush leaf = new SolidBrush(System.Drawing.Color.FromArgb(255, 65, 160, 75));
-			using SolidBrush dark = new SolidBrush(System.Drawing.Color.FromArgb(255, 35, 105, 50));
+			for (int slot = 0; slot < VoxelHotbarSelection.VisibleSlots; slot++)
+			{
+				Key key = (Key)((int)Key.Alpha1 + slot);
 
-			for (int y = 0; y < 8; y++)
-				for (int x = 0; x < 8; x++)
-					if ((x * 3 + y * 5) % 7 < 5)
-						graphics.FillRectangle((x + y) % 2 == 0 ? leaf : dark, left + x * 8, top + y * 8, 8, 8);
+				if (input.GetKeyPressed(key) && slot < hotbar.VisibleCount)
+					hotbar.SelectVisibleSlot(slot);
+			}
 		}
+
 
 		private static void DrawOverlay(
 			TTFFont font,
@@ -440,6 +426,7 @@ namespace FishGfx.VoxelTest
 			RollingFrameRateCounter frameRate,
 			VoxelRendererStatistics stats,
 			VoxelRendererFrameDiagnostics diagnostics,
+			VoxelHotbarSelection hotbar,
 			bool cullingEnabled
 		)
 		{
@@ -468,7 +455,7 @@ namespace FishGfx.VoxelTest
 						+ $"render prep: {diagnostics.CullingMilliseconds:F2} + {diagnostics.TransparentBuildMilliseconds:F2} ms"
 						+ $"   draws/binds: {diagnostics.DrawCalls} / {diagnostics.ShaderBinds}\n"
 						+ $"culling: {(cullingEnabled ? "on" : "off")}   C toggles, E edits a chunk boundary\n"
-						+ "Left destroy, Right place stone\n"
+						+ $"Left destroy, Right place: {hotbar.Selected.Name}; wheel or 1-9 selects\n"
 						+ "WASD + mouse, Space/Ctrl vertical, Shift fast",
 					new Color(220, 228, 240),
 					22
@@ -478,6 +465,7 @@ namespace FishGfx.VoxelTest
 					new Vertex2(new Vector2(Width / 2 + 10, Height / 2), new Color(245, 245, 245, 220)),
 					2
 				);
+				DrawHotbar(font, hotbar);
 				Gfx.Line(
 					new Vertex2(new Vector2(Width / 2, Height / 2 - 10), new Color(245, 245, 245, 220)),
 					new Vertex2(new Vector2(Width / 2, Height / 2 + 10), new Color(245, 245, 245, 220)),
@@ -488,6 +476,31 @@ namespace FishGfx.VoxelTest
 			{
 				ShaderUniforms.Current.Camera = worldCamera;
 				Gfx.PopRenderState();
+			}
+		}
+
+		private static void DrawHotbar(TTFFont font, VoxelHotbarSelection hotbar)
+		{
+			const float SlotWidth = 150;
+			const float SlotHeight = 58;
+			float startX = (Width - SlotWidth * hotbar.VisibleCount) / 2;
+
+			for (int slot = 0; slot < hotbar.VisibleCount; slot++)
+			{
+				float x = startX + slot * SlotWidth;
+				bool selected = hotbar.IsSelectedSlot(slot);
+				Color background = selected ? new Color(52, 112, 150, 235) : new Color(12, 18, 28, 215);
+				Color foreground = selected ? new Color(255, 235, 125) : new Color(215, 225, 235);
+				VoxelTestMaterialEntry entry = hotbar.GetVisible(slot);
+				Gfx.FilledRoundedRectangle(
+					x + 3,
+					18,
+					SlotWidth - 6,
+					SlotHeight,
+					new CornerRadii(8),
+					background
+				);
+				Gfx.DrawText(font, new Vector2(x + 12, 53), $"{slot + 1} {entry.Name}", foreground, 16);
 			}
 		}
 
