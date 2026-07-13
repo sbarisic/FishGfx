@@ -67,6 +67,15 @@ namespace FishGfx.Graphics
 			commands.Clear();
 		}
 
+		public void Execute(RenderPass pass)
+		{
+			if (pass == null) throw new ArgumentNullException(nameof(pass));
+			if (IsExecuting) throw new InvalidOperationException("A command list cannot execute recursively.");
+			IsExecuting = true;
+			try { GraphicsCommandRunner.Execute(commands, command => command.Execute(pass)); }
+			finally { IsExecuting = false; }
+		}
+
 		public void Execute()
 		{
 			if (IsExecuting)
@@ -76,8 +85,7 @@ namespace FishGfx.Graphics
 
 			try
 			{
-				foreach (GraphicsCommand command in commands)
-					command.Execute();
+				GraphicsCommandRunner.Execute(commands, command => command.Execute());
 			}
 			finally
 			{

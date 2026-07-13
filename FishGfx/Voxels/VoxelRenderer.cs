@@ -168,6 +168,15 @@ namespace FishGfx.Voxels
 		private bool cullingEnabled = true;
 		private VoxelFogSettings fog = VoxelFogSettings.Disabled;
 
+		public VoxelRenderer(GraphicsContext graphics, VoxelWorld world, VoxelPalette palette, Texture atlasTexture, VoxelAtlasLayout atlasLayout, VoxelRendererOptions options = null)
+			: this(world, palette, atlasTexture, atlasLayout, options)
+		{
+			Graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
+			atlasTexture.EnsureOwner(graphics);
+		}
+
+		public GraphicsContext Graphics { get; }
+
 		public VoxelRenderer(
 			VoxelWorld world,
 			VoxelPalette palette,
@@ -198,7 +207,7 @@ namespace FishGfx.Voxels
 			vertexShader = new ShaderStage(ShaderType.VertexShader, Path.Combine(shaderDirectory, "voxel.vert"));
 			fragmentShader = new ShaderStage(ShaderType.FragmentShader, Path.Combine(shaderDirectory, "voxel.frag"));
 			voxelShader = new ShaderProgram(vertexShader, fragmentShader);
-			transparentMesh = new VoxelMesh(BufferUsage.StreamDraw);
+			transparentMesh = new VoxelMesh(BufferUsage.Stream);
 
 			opaqueState = CreateState(transparent: false);
 			transparentState = CreateState(transparent: true);
@@ -501,7 +510,7 @@ namespace FishGfx.Voxels
 		private static void UpdateMesh(ref VoxelMesh mesh, VoxelVertex[] vertices)
 		{
 			if (mesh == null && vertices.Length > 0)
-				mesh = new VoxelMesh(BufferUsage.DynamicDraw);
+				mesh = new VoxelMesh(BufferUsage.Dynamic);
 
 			mesh?.Update(vertices);
 		}

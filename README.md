@@ -3,6 +3,7 @@
 FishGfx is a Windows-first C# graphics and game-framework library built on OpenGL 4, GLFW, and Silk.NET. The modern core targets .NET 10 and includes immediate 2D primitives, GPU resource abstractions, bitmap and SDF text, retained drawables, editable voxel chunks, reflected function-node graphs, and interactive validation applications.
 
 - [Architecture and project information](INFO.md)
+- [Graphics API and resource contract](GRAPHICS_API.md)
 - [Bug history](BUGS.md)
 
 ## Supported configuration
@@ -46,7 +47,81 @@ The older demos, tools, LiteTest, and Nuklear projects remain outside the modern
 - Context-thread GPU creation and deferred destruction of finalizer-released resources.
 - Cameras, 2D and 3D meshes, terrain, models, sprites, tile maps, and parallax sprites.
 - Alpha blending, depth/cull/color state, scissor regions, stencil functions/operations, and framebuffer depth-stencil attachments.
-- Windows bitmap texture loading, readback, and deterministic gallery screenshots.
+- Windows bitmap texture loading and deterministic framebuffer screenshots.
+
+### Stateful rendering
+
+`RenderWindow.Graphics` is the primary rendering API. Its `GraphicsContext` owns per-context render state, shared uniforms, immediate-renderer meshes and shaders, resource deletion, capabilities, and the backbuffer. A frame contains ordered render passes, and presentation is explicit:
+
+```csharp
+using RenderWindow window = new(new RenderWindowOptions
+{
+	Width = 1280,
+	Height = 720,
+	Title = "FishGfx",
+	MinimumVersion = new OpenGLVersion(4, 0),
+});
+
+GraphicsContext graphics = window.Graphics;
+Camera camera = new();
+camera.SetOrthogonal(0, 0, window.WindowWidth, window.WindowHeight);
+
+using GraphicsFrame frame = graphics.BeginFrame();
+using (RenderPass pass = frame.BeginPass(graphics.Backbuffer, new RenderPassDescriptor
+{
+	View = new RenderView(camera),
+	State = Gfx.CreateDefaultRenderState(),
+	ColorLoadAction = RenderLoadAction.Clear,
+	DepthLoadAction = RenderLoadAction.Clear,
+	ClearColor = new Color(24, 25, 27),
+}))
+{
+	pass.FilledCircle(new Vector2(320, 240), 80, Color.CornflowerBlue);
+	pass.DrawText(font, new Vector2(230, 120), "stateful", Color.White, 32);
+}
+frame.Present();
+```
+
+Frames and passes enforce one active scope at a time, pass state/model/view/query scopes restore in LIFO order, and disposing a frame does not implicitly present it. Resources can be created through context factories such as `CreateTexture`, `CreateBuffer`, `CreateShaderProgram`, `CreateTrueTypeFont`, `CreateBitmapFont`, and `CreateRenderTarget`. They retain their owning context, reject cross-context use, and are destroyed on that context's thread. Use `MakeCurrent` before switching between windows on the same owning thread.
+
+`Gfx` remains available as a compatibility facade. Calls made inside a `RenderPass` use the current context's state, uniforms, and built-in resources, but new code should pass `RenderPass` explicitly. Command lists, immutable batches, deferred queues, queries, and voxel rendering all expose pass-aware entry points.
+
+### Buffers and textures
+
+GPU resources use backend-independent descriptors and are created by their owning `GraphicsContext`. Buffer sizes and offsets are bytes; mesh classes keep their own vertex and index counts. `ResizeDiscard` reallocates and intentionally discards old contents. GPU copies require `TransferSource` on the source and `TransferDestination` on the destination:
+
+```csharp
+Vertex3[] vertices = BuildVertices();
+using GraphicsBuffer source = graphics.CreateBuffer<Vertex3>(
+	vertices,
+	BufferBindFlags.Vertex | BufferBindFlags.TransferSource,
+	BufferUsage.Static
+);
+using GraphicsBuffer destination = graphics.CreateBuffer(new GraphicsBufferDescriptor(
+	source.SizeInBytes,
+	BufferBindFlags.Vertex | BufferBindFlags.TransferDestination
+));
+source.CopyTo(destination);
+```
+
+Textures describe their dimension, curated storage format, usage, mip count, sample count, and initial sampling state. Uploads accept tightly packed unmanaged spans; partial uploads select a checked region and cube uploads additionally select a face. Mipmaps are never regenerated implicitly:
+
+```csharp
+using Texture texture = graphics.CreateTexture(new TextureDescriptor(
+	width: 512,
+	height: 512,
+	format: TextureFormat.RGBA8Unorm,
+	usage: TextureUsageFlags.Sampled | TextureUsageFlags.TransferDestination,
+	mipLevels: 10,
+	sampling: new TextureSamplingState(TextureFilter.LinearMipmapLinear, TextureFilter.Linear)
+));
+texture.Write<byte>(rgbaPixels, TextureDataFormat.RGBA8Unorm);
+texture.GenerateMipmaps();
+
+using Texture loaded = graphics.LoadTexture2D("image.png");
+```
+
+`TextureLoader` contains the Windows `System.Drawing` file, image, atlas, update, and cubemap helpers; `Texture` itself is only a GPU resource. Texture-to-texture copies support same-format non-multisampled 2D subregions and cubemap faces. Multisample resolve remains `Framebuffer.Blit`. General texture and buffer CPU readback, mapping, persistent buffers, sampler objects, texture arrays/views, compressed uploads, PBOs, and asynchronous transfers are intentionally outside this version.
 
 ### Immediate 2D primitives
 
@@ -71,10 +146,10 @@ commands.RecordFilledCircle(new Vector2(320, 240), 80, Color.CornflowerBlue);
 commands.RecordDrawText(font, new Vector2(230, 120), "replay me", Color.White, 32);
 commands.RecordPopRenderState();
 
-commands.Execute();
+commands.Execute(pass);
 ```
 
-Successful execution preserves every command. Replay stops at the first exception and resets `IsExecuting`, but earlier graphics or render-stack changes are not rolled back. Lists do not provide internal synchronization and cannot be mutated or executed recursively during replay.
+Successful execution preserves every command. Replay stops at the first exception, resets `IsExecuting`, and unwinds render-state pushes made by the list. Built-in push/pop commands must be balanced before replay. Other completed drawing operations are not rolled back. Lists do not provide internal synchronization and cannot be mutated or executed recursively during replay.
 
 ### Deferred render submission
 
@@ -93,9 +168,9 @@ queue.SubmitTransparent(
 
 foreach (RenderSubmission item in queue.GetSorted(
 	RenderBucket.Transparent,
-	RenderSubmissionComparers.TransparentBackToFront(camera)
+	RenderSubmissionComparers.TransparentBackToFront(pass.View)
 ))
-	item.Execute();
+	item.Execute(pass);
 ```
 
 Opaque front-to-back, opaque state-first, and transparent back-to-front comparers are stable and respect explicit layers. Custom `RenderBucket` values and comparers support passes such as shadows, selection, or overlays. Submission snapshots copy command references, while textures, shaders, fonts, meshes, and models remain caller-owned. The model transform is restored after every item; camera and other shared uniforms are taken from the active render pass.
@@ -115,6 +190,7 @@ VoxelWorld world = new VoxelWorld();
 world.SetVoxel(-1, 0, -1, new VoxelCell(stone));
 
 using VoxelRenderer renderer = new VoxelRenderer(
+	window.Graphics,
 	world,
 	palette,
 	atlasTexture,
@@ -124,9 +200,9 @@ using VoxelRenderer renderer = new VoxelRenderer(
 renderer.UpdateMeshing();
 queue.BeginFrame();
 renderer.SubmitVisible(queue, camera);
-queue.Execute(RenderBucket.Opaque, RenderSubmissionComparers.OpaqueFrontToBack(camera));
-queue.Execute(VoxelRenderBuckets.Cutout, RenderSubmissionComparers.OpaqueFrontToBack(camera));
-queue.Execute(RenderBucket.Transparent, RenderSubmissionComparers.TransparentBackToFront(camera));
+pass.Execute(queue, RenderBucket.Opaque, RenderSubmissionComparers.OpaqueFrontToBack(pass.View));
+pass.Execute(queue, VoxelRenderBuckets.Cutout, RenderSubmissionComparers.OpaqueFrontToBack(pass.View));
+pass.Execute(queue, RenderBucket.Transparent, RenderSubmissionComparers.TransparentBackToFront(pass.View));
 ```
 
 The renderer owns its worker scheduler, shaders, per-chunk GPU meshes, and global transparent stream. The application retains ownership of the atlas texture and must keep it alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted separately. Transparent faces are gathered across all visible chunks, stably sorted back-to-front in camera space, and uploaded as one world-space stream. Face occlusion, per-face atlas tiles, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
@@ -150,8 +226,8 @@ using FishGfx;
 using FishGfx.Formats;
 using FishGfx.Graphics;
 
-using TTFFont font = new TTFFont("data/fonts/Aaargh.ttf");
-Gfx.DrawText(font, new Vector2(100, 100), "Smooth SDF text", Color.White, 64);
+using TTFFont font = window.Graphics.CreateTrueTypeFont("data/fonts/Aaargh.ttf");
+pass.DrawText(font, new Vector2(100, 100), "Smooth SDF text", Color.White, 64);
 ```
 
 `TTFFont` preloads printable ASCII and lazily adds Unicode BMP glyphs to a growable atlas. Layout supports multiline text, tabs, pair kerning, scaling, measurement, color, and alpha. Complex shaping, combining-mark handling, right-to-left layout, and supplementary Unicode planes are not supported yet.
@@ -194,13 +270,15 @@ Run the complete primitive gallery unattended with:
 dotnet run --project FishGfx.SmokeTest/FishGfx.SmokeTest.csproj -- --auto
 ```
 
+Append `--gl40` to require an exact OpenGL 4.0 context and exercise the bind-to-edit resource paths.
+
 Automatic mode uses a fixed animation time, captures each complete 1920×1080 scene, and atomically overwrites its PNG under `FishGfx/pictures`. It also generates 640×360 documentation thumbnails under `FishGfx/pictures/thumbnails`.
 
 ## Roadmap
 
 ### Near term
 
-- Complete stencil write-mask support and add focused scissor/stencil gallery scenes and tests.
+- Add focused scissor/stencil gallery scenes and lower-version OpenGL hardware CI coverage.
 - Implement SMD saving and define graceful handling for unsupported SMD parser segments.
 - Expand OpenGL 4.0 fallback and render-state compatibility coverage.
 

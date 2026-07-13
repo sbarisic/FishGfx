@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics.Drawables
 {
-	public class Tilemap : IDrawable
+	public class Tilemap : IDrawable, IDisposable
 	{
 		List<Vertex3> VertList = new List<Vertex3>();
 
@@ -39,6 +39,10 @@ namespace FishGfx.Graphics.Drawables
 
 		public Tilemap(int TileSize, int Width, int Height, Texture TileAtlasTexture)
 		{
+			if (TileSize <= 0) throw new ArgumentOutOfRangeException(nameof(TileSize));
+			if (Width <= 0) throw new ArgumentOutOfRangeException(nameof(Width));
+			if (Height <= 0) throw new ArgumentOutOfRangeException(nameof(Height));
+			if (TileAtlasTexture == null) throw new ArgumentNullException(nameof(TileAtlasTexture));
 			this.TileSize = TileSize;
 			this.Width = Width;
 			this.Height = Height;
@@ -46,7 +50,7 @@ namespace FishGfx.Graphics.Drawables
 			Tiles = new int[Width * Height];
 			TileColors = new Color[Width * Height];
 
-			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
+			Mesh = new Mesh3D(BufferUsage.Dynamic);
 			Mesh.PrimitiveType = PrimitiveType.Triangles;
 
 			Mesh.SetVertices(
@@ -81,6 +85,9 @@ namespace FishGfx.Graphics.Drawables
 
 		public void SetTileAtlas(Texture Tex)
 		{
+			if (Tex == null) throw new ArgumentNullException(nameof(Tex));
+			if (Tex.Width < TileSize || Tex.Height < TileSize)
+				throw new ArgumentException("The tile atlas must contain at least one complete tile.", nameof(Tex));
 			TileAtlas = Tex;
 
 			TextureWidth = Tex.Width;
@@ -234,26 +241,27 @@ namespace FishGfx.Graphics.Drawables
 
 		public void Draw()
 		{
-			if (Dirty)
+			if (Dirty) { Dirty = false; Update(); }
+			if (DrawableTileCount <= 0) return;
+			ShaderUniforms uniforms = ShaderUniforms.Current;
+			Matrix4x4 oldModel = uniforms.Model;
+			bool shaderBound = false;
+			bool textureBound = false;
+			try
 			{
-				Dirty = false;
-				Update();
+				uniforms.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
+				if (Shader != null) { Shader.Bind(uniforms); shaderBound = true; }
+				if (TileAtlas != null) { TileAtlas.BindTextureUnit(); textureBound = true; }
+				Mesh.Draw();
 			}
-
-			if (DrawableTileCount <= 0)
-				return;
-
-			Matrix4x4 OldModel = ShaderUniforms.Current.Model;
-			ShaderUniforms.Current.Model =
-				Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
-
-			Shader?.Bind(ShaderUniforms.Current);
-			TileAtlas?.BindTextureUnit();
-			Mesh.Draw();
-			TileAtlas?.UnbindTextureUnit();
-			Shader?.Unbind();
-
-			ShaderUniforms.Current.Model = OldModel;
+			finally
+			{
+				if (textureBound) TileAtlas.UnbindTextureUnit();
+				if (shaderBound) Shader.Unbind();
+				uniforms.Model = oldModel;
+			}
 		}
+
+		public void Dispose() => Mesh.Dispose();
 	}
 }

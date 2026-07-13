@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics.Drawables
 {
-	public class Sprite : IDrawable
+	public class Sprite : IDrawable, IDisposable
 	{
 		Mesh3D Mesh;
 
@@ -21,7 +21,7 @@ namespace FishGfx.Graphics.Drawables
 
 		public Sprite()
 		{
-			Mesh = new Mesh3D(BufferUsage.DynamicDraw);
+			Mesh = new Mesh3D(BufferUsage.Dynamic);
 			Mesh.PrimitiveType = PrimitiveType.Triangles;
 
 			Mesh.SetVertices(
@@ -58,24 +58,27 @@ namespace FishGfx.Graphics.Drawables
 
 		public void Draw()
 		{
-			Vector2 FlipScale = new Vector2(FlipX ? -1 : 1, 1);
-
-			Matrix4x4 OldModel = ShaderUniforms.Current.Model;
-			Matrix4x4 Translation = Matrix4x4.CreateTranslation(
-				Position.X - Center.X * FlipScale.X,
-				Position.Y - Center.Y * FlipScale.Y,
-				0
-			);
-			ShaderUniforms.Current.Model =
-				Matrix4x4.CreateScale(Scale.X * FlipScale.X, Scale.Y * FlipScale.Y, 1) * Translation;
-
-			Shader?.Bind(ShaderUniforms.Current);
-			Texture?.BindTextureUnit();
-			Mesh.Draw();
-			Texture?.UnbindTextureUnit();
-			Shader?.Unbind();
-
-			ShaderUniforms.Current.Model = OldModel;
+			Vector2 flipScale = new Vector2(FlipX ? -1 : 1, 1);
+			ShaderUniforms uniforms = ShaderUniforms.Current;
+			Matrix4x4 oldModel = uniforms.Model;
+			bool shaderBound = false;
+			bool textureBound = false;
+			try
+			{
+				Matrix4x4 translation = Matrix4x4.CreateTranslation(Position.X - Center.X * flipScale.X, Position.Y - Center.Y * flipScale.Y, 0);
+				uniforms.Model = Matrix4x4.CreateScale(Scale.X * flipScale.X, Scale.Y * flipScale.Y, 1) * translation;
+				if (Shader != null) { Shader.Bind(uniforms); shaderBound = true; }
+				if (Texture != null) { Texture.BindTextureUnit(); textureBound = true; }
+				Mesh.Draw();
+			}
+			finally
+			{
+				if (textureBound) Texture.UnbindTextureUnit();
+				if (shaderBound) Shader.Unbind();
+				uniforms.Model = oldModel;
+			}
 		}
+
+		public void Dispose() => Mesh.Dispose();
 	}
 }

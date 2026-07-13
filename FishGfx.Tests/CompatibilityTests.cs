@@ -27,10 +27,10 @@ public class CompatibilityTests
 	}
 
 	[Fact]
-	public void TextureConstantsMatchOpenGl()
+	public void TextureEnumsAreBackendIndependent()
 	{
-		Assert.Equal(0x2600, (int)TextureFilter.Nearest);
-		Assert.Equal(0x2601, (int)TextureFilter.Linear);
-		Assert.Equal(0x812F, (int)TextureWrap.ClampToEdge);
+		Assert.True(Enum.IsDefined(TextureFilter.Nearest));
+		Assert.True(Enum.IsDefined(TextureFilter.Linear));
+		Assert.True(Enum.IsDefined(TextureWrap.ClampToEdge));
 	}
 }

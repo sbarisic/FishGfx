@@ -9,7 +9,7 @@ using Clr = System.Drawing.Color;
 
 namespace FishGfx.Graphics.Drawables
 {
-	public class Terrain : IDrawable
+	public class Terrain : IDrawable, IDisposable
 	{
 		Mesh3D TerrainMesh;
 		float[] HeightData;
@@ -63,8 +63,11 @@ namespace FishGfx.Graphics.Drawables
 		{
 			if (CreateOverlayTexture)
 			{
-				OverlayTexture = Texture.FromImage(Img);
-				OverlayTexture.SetFilter(TextureFilter.Linear);
+				OverlayTexture = TextureLoader.FromImage(
+					GraphicsContext.Current,
+					Img,
+					new TextureLoadOptions { Sampling = new TextureSamplingState(TextureFilter.Linear, TextureFilter.Linear) }
+				);
 			}
 
 			Width = Img.Width;
@@ -169,9 +172,15 @@ namespace FishGfx.Graphics.Drawables
 
 		public void Draw()
 		{
-			OverlayTexture?.BindTextureUnit();
-			TerrainMesh.Draw();
-			OverlayTexture?.UnbindTextureUnit();
+			bool textureBound = false;
+			try
+			{
+				if (OverlayTexture != null) { OverlayTexture.BindTextureUnit(); textureBound = true; }
+				TerrainMesh.Draw();
+			}
+			finally { if (textureBound) OverlayTexture.UnbindTextureUnit(); }
 		}
+
+		public void Dispose() => TerrainMesh.Dispose();
 	}
 }

@@ -50,10 +50,10 @@ namespace FishGfx.VoxelTest
 			Camera camera = CreateCamera(worldData);
 			Camera uiCamera = new Camera();
 			uiCamera.SetOrthogonal(0, 0, Width, Height);
-			ShaderUniforms.Current.Resolution = new Vector2(Width, Height);
 			Texture atlas = VoxelTestCompatibilityAssets.CreateTexture();
-			TTFFont font = new TTFFont(AssetPath("fonts", "Consolas-Regular.ttf"));
+			TTFFont font = window.Graphics.CreateTrueTypeFont(AssetPath("fonts", "Consolas-Regular.ttf"));
 			VoxelRenderer renderer = new VoxelRenderer(
+				window.Graphics,
 				world,
 				palette,
 				atlas,
@@ -138,33 +138,43 @@ namespace FishGfx.VoxelTest
 					renderer.Fog = underwater ? UnderwaterFog : VoxelFogSettings.Disabled;
 					renderer.UpdateMeshing();
 					renderQueue.BeginFrame();
-					Gfx.Clear(underwater ? UnderwaterClearColor : AirClearColor);
+					using GraphicsFrame frame = window.Graphics.BeginFrame();
+					using RenderPass pass = frame.BeginPass(window.Graphics.Backbuffer, new RenderPassDescriptor
+					{
+						View = new RenderView(camera),
+						ColorLoadAction = RenderLoadAction.Clear,
+						DepthLoadAction = RenderLoadAction.Clear,
+						StencilLoadAction = RenderLoadAction.Clear,
+						ClearColor = underwater ? UnderwaterClearColor : AirClearColor,
+					});
 
 					if (!autoMode || (streamer.IsSettled && renderer.IsIdle))
 					{
 						renderer.SubmitVisible(renderQueue, camera);
-						ShaderUniforms.Current.Camera = camera;
 						renderQueue.Execute(
+							pass,
 							RenderBucket.Opaque,
 							RenderSubmissionComparers.OpaqueFrontToBack(camera)
 						);
 						renderQueue.Execute(
+							pass,
 							VoxelRenderBuckets.Cutout,
 							RenderSubmissionComparers.OpaqueFrontToBack(camera)
 						);
 						renderQueue.Execute(
+							pass,
 							RenderBucket.Transparent,
 							RenderSubmissionComparers.TransparentBackToFront(camera)
 						);
 					}
 
 					if (underwater)
-						DrawUnderwaterTint(uiCamera, camera, overlayState);
+						DrawUnderwaterTint(pass, uiCamera, overlayState);
 
 					DrawOverlay(
+						pass,
 						font,
 						uiCamera,
-						camera,
 						overlayState,
 						streamer,
 						frameRate,
@@ -173,7 +183,8 @@ namespace FishGfx.VoxelTest
 						hotbar,
 						renderer.CullingEnabled
 					);
-					window.SwapBuffers();
+					pass.Dispose();
+					frame.Present();
 
 					VoxelRendererStatistics statistics = renderer.Statistics;
 					VoxelRendererFrameDiagnostics diagnostics = renderer.FrameDiagnostics;
@@ -276,8 +287,8 @@ namespace FishGfx.VoxelTest
 				renderer.Dispose();
 				font.Dispose();
 				atlas.Dispose();
-				RenderAPI.CollectGarbage();
-				window.Close();
+				window.Graphics.CollectGarbage();
+				window.Dispose();
 			}
 
 			Console.WriteLine(
@@ -289,24 +300,11 @@ namespace FishGfx.VoxelTest
 			);
 		}
 
-		private static void DrawUnderwaterTint(
-			Camera uiCamera,
-			Camera worldCamera,
-			RenderState overlayState
-		)
+		private static void DrawUnderwaterTint(RenderPass pass, Camera uiCamera, RenderState overlayState)
 		{
-			Gfx.PushRenderState(overlayState);
-
-			try
-			{
-				ShaderUniforms.Current.Camera = uiCamera;
-				Gfx.FilledRectangle(0, 0, Width, Height, UnderwaterTint);
-			}
-			finally
-			{
-				ShaderUniforms.Current.Camera = worldCamera;
-				Gfx.PopRenderState();
-			}
+			using IDisposable stateScope = pass.PushState(overlayState);
+			using IDisposable viewScope = pass.PushView(new RenderView(uiCamera));
+			pass.FilledRectangle(0, 0, Width, Height, UnderwaterTint);
 		}
 
 		private void UpdateCamera(
@@ -441,9 +439,9 @@ namespace FishGfx.VoxelTest
 
 
 		private static void DrawOverlay(
+			RenderPass pass,
 			TTFFont font,
 			Camera uiCamera,
-			Camera worldCamera,
 			RenderState overlayState,
 			VoxelTestChunkStreamer streamer,
 			RollingFrameRateCounter frameRate,
@@ -453,21 +451,18 @@ namespace FishGfx.VoxelTest
 			bool cullingEnabled
 		)
 		{
-			Gfx.PushRenderState(overlayState);
-
-			try
-			{
-				ShaderUniforms.Current.Camera = uiCamera;
-				Gfx.FilledRoundedRectangle(20, 700, 670, 350, new CornerRadii(16), new Color(10, 14, 24, 210));
-				Gfx.DrawText(font, new Vector2(45, 980), "FishGfx voxel chunks", new Color(110, 205, 255), 34);
-				Gfx.DrawText(
+			using IDisposable stateScope = pass.PushState(overlayState);
+			using IDisposable viewScope = pass.PushView(new RenderView(uiCamera));
+				pass.FilledRoundedRectangle(20, 700, 670, 350, new CornerRadii(16), new Color(10, 14, 24, 210));
+				pass.DrawText(font, new Vector2(45, 980), "FishGfx voxel chunks", new Color(110, 205, 255), 34);
+				pass.DrawText(
 					font,
 					new Vector2(400, 985),
 					$"FPS: {frameRate.FramesPerSecond:F1} | {frameRate.FrameMilliseconds:F1} ms",
 					new Color(145, 255, 170),
 					22
 				);
-				Gfx.DrawText(
+				pass.DrawText(
 					font,
 					new Vector2(45, 735),
 					$"stream loaded/pending: {streamer.LoadedHorizontalCount} / {streamer.PendingHorizontalCount}\n"
@@ -483,26 +478,20 @@ namespace FishGfx.VoxelTest
 					new Color(220, 228, 240),
 					22
 				);
-				Gfx.Line(
+				pass.Line(
 					new Vertex2(new Vector2(Width / 2 - 10, Height / 2), new Color(245, 245, 245, 220)),
 					new Vertex2(new Vector2(Width / 2 + 10, Height / 2), new Color(245, 245, 245, 220)),
 					2
 				);
-				DrawHotbar(font, hotbar);
-				Gfx.Line(
+				DrawHotbar(pass, font, hotbar);
+				pass.Line(
 					new Vertex2(new Vector2(Width / 2, Height / 2 - 10), new Color(245, 245, 245, 220)),
 					new Vertex2(new Vector2(Width / 2, Height / 2 + 10), new Color(245, 245, 245, 220)),
 					2
 				);
-			}
-			finally
-			{
-				ShaderUniforms.Current.Camera = worldCamera;
-				Gfx.PopRenderState();
-			}
 		}
 
-		private static void DrawHotbar(TTFFont font, VoxelHotbarSelection hotbar)
+		private static void DrawHotbar(RenderPass pass, TTFFont font, VoxelHotbarSelection hotbar)
 		{
 			const float SlotWidth = 150;
 			const float SlotHeight = 58;
@@ -515,7 +504,7 @@ namespace FishGfx.VoxelTest
 				Color background = selected ? new Color(52, 112, 150, 235) : new Color(12, 18, 28, 215);
 				Color foreground = selected ? new Color(255, 235, 125) : new Color(215, 225, 235);
 				VoxelTestMaterialEntry entry = hotbar.GetVisible(slot);
-				Gfx.FilledRoundedRectangle(
+				pass.FilledRoundedRectangle(
 					x + 3,
 					18,
 					SlotWidth - 6,
@@ -523,7 +512,7 @@ namespace FishGfx.VoxelTest
 					new CornerRadii(8),
 					background
 				);
-				Gfx.DrawText(font, new Vector2(x + 12, 53), $"{slot + 1} {entry.Name}", foreground, 16);
+				pass.DrawText(font, new Vector2(x + 12, 53), $"{slot + 1} {entry.Name}", foreground, 16);
 			}
 		}
 

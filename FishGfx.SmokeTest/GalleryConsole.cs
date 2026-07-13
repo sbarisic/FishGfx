@@ -50,25 +50,17 @@ namespace FishGfx.SmokeTest
 			console.BeginInput();
 		}
 
-		internal void Draw()
+		internal void Draw(RenderPass pass)
 		{
 			if (!console.Enabled)
 				return;
 
-			RenderState overlayState = Gfx.PeekRenderState();
+			RenderState overlayState = Gfx.CreateDefaultRenderState();
 			overlayState.EnableDepthTest = false;
 			overlayState.EnableDepthMask = false;
 			overlayState.EnableCullFace = false;
-			Gfx.PushRenderState(overlayState);
-
-			try
-			{
+			using (pass.PushState(overlayState))
 				console.Draw();
-			}
-			finally
-			{
-				Gfx.PopRenderState();
-			}
 		}
 
 		internal void Close() => console.Enabled = false;

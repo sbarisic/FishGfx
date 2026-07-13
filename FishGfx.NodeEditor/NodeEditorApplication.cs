@@ -17,6 +17,7 @@ namespace FishGfx.NodeEditor
 		private const int InitialWidth = 1920;
 		private const int InitialHeight = 1080;
 		private RenderWindow window;
+		private readonly Camera renderCamera = new Camera();
 		private InputManager input;
 		private FunctionNodeGraph graph = new FunctionNodeGraph();
 		private readonly NodeFunctionRegistry registry = new NodeFunctionRegistry();
@@ -50,10 +51,8 @@ namespace FishGfx.NodeEditor
 		{
 			window = new RenderWindow(InitialWidth, InitialHeight, "FishGfx Visual Node Editor", true);
 			input = new InputManager(window);
-			TTFFont graphFont = new TTFFont(
-				Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf")
-			);
-			TTFFont menuFont = new TTFFont(Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Aaargh.ttf"));
+			TTFFont graphFont = window.Graphics.CreateTrueTypeFont(Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf"));
+			TTFFont menuFont = window.Graphics.CreateTrueTypeFont(Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Aaargh.ttf"));
 			renderer = new NodeRenderer(graphFont, menuFont);
 			window.OnScroll += OnScroll;
 			window.OnChar += OnChar;
@@ -89,15 +88,23 @@ namespace FishGfx.NodeEditor
 				scrollDelta = 0;
 				Events.Poll();
 				Update();
-				RenderState editorState = Gfx.PeekRenderState();
+				RenderState editorState = Gfx.CreateDefaultRenderState();
 				editorState.EnableDepthTest = false;
 				editorState.EnableDepthMask = false;
 				editorState.EnableCullFace = false;
-				Gfx.PushRenderState(editorState);
-
-				try
+				using GraphicsFrame frame = window.Graphics.BeginFrame();
+				using (RenderPass pass = frame.BeginPass(window.Graphics.Backbuffer, new RenderPassDescriptor
+				{
+					View = new RenderView(renderCamera),
+					State = editorState,
+					ColorLoadAction = RenderLoadAction.Clear,
+					DepthLoadAction = RenderLoadAction.Clear,
+					StencilLoadAction = RenderLoadAction.Clear,
+					ClearColor = NodeRenderer.CanvasColor,
+				}))
 				{
 					renderer.Draw(
+						pass,
 						graph,
 						canvas,
 						selected,
@@ -113,12 +120,7 @@ namespace FishGfx.NodeEditor
 						window.WindowHeight
 					);
 				}
-				finally
-				{
-					Gfx.PopRenderState();
-				}
-
-				window.SwapBuffers();
+				frame.Present();
 
 				if (autoMode && runtime.Elapsed.TotalSeconds >= 2)
 					window.ShouldClose = true;
@@ -128,8 +130,8 @@ namespace FishGfx.NodeEditor
 			window.OnChar -= OnChar;
 			window.OnWindowResize -= OnResize;
 			renderer.Dispose();
-			RenderAPI.CollectGarbage();
-			window.Close();
+			window.Graphics.CollectGarbage();
+			window.Dispose();
 		}
 
 		private void Update()
@@ -430,8 +432,7 @@ namespace FishGfx.NodeEditor
 
 		private void ConfigureProjection()
 		{
-			ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, window.WindowWidth, window.WindowHeight);
-			ShaderUniforms.Current.Resolution = window.WindowSize;
+			renderCamera.SetOrthogonal(0, 0, window.WindowWidth, window.WindowHeight);
 		}
 
 		private void OnResize(RenderWindow wnd, int width, int height) => ConfigureProjection();

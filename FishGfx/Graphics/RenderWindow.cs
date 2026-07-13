@@ -13,6 +13,18 @@ using Silk.NET.OpenGL;
 
 namespace FishGfx.Graphics
 {
+	public sealed class RenderWindowOptions
+	{
+		public int Width { get; set; } = 1280;
+		public int Height { get; set; } = 720;
+		public string Title { get; set; } = "FishGfx";
+		public bool Resizable { get; set; }
+		public bool CenterWindow { get; set; } = true;
+		public OpenGLVersion PreferredVersion { get; set; } = new OpenGLVersion(4, 6);
+		public OpenGLVersion MinimumVersion { get; set; } = new OpenGLVersion(4, 0);
+		public bool RequireExactVersion { get; set; }
+	}
+
 	[Flags]
 	public enum KeyMods
 	{
@@ -171,11 +183,10 @@ namespace FishGfx.Graphics
 	public delegate void OnScrollFunc(RenderWindow Wnd, float XOffset, float YOffset);
 	public delegate void OnWindowResizeFunc(RenderWindow Wnd, int W, int H);
 
-	public unsafe class RenderWindow
+	public unsafe class RenderWindow : IDisposable
 	{
-		static int SupportedMajor = 0;
-		static int SupportedMinor = 0;
-		static bool _CaptureCursor;
+		bool _CaptureCursor;
+		bool disposed;
 
 		Glfw.Window Wnd;
 		Glfw.CursorPosFunc GlfwOnMouseMove;
@@ -197,6 +208,7 @@ namespace FishGfx.Graphics
 		public int MouseY { get; private set; }
 		public int WindowWidth { get; private set; }
 		public int WindowHeight { get; private set; }
+		public GraphicsContext Graphics { get; private set; }
 
 		public bool ShowCursor
 		{
@@ -254,7 +266,6 @@ namespace FishGfx.Graphics
 			if ((Major == 4 && Minor >= 6) || (Major > 4))
 				Glfw.WindowHint(Glfw.Hint.ContextNoError, true);
 #endif
-			// TODO: Allow external version select
 
 			Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
 			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, Major);
@@ -269,36 +280,45 @@ namespace FishGfx.Graphics
 		}
 
 		public RenderWindow(int Width, int Height, string Title, bool Resizable = false, bool CenterWindow = true)
+			: this(new RenderWindowOptions
+			{
+				Width = Width,
+				Height = Height,
+				Title = Title,
+				Resizable = Resizable,
+				CenterWindow = CenterWindow,
+			}) { }
+
+		public RenderWindow(RenderWindowOptions options)
 		{
+			if (options == null)
+				throw new ArgumentNullException(nameof(options));
+			if (options.Width <= 0 || options.Height <= 0)
+				throw new ArgumentOutOfRangeException(nameof(options), "Window dimensions must be positive.");
+			if (options.MinimumVersion > options.PreferredVersion)
+				throw new ArgumentException("The minimum OpenGL version cannot exceed the preferred version.", nameof(options));
+
+			int Width = options.Width;
+			int Height = options.Height;
+			string Title = options.Title ?? string.Empty;
+			bool Resizable = options.Resizable;
+			bool CenterWindow = options.CenterWindow;
 			Internal_OpenGL.InitGLFW();
 			Glfw.WindowHint(Glfw.Hint.Resizable, Resizable);
 
-			// TODO: Add a force-context convar or something?
+			OpenGLVersion selected = options.PreferredVersion;
+			while (selected >= options.MinimumVersion && !Wnd)
+			{
+				Wnd = TryCreateWindow(selected.Major, selected.Minor, Width, Height, Title);
+				if (Wnd || options.RequireExactVersion)
+					break;
+				selected = selected.Minor > 0
+					? new OpenGLVersion(selected.Major, selected.Minor - 1)
+					: new OpenGLVersion(selected.Major - 1, 9);
+			}
 
-			// YOLO
-			if (
-				SupportedMajor != 0
-				&& SupportedMinor != 0
-				&& (Wnd = TryCreateWindow(SupportedMajor, SupportedMinor, Width, Height, Title))
-			)
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 6, Width, Height, Title))
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 5, Width, Height, Title))
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 4, Width, Height, Title))
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 3, Width, Height, Title))
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 2, Width, Height, Title))
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 1, Width, Height, Title))
-			{ }
-			else if (Wnd = TryCreateWindow(SupportedMajor = 4, SupportedMinor = 0, Width, Height, Title))
-			{ }
-			else
+			if (!Wnd)
 				throw new Exception("Could not create any supported OpenGL context");
-
 			if (CenterWindow)
 				Center();
 
@@ -388,47 +408,48 @@ namespace FishGfx.Graphics
 				{
 					WindowWidth = W;
 					WindowHeight = H;
+					Graphics?.ResizeBackbuffer(W, H);
 
 					OnWindowResize?.Invoke(this, W, H);
 				}
 			);
 
 			CaptureCursor = false;
-			MakeCurrent();
+			MakeNativeCurrent();
+			Graphics = new GraphicsContext(this);
 		}
 
 		public void MakeCurrent()
 		{
+			if (Graphics == null)
+				MakeNativeCurrent();
+			else
+				Graphics.MakeCurrent();
+		}
+
+		internal void MakeNativeCurrent()
+		{
 			Glfw.MakeContextCurrent(Wnd);
 			Internal_OpenGL.InitOpenGL();
 			Internal_OpenGL.SetupOpenGL();
-
-			Gfx.PopRenderState();
-
-			if (Gfx.GetRenderStateCount() != 0)
-				throw new Exception(
-					"Render state count is not 0, did you forget to call Gfx.PopRenderState() somewhere?"
-				);
-
-			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
-
 			Internal_OpenGL.GL.Enable(EnableCap.Multisample);
 		}
 
 		public void SwapBuffers()
 		{
-			RenderAPI.CollectGarbage();
-			Glfw.SwapBuffers(Wnd);
+			Graphics?.CollectGarbage();
+			SwapNativeBuffers();
 		}
+
+		internal void SwapNativeBuffers() => Glfw.SwapBuffers(Wnd);
 
 		public void ReadPixels()
 		{
+			if (disposed) throw new ObjectDisposedException(nameof(RenderWindow));
+			Graphics?.MakeCurrent();
 			GetWindowSize(out int W, out int H);
 
-			if (PixelData == null)
-				PixelData = new Color[W * H];
-
-			if (PixelData.Length < W * H)
+			if (PixelData == null || PixelData.Length != W * H)
 				PixelData = new Color[W * H];
 
 			fixed (Color* ClrPtr = PixelData)
@@ -438,9 +459,11 @@ namespace FishGfx.Graphics
 		public Color GetPixel(int X, int Y)
 		{
 			GetWindowSize(out int W, out int H);
+			if (PixelData == null || X < 0 || X >= W || Y < 0 || Y >= H)
+				return Color.Black;
 			int Idx = (H - Y - 1) * W + X;
 
-			if (Idx < 0 || Idx >= PixelData.Length)
+			if (Idx >= PixelData.Length)
 				return Color.Black;
 
 			return PixelData[Idx];
@@ -448,8 +471,18 @@ namespace FishGfx.Graphics
 
 		public void Close()
 		{
+			if (disposed)
+				return;
 			ShouldClose = true;
+			Graphics?.Dispose();
 			Glfw.DestroyWindow(Wnd);
+			disposed = true;
+		}
+
+		public void Dispose()
+		{
+			Close();
+			GC.SuppressFinalize(this);
 		}
 
 		void GetWindowSize(out int Width, out int Height)

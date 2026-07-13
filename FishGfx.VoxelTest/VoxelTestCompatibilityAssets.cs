@@ -69,11 +69,7 @@ namespace FishGfx.VoxelTest
 		internal static Texture CreateTexture()
 		{
 			using Bitmap composite = CreateBitmap();
-			Texture texture = Texture.FromImage(composite);
-			texture.SetFilter(TextureFilter.Nearest);
-			texture.SetWrap(TextureWrap.ClampToEdge);
-
-			return texture;
+			return TextureLoader.FromImage(GraphicsContext.Current, composite);
 		}
 
 		internal static Bitmap CreateBitmap()

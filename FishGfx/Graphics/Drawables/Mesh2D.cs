@@ -8,8 +8,7 @@ using Silk.NET.OpenGL;
 
 namespace FishGfx.Graphics.Drawables
 {
-	[Obsolete]
-	public class Mesh2D : IDrawable
+	public sealed class Mesh2D : IDrawable, IDisposable
 	{
 		internal const int VERTEX_ATTRIB = 0;
 		internal const int COLOR_ATTRIB = 1;
@@ -18,12 +17,16 @@ namespace FishGfx.Graphics.Drawables
 		public Color DefaultColor = Color.White;
 		public PolygonMode PolygonMode = PolygonMode.Fill;
 
-		public VertexArray VAO;
-		BufferObject VertBuffer,
+		public VertexArray VAO { get; }
+		GraphicsBuffer VertBuffer,
 			ColorBuffer,
 			UVBuffer,
 			ElementBuffer;
-		BufferUsage Usage;
+		readonly BufferUsage Usage;
+		int vertexCount;
+		int elementCount;
+		bool hasColors;
+		bool disposed;
 
 		public PrimitiveType PrimitiveType
 		{
@@ -31,7 +34,7 @@ namespace FishGfx.Graphics.Drawables
 			set { VAO.PrimitiveType = value; }
 		}
 
-		public Mesh2D(BufferUsage Usage = BufferUsage.StaticDraw)
+		public Mesh2D(BufferUsage Usage = BufferUsage.Static)
 		{
 			VAO = new VertexArray();
 			this.Usage = Usage;
@@ -39,66 +42,77 @@ namespace FishGfx.Graphics.Drawables
 
 		public void SetVertices(Vector2[] Verts)
 		{
+			ThrowIfDisposed();
+			if (Verts == null || Verts.Length == 0) { VAO.AttribEnable(VERTEX_ATTRIB, false); vertexCount = 0; return; }
 			if (VertBuffer == null)
 			{
 				VAO.AttribFormat(VERTEX_ATTRIB, 2);
+				VertBuffer = CreateBuffer(Verts, BufferBindFlags.Vertex);
 				VAO.AttribBinding(
 					VERTEX_ATTRIB,
-					VAO.BindVertexBuffer(VertBuffer = new BufferObject(), Stride: 2 * sizeof(float))
+					VAO.BindVertexBuffer(VertBuffer, Stride: 2 * sizeof(float))
 				);
 			}
-
-			VertBuffer.SetData(Verts, Usage: Usage);
-			VAO.AttribEnable(VERTEX_ATTRIB, Verts != null);
+			else Upload(VertBuffer, Verts);
+			vertexCount = Verts.Length;
+			VAO.AttribEnable(VERTEX_ATTRIB);
 		}
 
 		public void SetColors(Color[] Colors)
 		{
+			ThrowIfDisposed();
+			if (Colors == null || Colors.Length == 0) { VAO.AttribEnable(COLOR_ATTRIB, false); hasColors = false; return; }
 			if (ColorBuffer == null)
 			{
 				VAO.AttribFormat(COLOR_ATTRIB, Size: 4, AttribType: VertexElementType.UnsignedByte, Normalized: true);
+				ColorBuffer = CreateBuffer(Colors, BufferBindFlags.Vertex);
 				VAO.AttribBinding(
 					COLOR_ATTRIB,
-					VAO.BindVertexBuffer(ColorBuffer = new BufferObject(), Stride: 4 * sizeof(byte))
+					VAO.BindVertexBuffer(ColorBuffer, Stride: 4 * sizeof(byte))
 				);
 			}
-
-			ColorBuffer.SetData(Colors, Usage: Usage);
-			VAO.AttribEnable(COLOR_ATTRIB, Colors != null);
+			else Upload(ColorBuffer, Colors);
+			VAO.AttribEnable(COLOR_ATTRIB);
+			hasColors = true;
 		}
 
 		public void SetUVs(Vector2[] UVs)
 		{
+			ThrowIfDisposed();
+			if (UVs == null || UVs.Length == 0) { VAO.AttribEnable(UV_ATTRIB, false); return; }
 			if (UVBuffer == null)
 			{
 				VAO.AttribFormat(UV_ATTRIB, Size: 2);
+				UVBuffer = CreateBuffer(UVs, BufferBindFlags.Vertex);
 				VAO.AttribBinding(
 					UV_ATTRIB,
-					VAO.BindVertexBuffer(UVBuffer = new BufferObject(), Stride: 2 * sizeof(float))
+					VAO.BindVertexBuffer(UVBuffer, Stride: 2 * sizeof(float))
 				);
 			}
-
-			UVBuffer.SetData(UVs, Usage: Usage);
-			VAO.AttribEnable(UV_ATTRIB, UVs != null);
+			else Upload(UVBuffer, UVs);
+			VAO.AttribEnable(UV_ATTRIB);
 		}
 
 		public void SetElements(params uint[] Elements)
 		{
-			if (ElementBuffer == null)
-				ElementBuffer = new BufferObject();
-
-			if (Elements != null)
+			ThrowIfDisposed();
+			if (Elements != null && Elements.Length > 0)
 			{
+				if (ElementBuffer == null)
+					ElementBuffer = CreateBuffer(Elements, BufferBindFlags.Index);
+				else Upload(ElementBuffer, Elements);
 				VAO.BindElementBuffer(ElementBuffer);
-				ElementBuffer.SetData(Elements, Usage: Usage);
+				elementCount = Elements.Length;
 			}
-			else
+			else {
 				VAO.BindElementBuffer(null);
+				elementCount = 0;
+			}
 		}
 
-		// TODO: Port code from Mesh3D
 		public void SetVertices(params Vertex2[] Verts)
 		{
+			if (Verts == null) throw new ArgumentNullException(nameof(Verts));
 			SetVertices(Verts.Select((V) => V.Position).ToArray());
 			SetUVs(Verts.Select((V) => V.UV).ToArray());
 			SetColors(Verts.Select((V) => V.Color).ToArray());
@@ -122,10 +136,11 @@ namespace FishGfx.Graphics.Drawables
 
 		public void DrawEx(int First, int Count)
 		{
+			ThrowIfDisposed();
 			Internal_OpenGL.GL.PolygonMode(TriangleFace.FrontAndBack, (Silk.NET.OpenGL.PolygonMode)PolygonMode);
 			//Internal_OpenGL.GL.LineWidth(10);
 
-			if (ColorBuffer == null)
+			if (!hasColors)
 				VertexArray.VertexAttrib(COLOR_ATTRIB, DefaultColor);
 
 			if (First == -1 && Count == -1)
@@ -133,12 +148,12 @@ namespace FishGfx.Graphics.Drawables
 				if (!VAO.HasElementBuffer)
 				{
 					First = 0;
-					Count = VertBuffer.ElementCount;
+					Count = vertexCount;
 				}
 				else
 				{
 					First = 0;
-					Count = -1;
+					Count = elementCount;
 				}
 			}
 
@@ -157,6 +172,33 @@ namespace FishGfx.Graphics.Drawables
 		public void Draw()
 		{
 			DrawEx(-1, -1);
+		}
+
+		private GraphicsBuffer CreateBuffer<T>(T[] data, BufferBindFlags flags) where T : unmanaged =>
+			GraphicsContext.Current.CreateBuffer<T>(data, flags, Usage);
+
+		private static void Upload<T>(GraphicsBuffer buffer, T[] data) where T : unmanaged
+		{
+			int size = checked(data.Length * System.Runtime.CompilerServices.Unsafe.SizeOf<T>());
+			if (size == 0) return;
+			if (buffer.SizeInBytes != size) buffer.ResizeDiscard(size);
+			buffer.Write<T>(data);
+		}
+
+		public void Dispose()
+		{
+			if (disposed) return;
+			disposed = true;
+			VertBuffer?.Dispose();
+			ColorBuffer?.Dispose();
+			UVBuffer?.Dispose();
+			ElementBuffer?.Dispose();
+			VAO.Dispose();
+		}
+
+		private void ThrowIfDisposed()
+		{
+			if (disposed) throw new ObjectDisposedException(nameof(Mesh2D));
 		}
 	}
 }

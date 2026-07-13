@@ -19,39 +19,57 @@ namespace FishGfx.Graphics
 
 	public class OcclusionQuery : GraphicsObject
 	{
-		public static OcclusionQuery CurrentQuery;
+		static OcclusionQuery legacyCurrentQuery;
+		public static OcclusionQuery CurrentQuery
+		{
+			get => GraphicsContext.CurrentOrNull?.ActiveQuery ?? legacyCurrentQuery;
+			set
+			{
+				if (GraphicsContext.CurrentOrNull != null)
+					GraphicsContext.CurrentOrNull.ActiveQuery = value;
+				else
+					legacyCurrentQuery = value;
+			}
+		}
 
 		public bool IsOcclusionTest;
 		public QueryTgt QueryTarget;
-		OcclusionQuery ResetQuery;
 
 		public OcclusionQuery(QueryTgt Target)
 		{
 			IsOcclusionTest = false;
 			QueryTarget = Target;
-			ID = Internal_OpenGL.GL.CreateQuery((QueryTarget)QueryTarget);
+			ID = Internal_OpenGL.Is45OrAbove ? Internal_OpenGL.GL.CreateQuery((QueryTarget)QueryTarget) : Internal_OpenGL.GL.GenQuery();
 		}
 
 		public override void Bind()
 		{
-			ResetQuery = CurrentQuery;
+			EnsureCurrentOwner();
+			if (CurrentQuery != null)
+				throw new InvalidOperationException("Only one occlusion query can be active at a time.");
 			CurrentQuery = this;
-			Internal_OpenGL.GL.BeginQuery((QueryTarget)QueryTarget, ID);
+			try { Internal_OpenGL.GL.BeginQuery((QueryTarget)QueryTarget, ID); }
+			catch { CurrentQuery = null; throw; }
 		}
 
 		public override void Unbind()
 		{
-			CurrentQuery = ResetQuery;
-			Internal_OpenGL.GL.EndQuery((QueryTarget)QueryTarget);
+			EnsureCurrentOwner();
+			if (!ReferenceEquals(CurrentQuery, this))
+				throw new InvalidOperationException("This occlusion query is not active.");
+			try { Internal_OpenGL.GL.EndQuery((QueryTarget)QueryTarget); }
+			finally { CurrentQuery = null; }
 		}
 
 		public void BeginConditional(bool Wait = true)
 		{
+			EnsureCurrentOwner();
 			Internal_OpenGL.GL.BeginConditionalRender(ID, Wait ? GLEnum.QueryByRegionWait : GLEnum.QueryByRegionNoWait);
 		}
 
 		public void EndConditional()
 		{
+			EnsureCurrentOwner();
 			Internal_OpenGL.GL.EndConditionalRender();
 		}
 

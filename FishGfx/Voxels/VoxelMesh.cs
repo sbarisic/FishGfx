@@ -10,15 +10,18 @@ namespace FishGfx.Voxels
 	public sealed class VoxelMesh : IDisposable
 	{
 		private readonly VertexArray vertexArray;
-		private readonly BufferObject vertexBuffer;
+		private readonly GraphicsBuffer vertexBuffer;
 		private bool disposed;
 
-		public VoxelMesh(BufferUsage usage = BufferUsage.DynamicDraw)
+		public VoxelMesh(BufferUsage usage = BufferUsage.Dynamic)
 		{
 			Usage = usage;
 			vertexArray = new VertexArray { PrimitiveType = PrimitiveType.Triangles };
-			vertexBuffer = new BufferObject();
 			int stride = Marshal.SizeOf<VoxelVertex>();
+			vertexBuffer = GraphicsContext.Current.CreateBuffer(
+				new GraphicsBufferDescriptor(stride * 64, BufferBindFlags.Vertex, usage)
+			);
+			Capacity = 64;
 			uint binding = vertexArray.BindVertexBuffer(vertexBuffer, Stride: stride);
 
 			vertexArray.AttribFormat(0, 3, RelativeOffset: 0);
@@ -58,16 +61,11 @@ namespace FishGfx.Voxels
 			if (count > Capacity)
 			{
 				Capacity = CalculateCapacity(Capacity, count);
-				vertexBuffer.SetData(
-					(uint)(Capacity * Marshal.SizeOf<VoxelVertex>()),
-					IntPtr.Zero,
-					Capacity,
-					Usage
-				);
+				vertexBuffer.ResizeDiscard(checked(Capacity * Marshal.SizeOf<VoxelVertex>()));
 			}
 
 			if (count > 0)
-				vertexBuffer.SetSubData(vertices, count);
+				vertexBuffer.Write<VoxelVertex>(vertices.AsSpan(0, count));
 
 			VertexCount = count;
 		}

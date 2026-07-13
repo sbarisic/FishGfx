@@ -159,6 +159,20 @@ namespace FishGfx.Graphics
 			return Array.AsReadOnly(sorted);
 		}
 
+		public void Execute(RenderPass pass, RenderBucket bucket, IComparer<RenderSubmission> comparer = null)
+		{
+			if (pass == null) throw new ArgumentNullException(nameof(pass));
+			if (IsExecuting) throw new InvalidOperationException("A deferred render queue cannot execute recursively.");
+			IsExecuting = true;
+			try
+			{
+				RenderSubmission[] executionOrder = Query(bucket).ToArray();
+				if (comparer != null) Array.Sort(executionOrder, comparer);
+				foreach (RenderSubmission submission in executionOrder) submission.Execute(pass);
+			}
+			finally { IsExecuting = false; }
+		}
+
 		public void Execute(RenderBucket bucket, IComparer<RenderSubmission> comparer = null)
 		{
 			if (IsExecuting)

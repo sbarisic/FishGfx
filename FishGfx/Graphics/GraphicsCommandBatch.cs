@@ -22,6 +22,7 @@ namespace FishGfx.Graphics
 
 			if (this.commands.Any(command => command == null))
 				throw new ArgumentException("Command batches cannot contain null commands.", nameof(commands));
+			GraphicsCommandRunner.ValidateStateBalance(this.commands);
 
 			readOnlyCommands = Array.AsReadOnly(this.commands);
 		}
@@ -30,6 +31,15 @@ namespace FishGfx.Graphics
 		public int Count => commands.Length;
 		public bool IsExecuting { get; private set; }
 		public GraphicsCommand this[int index] => commands[index];
+
+		public void Execute(RenderPass pass)
+		{
+			if (pass == null) throw new ArgumentNullException(nameof(pass));
+			if (IsExecuting) throw new InvalidOperationException("A graphics command batch cannot execute recursively.");
+			IsExecuting = true;
+			try { GraphicsCommandRunner.Execute(commands, command => command.Execute(pass)); }
+			finally { IsExecuting = false; }
+		}
 
 		public void Execute()
 		{
@@ -40,8 +50,7 @@ namespace FishGfx.Graphics
 
 			try
 			{
-				foreach (GraphicsCommand command in commands)
-					command.Execute();
+				GraphicsCommandRunner.Execute(commands, command => command.Execute());
 			}
 			finally
 			{

@@ -95,8 +95,8 @@ namespace FishGfx.Graphics
 
 		public BlendFactor BlendFunc_Src;
 		public BlendFactor BlendFunc_Dst;
-
-		//public uint StencilMask;
+		public uint StencilFrontWriteMask;
+		public uint StencilBackWriteMask;
 
 		public StencilFunction StencilFrontFunction;
 		public int StencilFrontReference;
@@ -147,6 +147,18 @@ namespace FishGfx.Graphics
 		public void SetColorMask(bool All)
 		{
 			SetColorMask(All, All, All, All);
+		}
+
+		public void StencilWriteMask(uint mask)
+		{
+			StencilFrontWriteMask = mask;
+			StencilBackWriteMask = mask;
+		}
+
+		public void StencilWriteMaskSeparate(StencilFace face, uint mask)
+		{
+			if (face == StencilFace.Front) StencilFrontWriteMask = mask;
+			else StencilBackWriteMask = mask;
 		}
 
 		public void StencilFunc(StencilFunction Func, int Ref, uint Mask)

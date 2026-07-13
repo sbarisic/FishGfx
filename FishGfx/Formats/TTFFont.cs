@@ -182,9 +182,13 @@ namespace FishGfx.Formats
 				return;
 			}
 
-			Texture replacement = new Texture(atlasSize, atlasSize, IntFormat: TextureInternalFmt.R8);
-			replacement.SetFilter(TextureFilter.Linear);
-			replacement.SetWrap(TextureWrap.ClampToEdge);
+			Texture replacement = GraphicsContext.Current.CreateTexture(new TextureDescriptor(
+				atlasSize,
+				atlasSize,
+				TextureFormat.R8Unorm,
+				TextureUsageFlags.Sampled | TextureUsageFlags.TransferDestination,
+				sampling: new TextureSamplingState(TextureFilter.Linear, TextureFilter.Linear)
+			));
 			byte[] flipped = new byte[atlasPixels.Length];
 
 			for (int y = 0; y < atlasSize; y++)
@@ -192,10 +196,7 @@ namespace FishGfx.Formats
 				Buffer.BlockCopy(atlasPixels, y * atlasSize, flipped, (atlasSize - y - 1) * atlasSize, atlasSize);
 			}
 
-			fixed (byte* pixels = flipped)
-			{
-				replacement.SubImage((IntPtr)pixels, 0, 0, 0, atlasSize, atlasSize, 0, Silk.NET.OpenGL.PixelFormat.Red);
-			}
+			replacement.Write<byte>(flipped, TextureDataFormat.R8Unorm);
 
 			atlasTexture?.Dispose();
 			atlasTexture = replacement;

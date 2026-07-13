@@ -28,7 +28,10 @@ namespace FishGfx.Graphics
 
 		public static string[] Extensions { get; private set; }
 		public static string Version { get; private set; }
+		public static int MajorVersion { get; private set; }
+		public static int MinorVersion { get; private set; }
 
+		public static bool Is42OrAbove { get; private set; }
 		public static bool Is45OrAbove { get; private set; }
 
 		public static void InitGLFW()
@@ -64,10 +67,9 @@ namespace FishGfx.Graphics
 
 		public static void SetupOpenGL()
 		{
-			if (OpenGLInitialized)
-				return;
-
-			OpenGLInitialized = true;
+			if (!OpenGLInitialized)
+			{
+				OpenGLInitialized = true;
 #if DEBUG
 			bool IS_GL_DEBUG = Environment.GetCommandLineArgs().Contains("-debug");
 			const string LogName = "opengl_log.txt";
@@ -104,11 +106,15 @@ namespace FishGfx.Graphics
 			GL.DebugMessageCallback(DebugCallback, null);
 
 			GL.Enable(EnableCap.DebugOutput);
-			GL.Enable(EnableCap.DebugOutputSynchronous);
+				GL.Enable(EnableCap.DebugOutputSynchronous);
 #endif
+			}
 
 			GL.GetInteger(GetPName.MajorVersion, out int Major);
 			GL.GetInteger(GetPName.MinorVersion, out int Minor);
+			MajorVersion = Major;
+			MinorVersion = Minor;
+			Is42OrAbove = Major > 4 || (Major == 4 && Minor >= 2);
 			Is45OrAbove = Major > 4 || (Major == 4 && Minor >= 5);
 			Version = $"{Major}.{Minor}";
 
@@ -126,8 +132,6 @@ namespace FishGfx.Graphics
 			string Vers = GL.GetStringS(StringName.Version);
 
 			RenderAPI.Renderer = string.Format("{0} by {1}; GL {2}; GLSL {3}", Renderer, Vendor, Vers, GLSLVer);
-
-			Gfx.PushRenderState(Gfx.CreateDefaultRenderState());
 		}
 
 		public static void Scissor(int X, int Y, int W, int H, bool Enable)
