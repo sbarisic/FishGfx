@@ -38,6 +38,12 @@ namespace FishGfx.Graphics
 		public object Tag { get; }
 		public long Sequence { get; }
 
+		public void Execute(RenderPass pass)
+		{
+			if (pass == null) throw new ArgumentNullException(nameof(pass));
+			using (pass.PushModel(Model)) Batch.Execute(pass);
+		}
+
 		public void Execute()
 		{
 			ShaderUniforms uniforms = ShaderUniforms.Current;

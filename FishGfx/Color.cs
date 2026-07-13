@@ -92,7 +92,28 @@ namespace FishGfx
 
 		public static Color Clamp(Color C, IEnumerable<Color> Palette)
 		{
-			return Color.White; // TODO
+			if (Palette == null)
+				throw new ArgumentNullException(nameof(Palette));
+			bool found = false;
+			long bestDistance = long.MaxValue;
+			Color best = default;
+			foreach (Color candidate in Palette)
+			{
+				long dr = C.R - candidate.R;
+				long dg = C.G - candidate.G;
+				long db = C.B - candidate.B;
+				long da = C.A - candidate.A;
+				long distance = dr * dr + dg * dg + db * db + da * da;
+				if (!found || distance < bestDistance)
+				{
+					found = true;
+					bestDistance = distance;
+					best = candidate;
+				}
+			}
+			if (!found)
+				throw new ArgumentException("The palette cannot be empty.", nameof(Palette));
+			return best;
 		}
 
 		public static bool operator ==(Color A, Color B)

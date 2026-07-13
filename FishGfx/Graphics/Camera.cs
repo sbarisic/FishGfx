@@ -10,6 +10,18 @@ using System.Threading.Tasks;
 
 namespace FishGfx.Graphics
 {
+	public readonly struct PickingRay
+	{
+		public PickingRay(Vector3 origin, Vector3 direction)
+		{
+			if (direction.LengthSquared() == 0) throw new ArgumentException("Ray direction cannot be zero.", nameof(direction));
+			Origin = origin;
+			Direction = Vector3.Normalize(direction);
+		}
+		public Vector3 Origin { get; }
+		public Vector3 Direction { get; }
+		public Vector3 GetPoint(float distance) => Origin + Direction * distance;
+	}
 	public class Camera
 	{
 		public float Near { get; private set; }
@@ -249,47 +261,65 @@ namespace FishGfx.Graphics
 			PerformClamps();
 		}
 
-		public Vector3 WorldToScreen(Vector3 World, Matrix4x4 ModelMatrix)
+		public Vector3 ProjectToViewport(Vector3 world, Matrix4x4 modelMatrix)
 		{
-			Vector4 Pt = Vector4.Transform(new Vector4(World, 1.0f), Projection * View * ModelMatrix);
-			return Pt.XYZ() / Pt.W;
+			Vector4 clip = Vector4.Transform(new Vector4(world, 1), modelMatrix * View * Projection);
+			if (MathF.Abs(clip.W) <= float.Epsilon)
+				throw new InvalidOperationException("The projected point has an invalid homogeneous W component.");
+			Vector3 ndc = new Vector3(clip.X, clip.Y, clip.Z) / clip.W;
+			return new Vector3(
+				(ndc.X + 1) * 0.5f * ViewportSize.X,
+				(1 - ndc.Y) * 0.5f * ViewportSize.Y,
+				ndc.Z
+			);
 		}
 
-		public Vector3 WorldToScreen(Vector3 World)
+		public Vector3 ProjectToViewport(Vector3 world) => ProjectToViewport(world, Matrix4x4.Identity);
+
+		public bool TryUnproject(Vector3 screen, Matrix4x4 modelMatrix, out Vector3 world)
 		{
-			return WorldToScreen(World, Matrix4x4.Identity);
+			world = default;
+			if (ViewportSize.X <= 0 || ViewportSize.Y <= 0)
+				return false;
+			if (!Matrix4x4.Invert(modelMatrix * View * Projection, out Matrix4x4 inverse))
+				return false;
+			Vector4 point = new Vector4(
+				screen.X / ViewportSize.X * 2 - 1,
+				1 - screen.Y / ViewportSize.Y * 2,
+				screen.Z,
+				1
+			);
+			point = Vector4.Transform(point, inverse);
+			if (MathF.Abs(point.W) <= float.Epsilon)
+				return false;
+			world = new Vector3(point.X, point.Y, point.Z) / point.W;
+			return true;
 		}
 
-		public Vector3 ScreenToWorld(Vector2 Screen, Matrix4x4 ModelMatrix)
+		public bool TryUnproject(Vector3 screen, out Vector3 world) => TryUnproject(screen, Matrix4x4.Identity, out world);
+
+		public PickingRay CreatePickingRay(Vector2 screen, Matrix4x4 modelMatrix)
 		{
-			Matrix4x4 ProjView = ModelMatrix * View * Projection;
-			Matrix4x4.Invert(ProjView, out Matrix4x4 InvProjView);
-
-			Vector4 Pt = new Vector4((Screen / (ViewportSize / 2)) - Vector2.One, 0, 1);
-			Pt.Y = -Pt.Y; // TODO: Maybe remove?
-
-			Pt = Vector4.Transform(Pt, InvProjView);
-			//Pt /= Pt.W; // TODO: Maybe remove?
-			Pt.Z = 0;
-
-			return Pt.XYZ();
+			if (!TryUnproject(new Vector3(screen, 0), modelMatrix, out Vector3 nearPoint) || !TryUnproject(new Vector3(screen, 1), modelMatrix, out Vector3 farPoint))
+				throw new InvalidOperationException("The camera transform cannot be unprojected.");
+			return new PickingRay(nearPoint, Vector3.Normalize(farPoint - nearPoint));
 		}
 
-		public Vector3 ScreenToWorld(Vector2 Screen)
+		public PickingRay CreatePickingRay(Vector2 screen) => CreatePickingRay(screen, Matrix4x4.Identity);
+
+		public Vector3 WorldToScreen(Vector3 world, Matrix4x4 modelMatrix) => ProjectToViewport(world, modelMatrix);
+		public Vector3 WorldToScreen(Vector3 world) => ProjectToViewport(world);
+
+		public Vector3 ScreenToWorld(Vector2 screen, Matrix4x4 modelMatrix)
 		{
-			return ScreenToWorld(Screen, Matrix4x4.Identity);
+			if (!TryUnproject(new Vector3(screen, 0), modelMatrix, out Vector3 world))
+				throw new InvalidOperationException("The camera transform cannot be unprojected.");
+			return world;
 		}
 
-		public Vector3 ScreenToWorldDirection(Vector2 Screen, Matrix4x4 ModelMatrix)
-		{
-			return Vector3.Normalize(ScreenToWorld(Screen, ModelMatrix) - Position);
-		}
-
-		public Vector3 ScreenToWorldDirection(Vector2 Screen)
-		{
-			return ScreenToWorldDirection(Screen, Matrix4x4.Identity);
-		}
-
+		public Vector3 ScreenToWorld(Vector2 screen) => ScreenToWorld(screen, Matrix4x4.Identity);
+		public Vector3 ScreenToWorldDirection(Vector2 screen, Matrix4x4 modelMatrix) => CreatePickingRay(screen, modelMatrix).Direction;
+		public Vector3 ScreenToWorldDirection(Vector2 screen) => CreatePickingRay(screen).Direction;
 		void Refresh()
 		{
 			if (!Dirty)

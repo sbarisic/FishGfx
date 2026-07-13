@@ -10,12 +10,13 @@ using Silk.NET.OpenGL;
 
 namespace FishGfx.Graphics
 {
-	public class RenderTexture
+	public class RenderTexture : IDisposable
 	{
-		static Stack<RenderTexture> RTStack = new Stack<RenderTexture>();
+		static readonly Stack<RenderTexture> LegacyStack = new Stack<RenderTexture>();
+		static Stack<RenderTexture> RTStack => GraphicsContext.CurrentOrNull?.RenderTargets ?? LegacyStack;
 
-		TextureInternalFmt ColorFmt = TextureInternalFmt.Rgba8;
-		TextureKind TextureTgt = TextureKind.Texture2D;
+		TextureFormat ColorFmt = TextureFormat.RGBA8Unorm;
+		TextureDimension TextureTgt = TextureDimension.Texture2D;
 
 		public bool IsGBuffer { get; private set; }
 
@@ -36,6 +37,9 @@ namespace FishGfx.Graphics
 
 		List<int> DrawBuffers = new List<int>();
 
+		public GraphicsContext Owner { get; }
+		public bool IsDisposed { get; private set; }
+
 		public RenderTexture(
 			int W,
 			int H,
@@ -45,82 +49,98 @@ namespace FishGfx.Graphics
 			bool CreateDepthStencil = true
 		)
 		{
+			if (W <= 0 || H <= 0) throw new ArgumentOutOfRangeException(nameof(W), "Render-texture dimensions must be positive.");
+			if (MSAASamples < 0 || MSAASamples == 1) throw new ArgumentOutOfRangeException(nameof(MSAASamples), "Use zero samples to disable MSAA or at least two samples to enable it.");
+			if (!CreateColor && !CreateDepthStencil && !IsGBuffer) throw new ArgumentException("A render texture must create at least one attachment.");
+			Owner = GraphicsContext.Current;
+			if (MSAASamples > Owner.Capabilities.MaximumSamples)
+				throw new ArgumentOutOfRangeException(nameof(MSAASamples), $"Sample count exceeds the context limit of {Owner.Capabilities.MaximumSamples}.");
 			Width = W;
 			Height = H;
 
 			this.IsGBuffer = IsGBuffer;
-			Framebuffer = new Framebuffer();
-
 			Multisamples = MSAASamples;
-
 			if (MSAASamples != 0)
-				TextureTgt = TextureKind.Texture2DMultisample;
-
-			if (IsGBuffer)
+			try
 			{
-				Color = new Texture(W, H, TextureTgt, 1, ColorFmt);
-				Framebuffer.AttachColor(Color, 0);
-				DrawBuffers.Add(0);
+				Framebuffer = new Framebuffer();
+				if (MSAASamples != 0)
+					TextureTgt = TextureDimension.Texture2DMultisample;
 
-				Position = new Texture(W, H, TextureTgt, 1, TextureInternalFmt.Rgba32f);
-				Framebuffer.AttachColor(Position, 1);
-				DrawBuffers.Add(1);
-
-				Normal = new Texture(W, H, TextureTgt, 1, TextureInternalFmt.Rgba32f);
-				Framebuffer.AttachColor(Normal, 2);
-				DrawBuffers.Add(2);
-
-				DepthStencil = new Texture(W, H, TextureTgt, 1, TextureInternalFmt.Depth24Stencil8);
-				Framebuffer.AttachDepth(DepthStencil, true);
-			}
-			else
-			{
-				if (CreateColor)
+				if (IsGBuffer)
 				{
-					Color = new Texture(W, H, TextureTgt, 1, ColorFmt, MSAASamples, Multisamples != 0 ? true : false);
+					Color = CreateAttachment(ColorFmt, false);
 					Framebuffer.AttachColor(Color, 0);
 					DrawBuffers.Add(0);
-				}
 
-				if (CreateDepthStencil)
-				{
-					//DepthStencil = new Renderbuffer();
-					//DepthStencil.Storage(InternalFormat.Depth24Stencil8, W, H, MSAASamples);
-					DepthStencil = new Texture(
-						W,
-						H,
-						TextureTgt,
-						1,
-						TextureInternalFmt.Depth24Stencil8,
-						MSAASamples,
-						Multisamples != 0 ? true : false
-					);
+					Position = CreateAttachment(TextureFormat.RGBA32Float, false);
+					Framebuffer.AttachColor(Position, 1);
+					DrawBuffers.Add(1);
+
+					Normal = CreateAttachment(TextureFormat.RGBA32Float, false);
+					Framebuffer.AttachColor(Normal, 2);
+					DrawBuffers.Add(2);
+
+					DepthStencil = CreateAttachment(TextureFormat.Depth24Stencil8, true);
 					Framebuffer.AttachDepth(DepthStencil, true);
 				}
+				else
+				{
+					if (CreateColor)
+					{
+						Color = CreateAttachment(ColorFmt, false);
+						Framebuffer.AttachColor(Color, 0);
+						DrawBuffers.Add(0);
+					}
+
+					if (CreateDepthStencil)
+					{
+						DepthStencil = CreateAttachment(TextureFormat.Depth24Stencil8, true);
+						Framebuffer.AttachDepth(DepthStencil, true);
+					}
+				}
+
+				Framebuffer.DrawBuffers(DrawBuffers.ToArray());
 			}
-
-			Framebuffer.DrawBuffers(DrawBuffers.ToArray());
+			catch
+			{
+				DisposeResources();
+				throw;
+			}
 		}
 
-		public Texture CreateNewColorAttachment(int Idx, TextureInternalFmt? Fmt = null)
+		public Texture CreateNewColorAttachment(int Idx, TextureFormat? Fmt = null)
 		{
+			if (IsDisposed) throw new ObjectDisposedException(nameof(RenderTexture));
+			Owner.EnsureCurrent();
+			if (Idx < 0) throw new ArgumentOutOfRangeException(nameof(Idx));
 			if (DrawBuffers.Contains(Idx))
-				throw new Exception(string.Format("Color attachment {0} already exists", Idx));
+				throw new InvalidOperationException(string.Format("Color attachment {0} already exists", Idx));
 
-			Texture Tex = new Texture(
-				Width,
-				Height,
-				TextureTgt,
-				1,
-				Fmt ?? ColorFmt,
-				Multisamples,
-				Multisamples != 0 ? true : false
-			);
-			Framebuffer.AttachColor(Tex, Idx);
-			DrawBuffers.Add(Idx);
-			Framebuffer.DrawBuffers(DrawBuffers.ToArray());
-			return Tex;
+			Texture Tex = CreateAttachment(Fmt ?? ColorFmt, false);
+			try
+			{
+				Framebuffer.AttachColor(Tex, Idx);
+				DrawBuffers.Add(Idx);
+				Framebuffer.DrawBuffers(DrawBuffers.ToArray());
+				return Tex;
+			}
+			catch { Tex.Dispose(); throw; }
 		}
+
+		private Texture CreateAttachment(TextureFormat format, bool depth)
+		{
+			TextureUsageFlags usage = TextureUsageFlags.Sampled |
+				(depth ? TextureUsageFlags.DepthStencilAttachment : TextureUsageFlags.ColorAttachment);
+			if (Multisamples == 0) usage |= TextureUsageFlags.TransferSource | TextureUsageFlags.TransferDestination;
+			return GraphicsContext.Current.CreateTexture(new TextureDescriptor(
+				Width, Height, format, usage, TextureTgt, samples: Multisamples == 0 ? 1 : Multisamples,
+				fixedSampleLocations: Multisamples != 0
+			));
+		}
+
+		internal void BindForPass() => Bind();
+		internal void UnbindForPass() => Unbind();
 
 		protected void Bind()
 		{
@@ -141,11 +161,33 @@ namespace FishGfx.Graphics
 
 		public void Pop()
 		{
+			if (RTStack.Count == 0 || !ReferenceEquals(RTStack.Peek(), this))
+				throw new InvalidOperationException("Render textures must be popped in reverse order.");
 			RTStack.Pop();
 			Unbind();
-
 			if (RTStack.Count > 0)
 				RTStack.Peek().Bind();
+		}
+
+		public void Dispose()
+		{
+			if (IsDisposed)
+				return;
+			if (RTStack.Contains(this))
+				throw new InvalidOperationException("A bound render texture cannot be disposed.");
+			IsDisposed = true;
+			DisposeResources();
+		}
+
+		private void DisposeResources()
+		{
+			HashSet<GraphicsObject> resources = new HashSet<GraphicsObject>();
+			if (Color != null) resources.Add(Color);
+			if (Position != null) resources.Add(Position);
+			if (Normal != null) resources.Add(Normal);
+			if (DepthStencil != null) resources.Add(DepthStencil);
+			if (Framebuffer != null) resources.Add(Framebuffer);
+			foreach (GraphicsObject resource in resources) resource.Dispose();
 		}
 	}
 }

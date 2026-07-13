@@ -1,5 +1,7 @@
 # FishGfx Project Information
 
+The public rendering contract, ownership rules, descriptor behavior, image orientation, and migration boundary are documented in [GRAPHICS_API.md](GRAPHICS_API.md).
+
 This document describes the supported modern FishGfx code as verified from the repository source. For build commands and examples, see [README.md](README.md). For resolved and open defects, see [BUGS.md](BUGS.md).
 
 ## Supported baseline
@@ -31,31 +33,30 @@ The older demos, tools, LiteTest, and Nuklear projects are intentionally outside
 
 ## Context and windowing
 
-`RenderWindow` owns the GLFW window and active OpenGL context. It exposes keyboard, character, mouse, scroll, resize, clipboard, cursor, buffer-swap, close, and framebuffer-readback operations.
+`RenderWindow` owns a GLFW window and exposes its `GraphicsContext` through `Graphics`. `RenderWindowOptions` selects preferred/minimum OpenGL versions and exact-version behavior. The context negotiator records immutable per-context capabilities, owns the resize-aware backbuffer, and is explicitly made current when switching windows on its owning thread.
 
-`Internal_OpenGL` owns the single Silk.NET `GL` instance. It resolves functions through the current GLFW context, records the renderer and actual OpenGL version, configures debug callbacks, and exposes the capability checks used by resource wrappers.
+`GraphicsContext.BeginFrame` creates one active `GraphicsFrame`. Frames contain ordered `RenderPass` instances targeting the backbuffer or a context-created `RenderTarget`; `GraphicsFrame.Present` is the only frame API that swaps buffers. `RenderPassDescriptor` captures view, fixed-function state, load actions, clear values, texture size, alpha test, and multisample count. Pass-local state, model, view, and occlusion-query scopes enforce reverse-order disposal.
 
-`InputManager` turns window callbacks into frame-coherent held, pressed, and released state. Applications call `BeginNewFrame` before polling events.
+`Internal_OpenGL` owns the Silk.NET `GL` dispatch table. Capability queries refresh for the current GLFW context, while debug callback initialization remains one-time. `InputManager` turns window callbacks into frame-coherent held, pressed, and released state; applications call `BeginNewFrame` before polling events.
 
 ## Render state and resource lifetime
 
-`RenderState` describes fixed-function state including depth testing and writes, culling, winding, blending, channel masks, scissoring, and front/back stencil functions and operations. `Gfx.PushRenderState` and `Gfx.PopRenderState` isolate temporary rendering changes.
-
+`RenderState` describes fixed-function state including depth testing and writes, culling, winding, blending, channel masks, scissoring, and independent front/back stencil functions, operations, and write masks. State application compares the complete requested state against a per-context cache. `RenderPass.PushState` is the preferred scoped API; `Gfx.PushRenderState` and `Gfx.PopRenderState` remain context-aware compatibility calls.
 GPU wrappers include:
 
-- `BufferObject` and `VertexArray`.
+- Descriptor-created `GraphicsBuffer` and `VertexArray`.
 - `ShaderStage` and `ShaderProgram`.
 - `Texture`, `Framebuffer`, `RenderTexture`, and `Renderbuffer`.
 - `OcclusionQuery`.
 - Streaming `Mesh2D` and `Mesh3D` drawables.
 
-GPU objects must be created and explicitly disposed on the context thread. If a finalizer observes an undisposed graphics object, deletion is queued through `RenderAPI` and collected during a later context-thread buffer swap or explicit garbage collection.
+GPU objects created through a context factory capture that owning context. Cross-context use is rejected. Explicit disposal or finalization queues deletion to the owner, and `BeginFrame`, `Present`, explicit garbage collection, and context shutdown drain the queue on the owning thread. Built-in immediate-renderer meshes, shaders, render-state stacks, uniforms, render-target stacks, and active queries are also context-owned.
 
 ## Shaders and shared uniforms
 
 FishGfx ships 2D, 3D, line, point, textured/color, and SDF text shaders under `FishGfx/data/shaders`.
 
-`ShaderUniforms.Current` provides the active camera, model transforms, resolution, texture size, clip planes, and related shared values. Shader binding uploads the applicable common uniforms and caches uniform locations.
+`RenderView` snapshots view/projection matrices, camera position, viewport, and clip planes for a pass. `ShaderUniforms.Current` is a context-local compatibility view over the active pass uniforms and model transform. Shader binding uploads the applicable common uniforms and caches uniform locations.
 
 Standard interleaved vertex attributes are:
 
@@ -85,7 +86,7 @@ CPU tessellators are context-free and independently tested. Adaptive circle, ell
 
 `CommandList` is an explicit command buffer for every current `Gfx` clear, state, 2D, 3D, textured-shape, and text operation. Its public `GraphicsCommand` objects expose immutable recorded parameters for inspection. Convenience `Record*` methods canonicalize equivalent overloads, such as circles to ellipse commands and single points to array-backed point commands.
 
-Arrays are cloned during command construction, while textures, shaders, and fonts remain caller-owned references. Recording performs no OpenGL work. `Execute` must run on the active context thread and uses the camera, model transform, and shared uniforms active at replay time. Lists are reusable and retain all commands after success or failure; replay stops on the first exception, prevents concurrent mutation or recursive execution, and does not roll back state changed by earlier commands. Callers are responsible for synchronization, live resources, and balanced render-state commands.
+Arrays are cloned during command construction, while textures, shaders, and fonts remain caller-owned references. Recording performs no OpenGL work. `Execute` must run on the active context thread and uses the camera, model transform, and shared uniforms active at replay time. Lists are reusable and retain all commands after success or failure; replay stops on the first exception and prevents concurrent mutation or recursive execution. Built-in state commands must balance, and replay unwinds outstanding pushes after failures. Completed draws are not transactional. Callers remain responsible for synchronization and live resources.
 
 `CommandList.Snapshot` creates an immutable `GraphicsCommandBatch`. `DeferredRenderQueue` groups those batches into built-in opaque/transparent or custom render buckets. A submission captures its model matrix, representative world position, layer, sort key, owner tag, and stable sequence while retaining caller ownership of referenced resources. Typed mesh and render-model commands extend deferred submission to retained 3D geometry.
 
@@ -109,7 +110,11 @@ The core retains higher-level drawables for sprites, tile maps, terrain, paralla
 
 Model and geometry support includes `GenericMesh`, Wavefront OBJ, Valve SMD loading, and the FishGfx Foam format. SMD saving and some unsupported parser segments remain roadmap items.
 
-Texture APIs support files, `Bitmap`, raw uploads, cubemaps, multisampling, atlas splitting, filters, wrapping, mipmaps, and anisotropy. The bitmap-facing APIs are intentionally Windows-specific in this release.
+`GraphicsBufferDescriptor` records byte size, vertex/index/uniform/storage/transfer binding flags, and static/dynamic/stream usage. `GraphicsBuffer` supports checked unmanaged-span writes, discard-resize, and same-context GPU copies. Vertex arrays reject buffers missing their corresponding vertex or index flag; meshes own their logical draw counts rather than inferring them from byte storage.
+
+`TextureDescriptor` records 2D/cube/multisample dimension, curated color/HDR/depth format, usage flags, mip and sample counts, fixed sample locations, and initial sampling state. Texture writes are tightly packed, bounds checked, and never regenerate mipmaps implicitly. Same-format non-multisampled 2D regions and cubemap faces can be copied on the GPU; multisample resolve remains a framebuffer blit. Texture constructors, pointer uploads, public CPU readback, and static bitmap helpers have been removed.
+
+`TextureLoader` owns file, `Image`, atlas, update, and cubemap decoding through `System.Drawing`; all temporary images are disposed deterministically. `FlipY` defaults to true for OpenGL's bottom-left convention, and cubemap paths map right/left/top/bottom/front/back to positive X/negative X/positive Y/negative Y/positive Z/negative Z. The bitmap-facing loader and framebuffer screenshot paths are intentionally Windows-specific in this release.
 
 ## Fonts and text
 

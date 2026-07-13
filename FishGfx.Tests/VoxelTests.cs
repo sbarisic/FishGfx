@@ -189,6 +189,44 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void TransparentBlocksDoNotEmitCoplanarFacesAgainstOccludingNeighbors()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, ushort transparent) =
+			CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(transparent));
+		world.SetVoxel(2, 1, 1, new VoxelCell(opaque));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(5, mesh.TransparentFaces.Length);
+		Assert.DoesNotContain(
+			mesh.TransparentFaces,
+			face => face.Center == new Vector3(2, 1.5f, 1.5f)
+		);
+		Assert.Empty(mesh.CutoutVertices);
+		Assert.Equal(36, mesh.OpaqueVertices.Length);
+	}
+
+	[Fact]
+	public void TransparentBlocksRetainFacesBehindNonOccludingCutouts()
+	{
+		(VoxelWorld world, VoxelPalette palette, _, ushort cutout, ushort transparent) =
+			CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(transparent));
+		world.SetVoxel(2, 1, 1, new VoxelCell(cutout));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(6, mesh.TransparentFaces.Length);
+		Assert.Contains(
+			mesh.TransparentFaces,
+			face => face.Center == new Vector3(2, 1.5f, 1.5f)
+		);
+		Assert.Equal(36, mesh.CutoutVertices.Length);
+		Assert.Empty(mesh.OpaqueVertices);
+	}
+
+	[Fact]
 	public void DoubleSidedMaterialsEmitReversedTriangles()
 	{
 		VoxelPaletteBuilder builder = new();

@@ -104,8 +104,11 @@ namespace FishGfx.Formats
 
 			foreach (var TexName in TextureNames)
 			{
-				Texture T = Texture.FromFile(Path.Combine(TextureDirectory, TexName));
-				T.SetFilter(Filter);
+				TextureFilter mag = Filter == TextureFilter.Nearest ? TextureFilter.Nearest : TextureFilter.Linear;
+				Texture T = GraphicsContext.Current.LoadTexture2D(
+					Path.Combine(TextureDirectory, TexName),
+					new TextureLoadOptions { Sampling = new TextureSamplingState(Filter, mag) }
+				);
 				PageNames[TexName] = T;
 			}
 		}

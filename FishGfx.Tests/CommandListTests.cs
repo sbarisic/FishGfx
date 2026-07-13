@@ -185,6 +185,23 @@ public class CommandListTests
 		);
 	}
 
+	[Fact]
+	public void SnapshotsRejectUnbalancedRenderStateCommands()
+	{
+		CommandList missingPop = new();
+		missingPop.RecordPushRenderState(Gfx.CreateDefaultRenderState());
+		Assert.Throws<InvalidOperationException>(() => missingPop.Snapshot());
+
+		CommandList missingPush = new();
+		missingPush.RecordPopRenderState();
+		Assert.Throws<InvalidOperationException>(() => missingPush.Snapshot());
+
+		CommandList balanced = new();
+		balanced.RecordPushRenderState(Gfx.CreateDefaultRenderState());
+		balanced.RecordPopRenderState();
+		Assert.Equal(2, balanced.Snapshot().Count);
+	}
+
 	private sealed class TestCommand : GraphicsCommand
 	{
 		private readonly Action action;

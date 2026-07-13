@@ -9,7 +9,7 @@ using FishGfx.Graphics;
 
 namespace FishGfx.Graphics.Drawables
 {
-	public class RenderModel : IDrawable
+	public class RenderModel : IDrawable, IDisposable
 	{
 		class SubMesh
 		{
@@ -29,6 +29,7 @@ namespace FishGfx.Graphics.Drawables
 
 		public RenderModel(IEnumerable<GenericMesh> Meshes, bool HasUVs = true, bool HasColors = true)
 		{
+			if (Meshes == null) throw new ArgumentNullException(nameof(Meshes));
 			GenericMesh[] GenericMeshes = Meshes.ToArray();
 			this.Meshes = new SubMesh[GenericMeshes.Length];
 
@@ -93,9 +94,17 @@ namespace FishGfx.Graphics.Drawables
 
 		public void Draw(ShaderProgram Shader, ShaderUniforms Uniforms)
 		{
+			if (Shader == null) throw new ArgumentNullException(nameof(Shader));
+			if (Uniforms == null) throw new ArgumentNullException(nameof(Uniforms));
 			Shader.Bind(Uniforms);
-			Draw();
-			Shader.Unbind();
+			try { Draw(); }
+			finally { Shader.Unbind(); }
+		}
+
+		public void Dispose()
+		{
+			foreach (SubMesh mesh in Meshes)
+				mesh.Mesh.Dispose();
 		}
 	}
 }

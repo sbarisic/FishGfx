@@ -221,35 +221,19 @@ namespace FishGfx
 
 		public static void GetEulerAngles(this Quaternion Quat, out float Pitch, out float Yaw, out float Roll)
 		{
-			double SqW = Quat.W * Quat.W;
-			double SqX = Quat.X * Quat.X;
-			double SqY = Quat.Y * Quat.Y;
-			double SqZ = Quat.Z * Quat.Z;
-			double Test = Quat.X * Quat.Y + Quat.Z * Quat.W;
+			if (Quat.LengthSquared() == 0)
+				throw new ArgumentException("The quaternion cannot be zero.", nameof(Quat));
+			Quat = Quaternion.Normalize(Quat);
 
-			if (Test > 0.49999) // Singularity at north pole
-				Yaw = (float)(2 * Math.Atan2(Quat.X, Quat.W));
-			else if (Test < -0.49999) // Singularity at south pole
-				Yaw = (float)(-2 * Math.Atan2(Quat.X, Quat.W));
-			else
-				Yaw = (float)Math.Atan2(2 * Quat.Y * Quat.W - 2 * Quat.X * Quat.Z, SqX - SqY - SqZ + SqW);
+			double sinPitch = 2.0 * (Quat.W * Quat.X - Quat.Y * Quat.Z);
+			double sinYaw = 2.0 * (Quat.W * Quat.Y + Quat.X * Quat.Z);
+			double cosYaw = 1.0 - 2.0 * (Quat.X * Quat.X + Quat.Y * Quat.Y);
+			double sinRoll = 2.0 * (Quat.W * Quat.Z + Quat.X * Quat.Y);
+			double cosRoll = 1.0 - 2.0 * (Quat.X * Quat.X + Quat.Z * Quat.Z);
 
-			Yaw *= (float)(180.0 / Math.PI);
-
-			if (Yaw < 0)
-				Yaw += 360;
-
-			Pitch = (float)-Math.Atan2(2.0 * Quat.X * Quat.W + 2.0 * Quat.Y * Quat.Z, 1.0 - 2.0 * (SqZ + SqW));
-			Pitch *= (float)(180.0 / Math.PI);
-
-			if (Yaw > 270 || Yaw < 90)
-				if (Pitch < 0)
-					Pitch += 180;
-				else
-					Pitch -= 180;
-
-			// TODO: Stop, drop and ROLL baby
-			Roll = 0;
+			Pitch = (float)(Math.Asin(Math.Clamp(sinPitch, -1.0, 1.0)) * 180.0 / Math.PI);
+			Yaw = (float)(Math.Atan2(sinYaw, cosYaw) * 180.0 / Math.PI);
+			Roll = (float)(Math.Atan2(sinRoll, cosRoll) * 180.0 / Math.PI);
 		}
 
 		public static void Deconstruct(this Vector3 V, out float X, out float Y, out float Z)

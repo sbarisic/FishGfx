@@ -351,13 +351,21 @@ namespace FishGfx.Voxels
 			VoxelPalette palette
 		)
 		{
-			if (material.RenderMode == VoxelRenderMode.Transparent)
-				return neighborId != materialId;
-
 			if (neighborId == 0)
 				return true;
 			if (!palette.Contains(neighborId))
 				throw new InvalidOperationException($"Chunk contains unknown voxel material ID {neighborId}.");
+
+			if (material.RenderMode == VoxelRenderMode.Transparent)
+			{
+				if (neighborId == materialId)
+					return false;
+
+				// A fully occluding neighbor emits the visible interface face. Emitting the
+				// transparent side as well would place two triangles on the same plane.
+				// Non-occluding cutouts still need this face behind their discarded texels.
+				return !palette[neighborId].OccludesFaces;
+			}
 
 			return !palette[neighborId].OccludesFaces;
 		}

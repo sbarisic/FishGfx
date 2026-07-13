@@ -12,6 +12,8 @@ namespace FishGfx.Game
 	public abstract class FishGfxGame
 	{
 		protected RenderWindow Window;
+		protected Camera Camera { get; private set; }
+		protected RenderPass RenderPass { get; private set; }
 		protected int Framerate = 60;
 
 		private int WindowWidth;
@@ -45,9 +47,9 @@ namespace FishGfx.Game
 
 		protected virtual void CreateShaders()
 		{
-			DefaultShader = new ShaderProgram(
-				new ShaderStage(ShaderType.VertexShader, "data/shaders/default3d.vert"),
-				new ShaderStage(ShaderType.FragmentShader, "data/shaders/default.frag")
+			DefaultShader = Window.Graphics.CreateShaderProgram(
+				Window.Graphics.CreateShaderStage(ShaderType.VertexShader, "data/shaders/default3d.vert"),
+				Window.Graphics.CreateShaderStage(ShaderType.FragmentShader, "data/shaders/default.frag")
 			);
 		}
 
@@ -71,7 +73,8 @@ namespace FishGfx.Game
 			Game.GameStopwatch = Stopwatch.StartNew();
 			Game.Input = new InputManager(Game.Window);
 
-			ShaderUniforms.Current.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
+			Game.Camera = new Camera();
+			Game.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
 
 			Game.CreateResources();
 			Game.Init();
@@ -91,11 +94,22 @@ namespace FishGfx.Game
 
 				// TODO: Decouple draw and update
 
-				Game.Draw(Dt);
-				Game.Window.SwapBuffers();
+				using GraphicsFrame frame = Game.Window.Graphics.BeginFrame();
+				using (RenderPass pass = frame.BeginPass(Game.Window.Graphics.Backbuffer, new RenderPassDescriptor
+				{
+					View = new RenderView(Game.Camera),
+					State = Gfx.CreateDefaultRenderState(),
+				}))
+				{
+					Game.RenderPass = pass;
+					try { Game.Draw(Dt); }
+					finally { Game.RenderPass = null; }
+				}
+				frame.Present();
 
 				Game.Update(Dt);
 			}
+			Game.Window.Dispose();
 		}
 	}
 }

@@ -24,7 +24,8 @@ namespace FishGfx.Graphics
 
 	public class ShaderUniforms
 	{
-		static Stack<ShaderUniforms> Uniforms;
+		static readonly Stack<ShaderUniforms> LegacyUniforms = new Stack<ShaderUniforms>();
+		static Stack<ShaderUniforms> Uniforms => GraphicsContext.CurrentOrNull?.Uniforms ?? LegacyUniforms;
 
 		public static ShaderUniforms Current
 		{
@@ -39,8 +40,7 @@ namespace FishGfx.Graphics
 
 		static ShaderUniforms()
 		{
-			Uniforms = new Stack<ShaderUniforms>();
-			Push(CreateDefault());
+			LegacyUniforms.Push(CreateDefault());
 		}
 
 		public static ShaderUniforms CreateDefault()
@@ -74,25 +74,36 @@ namespace FishGfx.Graphics
 		public Vector2 TextureSize;
 		public int MultisampleCount;
 
+		public bool HasRenderView { get; private set; }
+		public RenderView RenderView { get; private set; }
+
+		public void SetRenderView(RenderView view)
+		{
+			RenderView = view;
+			HasRenderView = true;
+			Resolution = view.ViewportSize;
+		}
+
 		public void Bind(ShaderProgram Shader)
 		{
-			Shader.Uniform1f("Near", Camera.Near);
-			Shader.Uniform1f("Far", Camera.Far);
+			Matrix4 view = HasRenderView ? RenderView.View : Camera.View;
+			Matrix4 projection = HasRenderView ? RenderView.Projection : Camera.Projection;
+			Vector3 position = HasRenderView ? RenderView.Position : Camera.Position;
+			Vector2 viewport = HasRenderView ? RenderView.ViewportSize : Camera.ViewportSize;
+			float near = HasRenderView ? RenderView.Near : Camera.Near;
+			float far = HasRenderView ? RenderView.Far : Camera.Far;
 
-			Shader.UniformMatrix4f("View", Camera.View);
-			Shader.UniformMatrix4f("Project", Camera.Projection);
+			Shader.Uniform1f("Near", near);
+			Shader.Uniform1f("Far", far);
+			Shader.UniformMatrix4f("View", view);
+			Shader.UniformMatrix4f("Project", projection);
 			Shader.UniformMatrix4f("Model", Model);
-
-			// If it's an occlusion test, we most likely don't need these and
-			// should be using the NOP shader
-			//if (!(OcclusionQuery.CurrentQuery?.IsOcclusionTest ?? false)) {
-			Shader.Uniform2f("Viewport", Camera.ViewportSize);
+			Shader.Uniform2f("Viewport", viewport);
 			Shader.Uniform1f("AlphaTest", AlphaTest);
 			Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
 			Shader.Uniform2f("TextureSize", TextureSize);
 			Shader.Uniform2f("Resolution", Resolution);
-			Shader.Uniform3f("ViewPos", Camera.Position);
-			//}
+			Shader.Uniform3f("ViewPos", position);
 		}
 	}
 
@@ -115,6 +126,9 @@ namespace FishGfx.Graphics
 
 		public void AttachShader(ShaderStage S)
 		{
+			EnsureCurrentOwner();
+			if (S == null) throw new ArgumentNullException(nameof(S));
+			S.EnsureOwner(GraphicsContext.Current);
 			ShaderStages.Add(S);
 
 			Internal_OpenGL.GL.AttachShader(ID, S.ID);
@@ -122,6 +136,7 @@ namespace FishGfx.Graphics
 
 		public bool Link(out string ErrorString)
 		{
+			EnsureCurrentOwner();
 #if DEBUG
 			SetLabel(ToString());
 #endif
@@ -159,22 +174,57 @@ namespace FishGfx.Graphics
 
 		public virtual void Bind(ShaderUniforms Uniforms)
 		{
-			Uniforms.Bind(this);
+			EnsureCurrentOwner();
+			if (Uniforms == null) throw new ArgumentNullException(nameof(Uniforms));
+			Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previous);
 			Internal_OpenGL.GL.UseProgram(ID);
+			if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = ID;
+			try { Uniforms.Bind(this); }
+			catch
+			{
+				Internal_OpenGL.GL.UseProgram((uint)previous);
+				if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = (uint)previous;
+				throw;
+			}
 		}
 
 		public override void Unbind()
 		{
 			Internal_OpenGL.GL.UseProgram(0);
+			if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = 0;
+		}
+
+		bool SupportsProgramUniforms => Internal_OpenGL.MajorVersion > 4 || (Internal_OpenGL.MajorVersion == 4 && Internal_OpenGL.MinorVersion >= 1);
+
+		uint BindForUniformUpdate()
+		{
+			Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int currentProgram);
+			uint previous = (uint)currentProgram;
+			GraphicsContext context = GraphicsContext.CurrentOrNull;
+			if (previous != ID)
+			{
+				Internal_OpenGL.GL.UseProgram(ID);
+				if (context != null) context.BoundProgram = ID;
+			}
+			return previous;
+		}
+
+		void RestoreProgram(uint previous)
+		{
+			if (previous == ID) return;
+			Internal_OpenGL.GL.UseProgram(previous);
+			if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = previous;
 		}
 
 		public int GetAttribLocation(string Name)
 		{
+			EnsureCurrentOwner();
 			return Internal_OpenGL.GL.GetAttribLocation(ID, Name);
 		}
 
 		public int GetUniformLocation(string Name)
 		{
+			EnsureCurrentOwner();
 			if (UniformLocations.ContainsKey(Name))
 				return UniformLocations[Name];
 
@@ -188,7 +238,15 @@ namespace FishGfx.Graphics
 
 		public void UniformMatrix4f(string Uniform, Matrix4 M, bool Transpose = false)
 		{
-			Internal_OpenGL.GL.ProgramUniformMatrix4(ID, GetUniformLocation(Uniform), 1, Transpose, (float*)&M);
+			int location = GetUniformLocation(Uniform);
+			if (location == -1) return;
+			if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniformMatrix4(ID, location, 1, Transpose, (float*)&M);
+			else
+			{
+				uint previous = BindForUniformUpdate();
+				try { Internal_OpenGL.GL.UniformMatrix4(location, 1, Transpose, (float*)&M); }
+				finally { RestoreProgram(previous); }
+			}
 		}
 
 		public bool Uniform3f<T>(string Uniform, T Val)
@@ -200,7 +258,10 @@ namespace FishGfx.Graphics
 				return false;
 
 			if (Val is Vector3 V)
-				Internal_OpenGL.GL.ProgramUniform3(ID, Loc, V);
+			{
+				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform3(ID, Loc, V);
+				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform3(Loc, V); } finally { RestoreProgram(previous); } }
+			}
 			else
 				throw new NotSupportedException($"Uniform3f does not support {typeof(T)}");
 			return true;
@@ -215,7 +276,10 @@ namespace FishGfx.Graphics
 				return false;
 
 			if (Val is System.Numerics.Vector4 V)
-				Internal_OpenGL.GL.ProgramUniform4(ID, Loc, V);
+			{
+				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform4(ID, Loc, V);
+				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform4(Loc, V); } finally { RestoreProgram(previous); } }
+			}
 			else
 				throw new NotSupportedException($"Uniform4f does not support {typeof(T)}");
 			return true;
@@ -230,7 +294,10 @@ namespace FishGfx.Graphics
 				return false;
 
 			if (Val is Vector2 V)
-				Internal_OpenGL.GL.ProgramUniform2(ID, Loc, V);
+			{
+				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform2(ID, Loc, V);
+				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform2(Loc, V); } finally { RestoreProgram(previous); } }
+			}
 			else
 				throw new NotSupportedException($"Uniform2f does not support {typeof(T)}");
 			return true;
@@ -245,7 +312,10 @@ namespace FishGfx.Graphics
 				return false;
 
 			if (Val is float V)
-				Internal_OpenGL.GL.ProgramUniform1(ID, Loc, V);
+			{
+				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform1(ID, Loc, V);
+				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform1(Loc, V); } finally { RestoreProgram(previous); } }
+			}
 			else
 				throw new NotSupportedException($"Uniform1f does not support {typeof(T)}");
 			return true;
@@ -258,7 +328,8 @@ namespace FishGfx.Graphics
 			if (Loc == -1)
 				return false;
 
-			Internal_OpenGL.GL.ProgramUniform1(ID, Loc, Val);
+			if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform1(ID, Loc, Val);
+			else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform1(Loc, Val); } finally { RestoreProgram(previous); } }
 			return true;
 		}
 
@@ -294,6 +365,7 @@ namespace FishGfx.Graphics
 
 		public ShaderStage SetSourceCode(string Code)
 		{
+			EnsureCurrentOwner();
 			Source = Code;
 			SrcFile = null;
 			//WatchHandle = null;
@@ -310,6 +382,7 @@ namespace FishGfx.Graphics
 
 		public bool Compile(out string ErrorString)
 		{
+			EnsureCurrentOwner();
 #if DEBUG
 			SetLabel(ToString());
 #endif

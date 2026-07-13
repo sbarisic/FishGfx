@@ -10,13 +10,14 @@ namespace FishGfx.NodeEditor
 {
 	internal sealed class NodeRenderer
 	{
-		private static readonly Color CanvasColor = new Color(24, 25, 27);
+		internal static readonly Color CanvasColor = new Color(24, 25, 27);
 		private static readonly Color GridColor = new Color(39, 41, 44);
 		private static readonly Color NodeColor = new Color(63, 64, 66);
 		private static readonly Color HeaderColor = new Color(72, 73, 76);
 		private static readonly Color TextColor = new Color(224, 224, 226);
 		private readonly TTFFont font;
 		private readonly TTFFont menuFont;
+		private RenderPass pass;
 
 		internal NodeRenderer(TTFFont font, TTFFont menuFont)
 		{
@@ -36,6 +37,7 @@ namespace FishGfx.NodeEditor
 		private Vector2 S(NodeCanvas canvas, Vector2 world) => canvas.WorldToScreen(world);
 
 		internal void Draw(
+			RenderPass renderPass,
 			FunctionNodeGraph graph,
 			NodeCanvas canvas,
 			object selected,
@@ -51,7 +53,7 @@ namespace FishGfx.NodeEditor
 			int height
 		)
 		{
-			Gfx.Clear(CanvasColor);
+			pass = renderPass ?? throw new ArgumentNullException(nameof(renderPass));
 			DrawGrid(canvas, width, height);
 
 			foreach (NodeConnection connection in graph.Connections)
@@ -70,22 +72,22 @@ namespace FishGfx.NodeEditor
 
 			foreach (FunctionNode node in graph.Nodes)
 				DrawNode(node, canvas, selected == node, hoverPort, editor);
-			Gfx.DrawText(font, new Vector2(22, height - 42), "NODE EDITOR", new Color(145, 151, 160), 23);
+			pass.DrawText(font, new Vector2(22, height - 42), "NODE EDITOR", new Color(145, 151, 160), 23);
 			Color evaluateColor = result == null || result.Success ? new Color(55, 132, 86) : new Color(172, 68, 68);
-			Gfx.FilledRoundedRectangle(220, height - 58, 132, 38, new CornerRadii(5), evaluateColor, 3);
-			Gfx.DrawText(font, new Vector2(240, height - 49), "Evaluate  F5", Color.White, 17);
+			pass.FilledRoundedRectangle(220, height - 58, 132, 38, new CornerRadii(5), evaluateColor, 3);
+			pass.DrawText(font, new Vector2(240, height - 49), "Evaluate  F5", Color.White, 17);
 
 			if (result != null)
-				Gfx.DrawText(font, new Vector2(370, height - 48), result.Summary, evaluateColor, 18);
+				pass.DrawText(font, new Vector2(370, height - 48), result.Summary, evaluateColor, 18);
 			if (!string.IsNullOrEmpty(fileStatus))
-				Gfx.DrawText(
+				pass.DrawText(
 					font,
 					new Vector2(700, height - 48),
 					fileStatus,
 					fileStatusError ? new Color(235, 110, 110) : new Color(115, 205, 145),
 					18
 				);
-			Gfx.DrawText(
+			pass.DrawText(
 				font,
 				new Vector2(22, 22),
 				"Right click: add node   Middle drag: pan   Wheel: zoom   Delete: remove",
@@ -103,9 +105,9 @@ namespace FishGfx.NodeEditor
 			float startX = canvas.Pan.X % spacing,
 				startY = canvas.Pan.Y % spacing;
 			for (float x = startX; x < width; x += spacing)
-				Gfx.Line(new Vertex2(new Vector2(x, 0), GridColor), new Vertex2(new Vector2(x, height), GridColor), 1);
+				pass.Line(new Vertex2(new Vector2(x, 0), GridColor), new Vertex2(new Vector2(x, height), GridColor), 1);
 			for (float y = startY; y < height; y += spacing)
-				Gfx.Line(new Vertex2(new Vector2(0, y), GridColor), new Vertex2(new Vector2(width, y), GridColor), 1);
+				pass.Line(new Vertex2(new Vector2(0, y), GridColor), new Vertex2(new Vector2(width, y), GridColor), 1);
 		}
 
 		private void DrawConnection(NodeConnection connection, NodeCanvas canvas, bool selected)
@@ -118,10 +120,10 @@ namespace FishGfx.NodeEditor
 			);
 		}
 
-		private static void DrawBezier(Vector2 start, Vector2 end, Color color, float thickness)
+		private void DrawBezier(Vector2 start, Vector2 end, Color color, float thickness)
 		{
 			float reach = Math.Max(60, Math.Abs(end.X - start.X) * .45f);
-			Gfx.CubicBezier(
+			pass.CubicBezier(
 				start,
 				start + new Vector2(reach, 0),
 				end - new Vector2(reach, 0),
@@ -149,8 +151,8 @@ namespace FishGfx.NodeEditor
 					? new Color(105, 53, 55)
 				: selected ? new Color(84, 87, 92)
 				: NodeColor;
-			Gfx.FilledRoundedRectangle(p, new Vector2(w, h), new CornerRadii(7 * z), bodyColor, 4);
-			Gfx.FilledRoundedRectangle(
+			pass.FilledRoundedRectangle(p, new Vector2(w, h), new CornerRadii(7 * z), bodyColor, 4);
+			pass.FilledRoundedRectangle(
 				new Vector2(p.X, p.Y + h - NodeGeometry.HeaderHeight * z),
 				new Vector2(w, NodeGeometry.HeaderHeight * z),
 				new CornerRadii(7 * z),
@@ -159,7 +161,7 @@ namespace FishGfx.NodeEditor
 			);
 
 			if (selected)
-				Gfx.RoundedRectangle(
+				pass.RoundedRectangle(
 					p,
 					new Vector2(w, h),
 					new CornerRadii(7 * z),
@@ -167,15 +169,15 @@ namespace FishGfx.NodeEditor
 					new Color(118, 179, 255),
 					4
 				);
-			Gfx.DrawText(font, p + new Vector2(15 * z, h - 31 * z), node.Title, TextColor, Math.Max(11, 20 * z));
+			pass.DrawText(font, p + new Vector2(15 * z, h - 31 * z), node.Title, TextColor, Math.Max(11, 20 * z));
 			Vector2 close = p + new Vector2(w - 24 * z, h - 21 * z);
 			Color closeColor = new Color(190, 190, 192);
-			Gfx.Line(
+			pass.Line(
 				new Vertex2(close + new Vector2(-7, -7) * z, closeColor),
 				new Vertex2(close + new Vector2(7, 7) * z, closeColor),
 				Math.Max(1, 2 * z)
 			);
-			Gfx.Line(
+			pass.Line(
 				new Vertex2(close + new Vector2(-7, 7) * z, closeColor),
 				new Vertex2(close + new Vector2(7, -7) * z, closeColor),
 				Math.Max(1, 2 * z)
@@ -190,14 +192,14 @@ namespace FishGfx.NodeEditor
 				NodeBodyValue value = node.BodyValues[i];
 				Bounds bounds = NodeGeometry.ValueBounds(node, i);
 				Vector2 bp = S(canvas, new Vector2(bounds.X, bounds.Y));
-				Gfx.DrawText(
+				pass.DrawText(
 					font,
 					S(canvas, new Vector2(node.Position.X + 14, bounds.Y + 4)),
 					value.Name,
 					TextColor,
 					Math.Max(10, 17 * z)
 				);
-				Gfx.FilledRoundedRectangle(
+				pass.FilledRoundedRectangle(
 					bp,
 					new Vector2(bounds.Width * z, bounds.Height * z),
 					new CornerRadii(3 * z),
@@ -205,7 +207,7 @@ namespace FishGfx.NodeEditor
 					2
 				);
 				string text = editor.Target == value ? editor.Text + "|" : value.Text;
-				Gfx.DrawText(font, bp + new Vector2(8 * z, 4 * z), text, TextColor, Math.Max(10, 17 * z));
+				pass.DrawText(font, bp + new Vector2(8 * z, 4 * z), text, TextColor, Math.Max(10, 17 * z));
 			}
 
 			if (node.Outputs.Count > 0 && node.EvaluationState == NodeEvaluationState.Success)
@@ -214,7 +216,7 @@ namespace FishGfx.NodeEditor
 					"  ",
 					node.Outputs.Select(o => $"{o.Name}={NodeValueConverter.Format(o.Value, o.Type)}")
 				);
-				Gfx.DrawText(
+				pass.DrawText(
 					font,
 					p + new Vector2(14 * z, 9 * z),
 					preview,
@@ -226,7 +228,7 @@ namespace FishGfx.NodeEditor
 				!string.IsNullOrEmpty(node.EvaluationMessage)
 				&& node.EvaluationState != NodeEvaluationState.Success
 			)
-				Gfx.DrawText(
+				pass.DrawText(
 					font,
 					p + new Vector2(14 * z, 9 * z),
 					node.EvaluationMessage,
@@ -239,7 +241,7 @@ namespace FishGfx.NodeEditor
 		{
 			Vector2 p = S(canvas, NodeGeometry.PortPosition(port));
 			float z = canvas.Zoom;
-			Gfx.FilledCircle(
+			pass.FilledCircle(
 				p,
 				(hover ? 11 : NodeGeometry.PortRadius) * z,
 				hover ? Color.White : PortColor(port.Type),
@@ -249,10 +251,10 @@ namespace FishGfx.NodeEditor
 			float textSize = Math.Max(10, 17 * z);
 			float textWidth = Measure(font, port.Name, textSize).X;
 			Vector2 text = p + new Vector2(port.Direction == NodePortDirection.Input ? x : x - textWidth, -8 * z);
-			Gfx.DrawText(font, text, port.Name, TextColor, textSize);
+			pass.DrawText(font, text, port.Name, TextColor, textSize);
 
 			if (hover)
-				Gfx.DrawText(
+				pass.DrawText(
 					font,
 					p + new Vector2(12 * z, 12 * z),
 					NodeValueConverter.TypeName(port.Type),
@@ -264,14 +266,14 @@ namespace FishGfx.NodeEditor
 		private void DrawMenu(ContextMenu menu)
 		{
 			Vector2 p = menu.Position;
-			Gfx.FilledRoundedRectangle(
+			pass.FilledRoundedRectangle(
 				p,
 				new Vector2(ContextMenu.Width, ContextMenu.Height),
 				new CornerRadii(10),
 				new Color(38, 40, 44, 250),
 				5
 			);
-			Gfx.RoundedRectangle(
+			pass.RoundedRectangle(
 				p,
 				new Vector2(ContextMenu.Width, ContextMenu.Height),
 				new CornerRadii(10),
@@ -280,7 +282,7 @@ namespace FishGfx.NodeEditor
 				5
 			);
 			float searchY = p.Y + ContextMenu.Height - 43;
-			Gfx.FilledRoundedRectangle(
+			pass.FilledRoundedRectangle(
 				p.X + 12,
 				searchY,
 				ContextMenu.Width - 24,
@@ -289,14 +291,14 @@ namespace FishGfx.NodeEditor
 				new Color(28, 30, 34),
 				3
 			);
-			Gfx.DrawText(
+			pass.DrawText(
 				menuFont,
 				new Vector2(p.X + 23, searchY + 7),
 				menu.SearchText.Length == 0 ? "Search functions..." : menu.SearchText + "|",
 				menu.SearchText.Length == 0 ? new Color(120, 124, 132) : TextColor,
 				17
 			);
-			Gfx.FilledRectangle(
+			pass.FilledRectangle(
 				p.X + ContextMenu.CategoryWidth - 1,
 				p.Y + 10,
 				1,
@@ -316,7 +318,7 @@ namespace FishGfx.NodeEditor
 				float y = top - (visible + 1) * ContextMenu.RowHeight;
 
 				if (index == menu.SelectedCategory)
-					Gfx.FilledRoundedRectangle(
+					pass.FilledRoundedRectangle(
 						p.X + 7,
 						y + 3,
 						ContextMenu.CategoryWidth - 14,
@@ -326,7 +328,7 @@ namespace FishGfx.NodeEditor
 						2
 					);
 				else if (index == menu.HoverCategory)
-					Gfx.FilledRoundedRectangle(
+					pass.FilledRoundedRectangle(
 						p.X + 7,
 						y + 3,
 						ContextMenu.CategoryWidth - 14,
@@ -335,8 +337,8 @@ namespace FishGfx.NodeEditor
 						new Color(52, 55, 60),
 						2
 					);
-				Gfx.FilledRoundedRectangle(p.X + 14, y + 12, 10, 10, new CornerRadii(5), category.Color, 3);
-				Gfx.DrawText(
+				pass.FilledRoundedRectangle(p.X + 14, y + 12, 10, 10, new CornerRadii(5), category.Color, 3);
+				pass.DrawText(
 					menuFont,
 					new Vector2(p.X + 33, y + 9),
 					category.Name,
@@ -355,7 +357,7 @@ namespace FishGfx.NodeEditor
 				float x = p.X + ContextMenu.CategoryWidth,
 					y = top - (visible + 1) * ContextMenu.RowHeight;
 				if (index == menu.SelectedFunction)
-					Gfx.FilledRoundedRectangle(
+					pass.FilledRoundedRectangle(
 						x + 7,
 						y + 3,
 						ContextMenu.Width - ContextMenu.CategoryWidth - 14,
@@ -365,7 +367,7 @@ namespace FishGfx.NodeEditor
 						2
 					);
 				else if (index == menu.HoverFunction)
-					Gfx.FilledRoundedRectangle(
+					pass.FilledRoundedRectangle(
 						x + 7,
 						y + 3,
 						ContextMenu.Width - ContextMenu.CategoryWidth - 14,
@@ -374,7 +376,7 @@ namespace FishGfx.NodeEditor
 						new Color(52, 55, 60),
 						2
 					);
-				Gfx.DrawText(
+				pass.DrawText(
 					menuFont,
 					new Vector2(x + 16, y + 9),
 					function.MenuLabel,
@@ -384,7 +386,7 @@ namespace FishGfx.NodeEditor
 			}
 
 			if (menu.Categories.Count == 0)
-				Gfx.DrawText(
+				pass.DrawText(
 					menuFont,
 					new Vector2(p.X + ContextMenu.CategoryWidth + 18, top - 34),
 					"No matching functions",

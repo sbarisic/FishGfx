@@ -12,9 +12,32 @@ using Silk.NET.OpenGL;
 
 namespace FishGfx.Graphics
 {
+	internal sealed class ImmediateGraphicsResources
+	{
+		internal Texture WhiteTexture;
+		internal ShaderProgram Line3D;
+		internal ShaderProgram Point3D;
+		internal ShaderProgram Default3D;
+		internal Mesh3D Mesh3D;
+		internal ShaderProgram Line2D;
+		internal ShaderProgram Point2D;
+		internal ShaderProgram Default2D;
+		internal ShaderProgram SdfText2D;
+		internal Mesh2D Mesh2D;
+	}
+
 	public static class Gfx
 	{
-		static Stack<RenderState> RenderStates = new Stack<RenderState>();
+		static readonly Stack<RenderState> LegacyRenderStates = new Stack<RenderState>();
+		static readonly ImmediateGraphicsResources LegacyImmediateResources = new ImmediateGraphicsResources();
+		static ImmediateGraphicsResources ImmediateResources => GraphicsContext.CurrentOrNull?.ImmediateResources ?? LegacyImmediateResources;
+		static Stack<RenderState> RenderStates => GraphicsContext.CurrentOrNull?.RenderStates ?? LegacyRenderStates;
+
+		internal static void InvalidateStateCache(GraphicsContext context)
+		{
+			if (context == null) throw new ArgumentNullException(nameof(context));
+			context.AppliedRenderState = null;
+		}
 
 		public static RenderState CreateDefaultRenderState()
 		{
@@ -28,7 +51,7 @@ namespace FishGfx.Graphics
 
 			State.StencilFunc(StencilFunction.Skip, 0, 0);
 			State.StencilOp(StencilOperation.Skip, StencilOperation.Skip, StencilOperation.Skip);
-			//State.StencilMask = 0xFF;
+			State.StencilWriteMask(uint.MaxValue);
 
 			State.EnableScissorTest = false;
 			State.EnableStencilTest = false;
@@ -56,8 +79,9 @@ namespace FishGfx.Graphics
 
 		public static void PushRenderState(RenderState State)
 		{
-			RenderStates.Push(State);
+			ValidateRenderState(State);
 			SetRenderState(State);
+			RenderStates.Push(State);
 		}
 
 		public static RenderState PeekRenderState()
@@ -67,6 +91,10 @@ namespace FishGfx.Graphics
 
 		public static RenderState PopRenderState()
 		{
+			if (GetRenderStateCount() == 0)
+				throw new InvalidOperationException("There is no render state to pop.");
+			if (GraphicsContext.CurrentOrNull != null && GetRenderStateCount() == 1)
+				throw new InvalidOperationException("The graphics context's base render state cannot be popped.");
 			RenderState State = RenderStates.Pop();
 
 			if (GetRenderStateCount() > 0)
@@ -75,91 +103,86 @@ namespace FishGfx.Graphics
 			return State;
 		}
 
-		// TODO: Cache state and only do delta-enable
-		static void SetRenderState(RenderState State)
+		static void SetRenderState(RenderState state)
 		{
-			if (GlEnable(EnableCap.CullFace, State.EnableCullFace))
-				Internal_OpenGL.GL.CullFace((TriangleFace)State.CullFace);
+			GraphicsContext context = GraphicsContext.CurrentOrNull;
+			RenderState? previousValue = context?.AppliedRenderState;
+			RenderState previous = previousValue.GetValueOrDefault();
+			bool first = !previousValue.HasValue;
 
-			Internal_OpenGL.GL.DepthMask(State.EnableDepthMask);
-			Internal_OpenGL.GL.ColorMask(
-				State.EnableColorMaskR,
-				State.EnableColorMaskG,
-				State.EnableColorMaskB,
-				State.EnableColorMaskA
-			);
+			if (first || previous.EnableCullFace != state.EnableCullFace)
+				GlEnable(EnableCap.CullFace, state.EnableCullFace);
+			if (state.EnableCullFace && (first || !previous.EnableCullFace || previous.CullFace != state.CullFace))
+				Internal_OpenGL.GL.CullFace((TriangleFace)state.CullFace);
 
-			if (GlEnable(EnableCap.DepthTest, State.EnableDepthTest))
-				Internal_OpenGL.GL.DepthFunc((DepthFunction)State.DepthFunc);
+			if (first || previous.EnableDepthMask != state.EnableDepthMask)
+				Internal_OpenGL.GL.DepthMask(state.EnableDepthMask);
+			if (first || previous.EnableColorMaskR != state.EnableColorMaskR || previous.EnableColorMaskG != state.EnableColorMaskG || previous.EnableColorMaskB != state.EnableColorMaskB || previous.EnableColorMaskA != state.EnableColorMaskA)
+				Internal_OpenGL.GL.ColorMask(state.EnableColorMaskR, state.EnableColorMaskG, state.EnableColorMaskB, state.EnableColorMaskA);
 
-			Internal_OpenGL.GL.FrontFace((FrontFaceDirection)State.FrontFace);
+			if (first || previous.EnableDepthTest != state.EnableDepthTest)
+				GlEnable(EnableCap.DepthTest, state.EnableDepthTest);
+			if (state.EnableDepthTest && (first || !previous.EnableDepthTest || previous.DepthFunc != state.DepthFunc))
+				Internal_OpenGL.GL.DepthFunc((DepthFunction)state.DepthFunc);
+			if (first || previous.FrontFace != state.FrontFace)
+				Internal_OpenGL.GL.FrontFace((FrontFaceDirection)state.FrontFace);
 
-			if (GlEnable(EnableCap.ScissorTest, State.EnableScissorTest))
+			if (first || previous.EnableScissorTest != state.EnableScissorTest)
+				GlEnable(EnableCap.ScissorTest, state.EnableScissorTest);
+			if (state.EnableScissorTest && (first || !previous.EnableScissorTest || previous.ScissorRegion.Position != state.ScissorRegion.Position || previous.ScissorRegion.Size != state.ScissorRegion.Size))
 			{
-				AABB Reg = State.ScissorRegion;
-				Internal_OpenGL.GL.Scissor(
-					(int)Reg.Position.X,
-					(int)Reg.Position.Y,
-					(uint)Reg.Size.X,
-					(uint)Reg.Size.Y
-				);
+				AABB region = state.ScissorRegion;
+				if (region.Size.X < 0 || region.Size.Y < 0)
+					throw new ArgumentOutOfRangeException(nameof(state), "Scissor dimensions cannot be negative.");
+				Internal_OpenGL.GL.Scissor((int)region.Position.X, (int)region.Position.Y, (uint)region.Size.X, (uint)region.Size.Y);
 			}
 
-			if (GlEnable(EnableCap.StencilTest, State.EnableStencilTest))
+			if (first || previous.EnableStencilTest != state.EnableStencilTest)
+				GlEnable(EnableCap.StencilTest, state.EnableStencilTest);
+			if (state.EnableStencilTest)
 			{
-				//Internal_OpenGL.GL.StencilMask(State.StencilMask);
-
-				if (State.StencilBackFunction != StencilFunction.Skip)
-					Internal_OpenGL.GL.StencilFuncSeparate(
-						TriangleFace.Back,
-						(GLEnum)State.StencilBackFunction,
-						State.StencilBackReference,
-						State.StencilBackMask
-					);
-
-				if (State.StencilFrontFunction != StencilFunction.Skip)
-					Internal_OpenGL.GL.StencilFuncSeparate(
-						TriangleFace.Front,
-						(GLEnum)State.StencilFrontFunction,
-						State.StencilFrontReference,
-						State.StencilFrontMask
-					);
-
-				if (
-					!(
-						State.StencilBackSFail == StencilOperation.Skip
-						|| State.StencilBackDPFail == StencilOperation.Skip
-						|| State.StencilBackDPPass == StencilOperation.Skip
-					)
-				)
-					Internal_OpenGL.GL.StencilOpSeparate(
-						TriangleFace.Back,
-						(GLEnum)State.StencilBackSFail,
-						(GLEnum)State.StencilBackDPFail,
-						(GLEnum)State.StencilBackDPPass
-					);
-
-				if (
-					!(
-						State.StencilFrontSFail == StencilOperation.Skip
-						|| State.StencilFrontDPFail == StencilOperation.Skip
-						|| State.StencilFrontDPPass == StencilOperation.Skip
-					)
-				)
-					Internal_OpenGL.GL.StencilOpSeparate(
-						TriangleFace.Front,
-						(GLEnum)State.StencilFrontSFail,
-						(GLEnum)State.StencilFrontDPFail,
-						(GLEnum)State.StencilFrontDPPass
-					);
+				if (first || !previous.EnableStencilTest || previous.StencilFrontWriteMask != state.StencilFrontWriteMask)
+					Internal_OpenGL.GL.StencilMaskSeparate(TriangleFace.Front, state.StencilFrontWriteMask);
+				if (first || !previous.EnableStencilTest || previous.StencilBackWriteMask != state.StencilBackWriteMask)
+					Internal_OpenGL.GL.StencilMaskSeparate(TriangleFace.Back, state.StencilBackWriteMask);
+				if (state.StencilFrontFunction != StencilFunction.Skip && (first || previous.StencilFrontFunction != state.StencilFrontFunction || previous.StencilFrontReference != state.StencilFrontReference || previous.StencilFrontMask != state.StencilFrontMask))
+					Internal_OpenGL.GL.StencilFuncSeparate(TriangleFace.Front, (GLEnum)state.StencilFrontFunction, state.StencilFrontReference, state.StencilFrontMask);
+				if (state.StencilBackFunction != StencilFunction.Skip && (first || previous.StencilBackFunction != state.StencilBackFunction || previous.StencilBackReference != state.StencilBackReference || previous.StencilBackMask != state.StencilBackMask))
+					Internal_OpenGL.GL.StencilFuncSeparate(TriangleFace.Back, (GLEnum)state.StencilBackFunction, state.StencilBackReference, state.StencilBackMask);
+				if (state.StencilFrontSFail != StencilOperation.Skip && state.StencilFrontDPFail != StencilOperation.Skip && state.StencilFrontDPPass != StencilOperation.Skip && (first || previous.StencilFrontSFail != state.StencilFrontSFail || previous.StencilFrontDPFail != state.StencilFrontDPFail || previous.StencilFrontDPPass != state.StencilFrontDPPass))
+					Internal_OpenGL.GL.StencilOpSeparate(TriangleFace.Front, (GLEnum)state.StencilFrontSFail, (GLEnum)state.StencilFrontDPFail, (GLEnum)state.StencilFrontDPPass);
+				if (state.StencilBackSFail != StencilOperation.Skip && state.StencilBackDPFail != StencilOperation.Skip && state.StencilBackDPPass != StencilOperation.Skip && (first || previous.StencilBackSFail != state.StencilBackSFail || previous.StencilBackDPFail != state.StencilBackDPFail || previous.StencilBackDPPass != state.StencilBackDPPass))
+					Internal_OpenGL.GL.StencilOpSeparate(TriangleFace.Back, (GLEnum)state.StencilBackSFail, (GLEnum)state.StencilBackDPFail, (GLEnum)state.StencilBackDPPass);
 			}
 
-			if (GlEnable(EnableCap.Blend, State.EnableBlend))
-				Internal_OpenGL.GL.BlendFunc((BlendingFactor)State.BlendFunc_Src, (BlendingFactor)State.BlendFunc_Dst);
+			if (first || previous.EnableBlend != state.EnableBlend)
+				GlEnable(EnableCap.Blend, state.EnableBlend);
+			if (state.EnableBlend && (first || !previous.EnableBlend || previous.BlendFunc_Src != state.BlendFunc_Src || previous.BlendFunc_Dst != state.BlendFunc_Dst))
+				Internal_OpenGL.GL.BlendFunc((BlendingFactor)state.BlendFunc_Src, (BlendingFactor)state.BlendFunc_Dst);
+			if (first || previous.PointSize != state.PointSize)
+				Internal_OpenGL.GL.PointSize(state.PointSize);
+			if (first || previous.EnableDepthClamp != state.EnableDepthClamp)
+				GlEnable((EnableCap)0x864F, state.EnableDepthClamp);
 
-			Internal_OpenGL.GL.PointSize(State.PointSize);
+			if (context != null)
+				context.AppliedRenderState = state;
+		}
 
-			GlEnable((EnableCap)0x864F, State.EnableDepthClamp);
+		static void ValidateRenderState(RenderState state)
+		{
+			if (!float.IsFinite(state.PointSize) || state.PointSize <= 0)
+				throw new ArgumentOutOfRangeException(nameof(state), "Point size must be finite and positive.");
+			if (!Enum.IsDefined(state.FrontFace) || (state.EnableCullFace && !Enum.IsDefined(state.CullFace)) ||
+				(state.EnableDepthTest && !Enum.IsDefined(state.DepthFunc)) ||
+				(state.EnableBlend && (!Enum.IsDefined(state.BlendFunc_Src) || !Enum.IsDefined(state.BlendFunc_Dst))))
+				throw new ArgumentOutOfRangeException(nameof(state), "The render state contains an unknown enum value.");
+			if (state.EnableScissorTest)
+			{
+				AABB region = state.ScissorRegion;
+				if (!float.IsFinite(region.Position.X) || !float.IsFinite(region.Position.Y) ||
+					!float.IsFinite(region.Size.X) || !float.IsFinite(region.Size.Y) || region.Size.X < 0 || region.Size.Y < 0)
+					throw new ArgumentOutOfRangeException(nameof(state), "Scissor coordinates must be finite and dimensions cannot be negative.");
+			}
 		}
 
 		static bool GlEnable(EnableCap Cap, bool Enable)
@@ -181,25 +204,23 @@ namespace FishGfx.Graphics
 		//////////////////////////////////////////////////// Generic ///////////////////////////////////////////////////////////////
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		static Texture WhiteTex;
+		static Texture WhiteTex { get => ImmediateResources.WhiteTexture; set => ImmediateResources.WhiteTexture = value; }
 
 		static void InitGeneric()
 		{
 			if (WhiteTex == null)
 			{
-				using (System.Drawing.Bitmap Bmp = new System.Drawing.Bitmap(1, 1))
-				{
-					Bmp.SetPixel(0, 0, Color.White);
-					WhiteTex = Texture.FromImage(Bmp);
-				}
+				WhiteTex = GraphicsContext.Current.CreateTexture(new TextureDescriptor(1, 1));
+				WhiteTex.Write(new Color[] { Color.White }, TextureDataFormat.RGBA8Unorm);
 			}
 		}
 
-		public static void Clear(Color ClearColor, bool Color, bool Depth, bool Stencil)
-		{
-			if (!(Color || Depth || Stencil))
-				return;
+		public static void Clear(Color ClearColor, bool Color, bool Depth, bool Stencil) =>
+			Clear(ClearColor, Color, Depth, Stencil, 1, 0);
 
+		public static void Clear(Color ClearColor, bool Color, bool Depth, bool Stencil, float DepthValue, int StencilValue)
+		{
+			ClearBufferMask mask = 0;
 			if (Color)
 			{
 				Internal_OpenGL.GL.ClearColor(
@@ -208,14 +229,20 @@ namespace FishGfx.Graphics
 					ClearColor.B / 255.0f,
 					ClearColor.A / 255.0f
 				);
-				Internal_OpenGL.GL.Clear(ClearBufferMask.ColorBufferBit);
+				mask |= ClearBufferMask.ColorBufferBit;
 			}
-
 			if (Depth)
-				ClearDepth();
-
+			{
+				Internal_OpenGL.GL.ClearDepth(DepthValue);
+				mask |= ClearBufferMask.DepthBufferBit;
+			}
 			if (Stencil)
-				ClearStencil();
+			{
+				Internal_OpenGL.GL.ClearStencil(StencilValue);
+				mask |= ClearBufferMask.StencilBufferBit;
+			}
+			if (mask != 0)
+				Internal_OpenGL.GL.Clear(mask);
 		}
 
 		public static void Clear()
@@ -244,11 +271,11 @@ namespace FishGfx.Graphics
 		//////////////////////////////////////////////////// 3D  3D  3D ////////////////////////////////////////////////////////////
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		public static ShaderProgram Line3D;
-		public static ShaderProgram Point3D;
-		public static ShaderProgram Default3D;
+		public static ShaderProgram Line3D { get => ImmediateResources.Line3D; set => ImmediateResources.Line3D = value; }
+		public static ShaderProgram Point3D { get => ImmediateResources.Point3D; set => ImmediateResources.Point3D = value; }
+		public static ShaderProgram Default3D { get => ImmediateResources.Default3D; set => ImmediateResources.Default3D = value; }
 
-		static Mesh3D Mesh3D;
+		static Mesh3D Mesh3D { get => ImmediateResources.Mesh3D; set => ImmediateResources.Mesh3D = value; }
 
 		static void Init3D(PrimitiveType Primitive)
 		{
@@ -264,7 +291,7 @@ namespace FishGfx.Graphics
 				throw new Exception(nameof(Default3D) + " shader not assigned");
 
 			if (Mesh3D == null)
-				Mesh3D = new Mesh3D(BufferUsage.DynamicDraw);
+				Mesh3D = new Mesh3D(BufferUsage.Dynamic);
 
 			Mesh3D.PrimitiveType = Primitive;
 		}
@@ -276,8 +303,8 @@ namespace FishGfx.Graphics
 
 			Point3D.Uniform1f("Thickness", Thickness);
 			Point3D.Bind();
-			Mesh3D.Draw();
-			Point3D.Unbind();
+			try { Mesh3D.Draw(); }
+			finally { Point3D.Unbind(); }
 		}
 
 		public static void Point(Vertex3 Position, float Thickness)
@@ -291,8 +318,8 @@ namespace FishGfx.Graphics
 			Mesh3D.SetVertices(Positions);
 
 			Default3D.Bind();
-			Mesh3D.Draw();
-			Default3D.Unbind();
+			try { Mesh3D.Draw(); }
+			finally { Default3D.Unbind(); }
 		}
 
 		public static void Point(Vertex3 Position)
@@ -307,20 +334,20 @@ namespace FishGfx.Graphics
 
 			Line3D.Uniform1f("Thickness", Thickness);
 			Line3D.Bind();
-			Mesh3D.Draw();
-			Line3D.Unbind();
+			try { Mesh3D.Draw(); }
+			finally { Line3D.Unbind(); }
 		}
 
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//////////////////////////////////////////////////// 2D  2D  2D ////////////////////////////////////////////////////////////
 		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		static ShaderProgram Line2D;
-		static ShaderProgram Point2D;
-		static ShaderProgram Default2D;
-		static ShaderProgram SdfText2D;
+		static ShaderProgram Line2D { get => ImmediateResources.Line2D; set => ImmediateResources.Line2D = value; }
+		static ShaderProgram Point2D { get => ImmediateResources.Point2D; set => ImmediateResources.Point2D = value; }
+		static ShaderProgram Default2D { get => ImmediateResources.Default2D; set => ImmediateResources.Default2D = value; }
+		static ShaderProgram SdfText2D { get => ImmediateResources.SdfText2D; set => ImmediateResources.SdfText2D = value; }
 
-		static Mesh2D Mesh2D;
+		static Mesh2D Mesh2D { get => ImmediateResources.Mesh2D; set => ImmediateResources.Mesh2D = value; }
 
 		public static string ShadersDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
 
@@ -363,7 +390,7 @@ namespace FishGfx.Graphics
 			}
 
 			if (Mesh2D == null)
-				Mesh2D = new Mesh2D(BufferUsage.StreamDraw);
+				Mesh2D = new Mesh2D(BufferUsage.Stream);
 
 			Mesh2D.PrimitiveType = Primitive;
 		}
@@ -387,8 +414,8 @@ namespace FishGfx.Graphics
 
 			Point2D.Uniform1f("Thickness", Thickness);
 			Point2D.Bind(ShaderUniforms.Current);
-			Mesh2D.Draw();
-			Point2D.Unbind();
+			try { Mesh2D.Draw(); }
+			finally { Point2D.Unbind(); }
 		}
 
 		public static void Point(Vertex2 Position, float Thickness)
@@ -402,10 +429,13 @@ namespace FishGfx.Graphics
 			Mesh2D.SetVertices(Positions);
 
 			Start2D();
-			Default2D.Bind(ShaderUniforms.Current);
-			Mesh2D.Draw();
-			Default2D.Unbind();
-			End2D();
+			try
+			{
+				Default2D.Bind(ShaderUniforms.Current);
+				try { Mesh2D.Draw(); }
+				finally { Default2D.Unbind(); }
+			}
+			finally { End2D(); }
 		}
 
 		public static void Point(Vertex2 Position)
@@ -419,11 +449,14 @@ namespace FishGfx.Graphics
 			Mesh2D.SetVertices(Start, End);
 
 			Start2D();
-			Line2D.Uniform1f("Thickness", Thickness);
-			Line2D.Bind(ShaderUniforms.Current);
-			Mesh2D.Draw();
-			Line2D.Unbind();
-			End2D();
+			try
+			{
+				Line2D.Uniform1f("Thickness", Thickness);
+				Line2D.Bind(ShaderUniforms.Current);
+				try { Mesh2D.Draw(); }
+				finally { Line2D.Unbind(); }
+			}
+			finally { End2D(); }
 		}
 
 		public static void LineStrip(Vertex2[] Points, float Thickness = 1)
@@ -432,11 +465,14 @@ namespace FishGfx.Graphics
 			Mesh2D.SetVertices(Points);
 
 			Start2D();
-			Line2D.Uniform1f("Thickness", Thickness);
-			Line2D.Bind(ShaderUniforms.Current);
-			Mesh2D.Draw();
-			Line2D.Unbind();
-			End2D();
+			try
+			{
+				Line2D.Uniform1f("Thickness", Thickness);
+				Line2D.Bind(ShaderUniforms.Current);
+				try { Mesh2D.Draw(); }
+				finally { Line2D.Unbind(); }
+			}
+			finally { End2D(); }
 		}
 
 		static Vertex2[] EmitRectangleTris(
@@ -510,22 +546,19 @@ namespace FishGfx.Graphics
 			Init2D(PrimitiveType.Triangles);
 			Mesh2D.SetVertices(vertices);
 			Start2D();
-			texture?.BindTextureUnit();
-
-			if (shader != null)
-				shader.Bind(ShaderUniforms.Current);
-			else
-				Default2D.Bind(ShaderUniforms.Current);
-
-			Mesh2D.Draw();
-
-			if (shader != null)
-				shader.Unbind();
-			else
-				Default2D.Unbind();
-
-			texture?.UnbindTextureUnit();
-			End2D();
+			try
+			{
+				texture?.BindTextureUnit();
+				try
+				{
+					ShaderProgram selectedShader = shader ?? Default2D;
+					selectedShader.Bind(ShaderUniforms.Current);
+					try { Mesh2D.Draw(); }
+					finally { selectedShader.Unbind(); }
+				}
+				finally { texture?.UnbindTextureUnit(); }
+			}
+			finally { End2D(); }
 		}
 
 		public static void NinePatch(
@@ -712,12 +745,18 @@ namespace FishGfx.Graphics
 			Init2D(PrimitiveType.Triangles);
 			Mesh2D.SetVertices(ColorVertices(positions, color));
 			Start2D();
-			WhiteTex.BindTextureUnit();
-			Default2D.Bind(ShaderUniforms.Current);
-			Mesh2D.Draw();
-			Default2D.Unbind();
-			WhiteTex.UnbindTextureUnit();
-			End2D();
+			try
+			{
+				WhiteTex.BindTextureUnit();
+				try
+				{
+					Default2D.Bind(ShaderUniforms.Current);
+					try { Mesh2D.Draw(); }
+					finally { Default2D.Unbind(); }
+				}
+				finally { WhiteTex.UnbindTextureUnit(); }
+			}
+			finally { End2D(); }
 		}
 
 		public static void Circle(
@@ -961,12 +1000,18 @@ namespace FishGfx.Graphics
 				Mesh2D.SetVertices(TextVertices);
 
 				Start2D();
-				AtlasTex.BindTextureUnit();
-				TextShader.Bind(ShaderUniforms.Current);
-				Mesh2D.Draw();
-				TextShader.Unbind();
-				AtlasTex.UnbindTextureUnit();
-				End2D();
+				try
+				{
+					AtlasTex.BindTextureUnit();
+					try
+					{
+						TextShader.Bind(ShaderUniforms.Current);
+						try { Mesh2D.Draw(); }
+						finally { TextShader.Unbind(); }
+					}
+					finally { AtlasTex.UnbindTextureUnit(); }
+				}
+				finally { End2D(); }
 
 				if (DebugDraw)
 				{

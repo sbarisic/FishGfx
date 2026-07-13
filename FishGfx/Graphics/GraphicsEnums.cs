@@ -1,12 +1,5 @@
 namespace FishGfx.Graphics
 {
-	public enum TextureKind : int
-	{
-		Texture2D = 0x0DE1,
-		Texture2DMultisample = 0x9100,
-		TextureCubeMap = 0x8513,
-	}
-
 	public enum IndexElementType : int
 	{
 		UnsignedByte = 0x1401,
