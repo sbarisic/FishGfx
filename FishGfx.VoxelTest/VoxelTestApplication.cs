@@ -146,6 +146,7 @@ namespace FishGfx.VoxelTest
 						DepthLoadAction = RenderLoadAction.Clear,
 						StencilLoadAction = RenderLoadAction.Clear,
 						ClearColor = underwater ? UnderwaterClearColor : AirClearColor,
+						Time = (float)now,
 					});
 
 					if (!autoMode || (streamer.IsSettled && renderer.IsIdle))
@@ -258,11 +259,14 @@ namespace FishGfx.VoxelTest
 						&& autoValidationStage == 3
 						&& renderValidationReady
 						&& underwater
-						&& diagnostics.TransparentCacheHit
 					)
 					{
 						if (statistics.GpuChunks != autoGpuChunkCount)
 							throw new InvalidOperationException("A stationary underwater frame unexpectedly changed GPU chunk meshes.");
+						if (!diagnostics.TransparentCacheHit || diagnostics.TransparentUploadBytes != 0)
+							throw new InvalidOperationException(
+								"Advancing shader time unexpectedly rebuilt or uploaded transparent geometry."
+							);
 
 						underwaterValidated = true;
 						window.ShouldClose = true;

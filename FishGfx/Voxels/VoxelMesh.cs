@@ -38,6 +38,8 @@ namespace FishGfx.Voxels
 			vertexArray.AttribBinding(2, binding);
 			vertexArray.AttribFormat(3, 3, RelativeOffset: 24);
 			vertexArray.AttribBinding(3, binding);
+			vertexArray.AttribFormat(4, 4, RelativeOffset: 36);
+			vertexArray.AttribBinding(4, binding);
 		}
 
 		public BufferUsage Usage { get; }

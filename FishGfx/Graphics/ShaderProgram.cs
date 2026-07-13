@@ -69,6 +69,7 @@ namespace FishGfx.Graphics
 		public Camera Camera;
 		public Matrix4 Model;
 		public float AlphaTest;
+		public float Time;
 
 		public Vector2 Resolution;
 		public Vector2 TextureSize;
@@ -100,6 +101,7 @@ namespace FishGfx.Graphics
 			Shader.UniformMatrix4f("Model", Model);
 			Shader.Uniform2f("Viewport", viewport);
 			Shader.Uniform1f("AlphaTest", AlphaTest);
+			Shader.Uniform1f("Time", Time);
 			Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
 			Shader.Uniform2f("TextureSize", TextureSize);
 			Shader.Uniform2f("Resolution", Resolution);

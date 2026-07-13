@@ -123,6 +123,8 @@ namespace FishGfx.Graphics
 
 	public sealed class RenderPassDescriptor
 	{
+		private float time;
+
 		public RenderView View { get; set; }
 		public RenderState State { get; set; } = Gfx.CreateDefaultRenderState();
 		public RenderLoadAction ColorLoadAction { get; set; } = RenderLoadAction.Load;
@@ -133,6 +135,16 @@ namespace FishGfx.Graphics
 		public int ClearStencil { get; set; }
 		public Vector2 TextureSize { get; set; }
 		public float AlphaTest { get; set; }
+		public float Time
+		{
+			get => time;
+			set
+			{
+				if (!float.IsFinite(value))
+					throw new ArgumentOutOfRangeException(nameof(Time));
+				time = value;
+			}
+		}
 		public int MultisampleCount { get; set; }
 	}
 
@@ -450,6 +462,9 @@ namespace FishGfx.Graphics
 
 		internal RenderPass(GraphicsFrame frame, GraphicsContext context, RenderTarget target, RenderPassDescriptor descriptor)
 		{
+			if (!float.IsFinite(descriptor.Time))
+				throw new ArgumentOutOfRangeException(nameof(descriptor), "Render-pass time must be finite.");
+
 			this.frame = frame;
 			this.context = context;
 			this.target = target;
@@ -457,6 +472,7 @@ namespace FishGfx.Graphics
 			uniforms.SetRenderView(descriptor.View);
 			uniforms.TextureSize = descriptor.TextureSize;
 			uniforms.AlphaTest = descriptor.AlphaTest;
+			uniforms.Time = descriptor.Time;
 			uniforms.MultisampleCount = descriptor.MultisampleCount;
 
 			bool targetBound = false;

@@ -207,11 +207,32 @@ pass.Execute(queue, RenderBucket.Transparent, RenderSubmissionComparers.Transpar
 
 The renderer owns its worker scheduler, shaders, per-chunk GPU meshes, and global transparent stream. The application retains ownership of the atlas texture and must keep it alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted separately. Transparent faces are gathered across all visible chunks, stably sorted back-to-front in camera space, and uploaded as one world-space stream. Face occlusion, per-face atlas tiles, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
 
+Transparent cube materials can opt into GPU surface animation with `VoxelWaveSettings`. Amplitude is measured around a surface lowered by the same amount, so the original block top remains the crest: an amplitude of `0.1f` ranges from the original height to 0.2 units below it. Top faces and exposed upper side rims move together while bottoms and buried joins remain fixed. Wavelength is expressed in world units and speed in cycles per second. Supply elapsed seconds through `RenderPassDescriptor.Time`; changing time animates the shader without rebuilding or uploading voxel geometry.
+
+```csharp
+VoxelMaterial water = new VoxelMaterial(
+	"Water",
+	VoxelRenderMode.Transparent,
+	new VoxelFaceTiles(10),
+	occludesFaces: false,
+	doubleSided: true,
+	wave: new VoxelWaveSettings(amplitude: 0.1f, wavelength: 6, speed: 0.2f)
+);
+
+RenderPassDescriptor descriptor = new RenderPassDescriptor
+{
+	View = new RenderView(camera),
+	Time = (float)timer.Elapsed.TotalSeconds,
+};
+```
+
+Wave settings are intentionally limited to transparent materials using standard cube geometry. Other transparent materials keep zero wave influence and remain stationary in the same globally sorted transparent draw.
+
 `VoxelRenderer.Fog` accepts immutable `VoxelFogSettings` for reusable distance fog and lighting attenuation without recreating voxel meshes. Applications decide which materials are liquid and switch fog as the camera enters or leaves them. The validation app detects its water material, applies blue-green exponential fog and reduced lighting, changes the clear color, and draws a subtle tint below its unaffected HUD.
 
 `VoxelRaycast.Cast` performs bounded voxel-grid traversal and `VoxelMediumQuery` identifies the material containing a world position. `FishGfx.VoxelTest` demonstrates the complete RaylibGame visual block catalog using a copied, attributed asset snapshot: exact cube tiles, per-face grass/wood/crafting mappings, transparent materials, barrel/campfire/torch models, and deterministic foliage variants. The runtime compatibility texture uses RaylibGame's native 512², 16×16 tile layout and packs padded custom-model sheets into otherwise unused atlas rows; see `FishGfx/data/textures/voxels/raylibgame/PROVENANCE.md` and its bundled MIT license.
 
-The test world streams a seven-chunk radius in a deterministic 1280×1280 terrain and preserves edits across unloading. Left click destroys, right click places the selected material, the wheel cycles all materials, and 1–9 select the visible hotbar slots. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode is:
+The test world streams a seven-chunk radius in a deterministic 1280×1280 terrain, includes every vertical chunk needed by deep lake surfaces, and preserves edits across unloading. Left click destroys, right click places the selected material, the wheel cycles all materials, and 1–9 select the visible hotbar slots. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode is:
 
 ```powershell
 dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -- --auto -debug

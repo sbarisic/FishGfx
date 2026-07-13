@@ -143,7 +143,9 @@ namespace FishGfx.Voxels
 		private readonly ConcurrentQueue<ChunkCoordinate> removedChunks = new ConcurrentQueue<ChunkCoordinate>();
 		private readonly VoxelMesh transparentMesh;
 		private readonly ShaderProgram voxelShader;
+		private readonly ShaderProgram waveShader;
 		private readonly ShaderStage vertexShader;
+		private readonly ShaderStage waveVertexShader;
 		private readonly ShaderStage fragmentShader;
 		private GraphicsCommandBatch transparentBatch;
 		private readonly DrawVoxelPassCommand opaquePassCommand;
@@ -205,8 +207,13 @@ namespace FishGfx.Voxels
 
 			string shaderDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
 			vertexShader = new ShaderStage(ShaderType.VertexShader, Path.Combine(shaderDirectory, "voxel.vert"));
+			waveVertexShader = new ShaderStage(
+				ShaderType.VertexShader,
+				Path.Combine(shaderDirectory, "voxel_wave.vert")
+			);
 			fragmentShader = new ShaderStage(ShaderType.FragmentShader, Path.Combine(shaderDirectory, "voxel.frag"));
 			voxelShader = new ShaderProgram(vertexShader, fragmentShader);
+			waveShader = new ShaderProgram(waveVertexShader, fragmentShader);
 			transparentMesh = new VoxelMesh(BufferUsage.Stream);
 
 			opaqueState = CreateState(transparent: false);
@@ -229,7 +236,7 @@ namespace FishGfx.Voxels
 			);
 			opaquePassBatch = new GraphicsCommandBatch(new GraphicsCommand[] { opaquePassCommand });
 			cutoutPassBatch = new GraphicsCommandBatch(new GraphicsCommand[] { cutoutPassCommand });
-			transparentBatch = CreateBatch(transparentMesh, transparentState, alphaCutoff: -1);
+			transparentBatch = CreateBatch(transparentMesh, transparentState, waveShader, alphaCutoff: -1);
 		}
 
 		public bool IsIdle => scheduler.PendingCount == 0;
@@ -257,7 +264,7 @@ namespace FishGfx.Voxels
 				fog = value;
 				opaquePassCommand.Fog = value;
 				cutoutPassCommand.Fog = value;
-				transparentBatch = CreateBatch(transparentMesh, transparentState, alphaCutoff: -1);
+				transparentBatch = CreateBatch(transparentMesh, transparentState, waveShader, alphaCutoff: -1);
 			}
 		}
 
@@ -435,7 +442,7 @@ namespace FishGfx.Voxels
 
 			if (transparentMesh.VertexCount > 0)
 			{
-				queue.SubmitTransparent(transparentBatch, Matrix4x4.Identity, camera.Position, sortKey: voxelShader.ID, tag: this);
+				queue.SubmitTransparent(transparentBatch, Matrix4x4.Identity, camera.Position, sortKey: waveShader.ID, tag: this);
 				passSubmissions++;
 			}
 
@@ -469,7 +476,9 @@ namespace FishGfx.Voxels
 			gpuChunks.Clear();
 			orderedGpuChunks.Clear();
 			transparentMesh.Dispose();
+			waveShader.Dispose();
 			voxelShader.Dispose();
+			waveVertexShader.Dispose();
 			vertexShader.Dispose();
 			fragmentShader.Dispose();
 		}
@@ -515,7 +524,12 @@ namespace FishGfx.Voxels
 			mesh?.Update(vertices);
 		}
 
-		private GraphicsCommandBatch CreateBatch(VoxelMesh mesh, RenderState state, float alphaCutoff)
+		private GraphicsCommandBatch CreateBatch(
+			VoxelMesh mesh,
+			RenderState state,
+			ShaderProgram shader,
+			float alphaCutoff
+		)
 		{
 			return new GraphicsCommandBatch(
 				new GraphicsCommand[]
@@ -524,7 +538,7 @@ namespace FishGfx.Voxels
 					new DrawVoxelMeshCommand(
 						mesh,
 						atlasTexture,
-						voxelShader,
+						shader,
 						options.LightDirection,
 						options.AmbientLight,
 						alphaCutoff,

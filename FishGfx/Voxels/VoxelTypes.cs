@@ -151,11 +151,13 @@ namespace FishGfx.Voxels
 			Color = color;
 			UV = uv;
 			Normal = normal;
+			Wave = Vector4.Zero;
 		}
 
 		public Vector3 Position;
 		public Color Color;
 		public Vector2 UV;
 		public Vector3 Normal;
+		internal Vector4 Wave;
 	}
 }

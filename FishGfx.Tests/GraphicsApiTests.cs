@@ -28,6 +28,7 @@ public class GraphicsApiTests
 	{
 		RenderPassDescriptor descriptor = new();
 
+		Assert.Equal(0, descriptor.Time);
 		Assert.Equal(uint.MaxValue, descriptor.State.StencilFrontWriteMask);
 		Assert.Equal(uint.MaxValue, descriptor.State.StencilBackWriteMask);
 
@@ -37,6 +38,16 @@ public class GraphicsApiTests
 
 		Assert.Equal(0x0fu, state.StencilFrontWriteMask);
 		Assert.Equal(0xf0u, state.StencilBackWriteMask);
+	}
+
+	[Fact]
+	public void RenderPassDescriptorCarriesShaderTimeInSeconds()
+	{
+		RenderPassDescriptor descriptor = new() { Time = 12.5f };
+
+		Assert.Equal(12.5f, descriptor.Time);
+		Assert.Throws<ArgumentOutOfRangeException>(() => descriptor.Time = float.NaN);
+		Assert.Throws<ArgumentOutOfRangeException>(() => descriptor.Time = float.PositiveInfinity);
 	}
 
 	[Fact]

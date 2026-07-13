@@ -39,6 +39,7 @@ No open defects are currently recorded here. This does not imply that the projec
 | BUG-027 | High | Validate framebuffer attachment dimensions, exact sample counts, usage/format families, and allocated renderbuffer storage. | Debug framebuffer completeness checks and OpenGL 4.0/4.6 gallery validation. |
 | BUG-028 | Medium | Make disposal idempotent across finalizer/explicit races and add deterministic mesh ownership to retained drawables. | Unit suite, context shutdown, and all automated applications. |
 | BUG-029 | Medium | Clone loader pixels without GDI+ resampling and make `FlipY` semantics explicit while preserving the default OpenGL orientation. | Exact atlas pixel tests, gallery validation, and API documentation. |
+| BUG-030 | High | Include lake surfaces when selecting streamed vertical chunk ranges so deep water volumes are generated completely. | `VerticalChunkRangesCoverEveryGeneratedWaterSurface` and automated underwater voxel validation. |
 
 ## Resolution notes
 
@@ -157,3 +158,7 @@ Explicit disposal and finalization could race through a plain Boolean flag, and 
 ### BUG-029: Image-loader pixel and orientation ambiguity
 
 Atlas extraction and image conversion could pass pixels through GDI+ drawing operations, which can alter exact channel values. Loading now clones exact 32-bit pixel regions. `TextureLoadOptions.FlipY` defaults to true and performs the named operation, preserving the previous bottom-left OpenGL default while making an explicit false value keep source row order.
+
+### BUG-030: Missing deep-water chunks
+
+The horizontal chunk streamer selected its vertical range from the highest terrain surface plus tree clearance. It did not consider the lake surface calculated by the priority-flood pass. In a wide, deep lake, an interior 16×16 column can lie more than one vertical chunk below the spill elevation, so its upper water chunks were never generated. Range selection now includes the highest water surface in every horizontal chunk while retaining terrain clearance for trees and validation geometry.

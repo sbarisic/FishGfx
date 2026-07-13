@@ -121,6 +121,58 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void WaveSettingsValidateAndRequireTransparentCubeMaterials()
+	{
+		VoxelWaveSettings wave = new(amplitude: 0.1f, wavelength: 6, speed: 0.2f);
+		VoxelMaterial water = new(
+			"Water",
+			VoxelRenderMode.Transparent,
+			new VoxelFaceTiles(0),
+			wave: wave
+		);
+
+		Assert.Equal(wave, water.Wave);
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelWaveSettings(float.NaN, 6, 0.2f));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelWaveSettings(-0.1f, 6, 0.2f));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelWaveSettings(0.1f, 0, 0.2f));
+		Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelWaveSettings(0.1f, 6, float.PositiveInfinity));
+		Assert.Throws<ArgumentException>(
+			() => new VoxelMaterial(
+				"Stone",
+				VoxelRenderMode.Opaque,
+				new VoxelFaceTiles(0),
+				wave: wave
+			)
+		);
+		Assert.Throws<ArgumentException>(
+			() => new VoxelMaterial(
+				"Default wave",
+				VoxelRenderMode.Transparent,
+				new VoxelFaceTiles(0),
+				wave: default(VoxelWaveSettings)
+			)
+		);
+
+		VoxelModel model = new(
+			new[]
+			{
+				new VoxelVertex(Vector3.Zero, Color.White, Vector2.Zero, Vector3.UnitY),
+				new VoxelVertex(Vector3.UnitX, Color.White, Vector2.UnitX, Vector3.UnitY),
+				new VoxelVertex(Vector3.UnitZ, Color.White, Vector2.UnitY, Vector3.UnitY),
+			}
+		);
+		Assert.Throws<ArgumentException>(
+			() => new VoxelMaterial(
+				"Model water",
+				VoxelRenderMode.Transparent,
+				new VoxelFaceTiles(0),
+				models: new VoxelModelSet(model),
+				wave: wave
+			)
+		);
+	}
+
+	[Fact]
 	public void IsolatedOpaqueCubeEmitsSixFaces()
 	{
 		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
@@ -174,6 +226,10 @@ public class VoxelTests
 		Assert.Equal(36, mesh.CutoutVertices.Length);
 		Assert.Equal(6, mesh.TransparentFaces.Length);
 		Assert.Equal(36, mesh.TransparentVertexCount);
+		Assert.All(
+			mesh.TransparentFaces.SelectMany(face => face.Vertices),
+			vertex => Assert.Equal(Vector4.Zero, vertex.Wave)
+		);
 	}
 
 	[Fact]
@@ -285,6 +341,87 @@ public class VoxelTests
 		Assert.Equal(10, mesh.TransparentFaces.Length);
 		Assert.Equal(120, mesh.TransparentVertexCount);
 		Assert.All(mesh.TransparentFaces, face => Assert.Equal(12, face.Vertices.Count));
+	}
+
+	[Fact]
+	public void WaterWavesAnimateTopAndSurfaceRimWithoutMovingBottom()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort water = builder.Add(
+			new VoxelMaterial(
+				"Water",
+				VoxelRenderMode.Transparent,
+				new VoxelFaceTiles(0),
+				doubleSided: true,
+				wave: new VoxelWaveSettings(0.1f, 6, 0.2f)
+			)
+		);
+		VoxelPalette palette = builder.Build();
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(water));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+		VoxelTransparentFace top = Assert.Single(
+			mesh.TransparentFaces,
+			face => face.Center == new Vector3(1.5f, 2, 1.5f)
+		);
+		VoxelTransparentFace bottom = Assert.Single(
+			mesh.TransparentFaces,
+			face => face.Center == new Vector3(1.5f, 1, 1.5f)
+		);
+
+		Assert.All(top.Vertices, vertex => AssertWave(vertex, 1));
+		Assert.All(bottom.Vertices, vertex => Assert.Equal(Vector4.Zero, vertex.Wave));
+
+		foreach (VoxelTransparentFace side in mesh.TransparentFaces.Where(face => face != top && face != bottom))
+		{
+			Assert.All(side.Vertices.Where(vertex => vertex.Position.Y == 2), vertex => AssertWave(vertex, 1));
+			Assert.All(side.Vertices.Where(vertex => vertex.Position.Y == 1), vertex => AssertWave(vertex, 0));
+		}
+	}
+
+	[Fact]
+	public void DeepWaterOnlyAnimatesTheExposedSurfaceRim()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort water = builder.Add(
+			new VoxelMaterial(
+				"Water",
+				VoxelRenderMode.Transparent,
+				new VoxelFaceTiles(0),
+				wave: new VoxelWaveSettings(0.1f, 6, 0.2f)
+			)
+		);
+		VoxelPalette palette = builder.Build();
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(water));
+		world.SetVoxel(1, 2, 1, new VoxelCell(water));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+		VoxelTransparentFace[] lowerSides = mesh.TransparentFaces
+			.Where(
+				face => face.Center.Y == 1.5f
+					&& (face.Center.X != 1.5f || face.Center.Z != 1.5f)
+			)
+			.ToArray();
+		VoxelTransparentFace[] upperSides = mesh.TransparentFaces
+			.Where(
+				face => face.Center.Y == 2.5f
+					&& (face.Center.X != 1.5f || face.Center.Z != 1.5f)
+			)
+			.ToArray();
+
+		Assert.Equal(4, lowerSides.Length);
+		Assert.Equal(4, upperSides.Length);
+		Assert.All(lowerSides.SelectMany(face => face.Vertices), vertex => Assert.Equal(Vector4.Zero, vertex.Wave));
+		Assert.All(
+			upperSides.SelectMany(face => face.Vertices).Where(vertex => vertex.Position.Y == 3),
+			vertex => AssertWave(vertex, 1)
+		);
+		Assert.All(
+			upperSides.SelectMany(face => face.Vertices).Where(vertex => vertex.Position.Y == 2),
+			vertex => AssertWave(vertex, 0)
+		);
 	}
 
 	[Fact]
@@ -702,7 +839,10 @@ public class VoxelTests
 	{
 		VoxelVertex[] nearVertices =
 		{
-			new VoxelVertex(new Vector3(1, 0, 0), Color.Red, Vector2.Zero, Vector3.UnitZ),
+			new VoxelVertex(new Vector3(1, 0, 0), Color.Red, Vector2.Zero, Vector3.UnitZ)
+			{
+				Wave = new Vector4(0.1f, 2, 3, 1),
+			},
 		};
 		VoxelVertex[] farVertices =
 		{
@@ -722,6 +862,7 @@ public class VoxelTests
 		Assert.Equal(new Vector3(22, 0, 0), stream[0].Position);
 		Assert.Equal(Color.Red, stream[1].Color);
 		Assert.Equal(new Vector3(11, 0, 0), stream[1].Position);
+		Assert.Equal(new Vector4(0.1f, 2, 3, 1), stream[1].Wave);
 	}
 
 	[Fact]
@@ -769,6 +910,14 @@ public class VoxelTests
 	public void VoxelBufferCapacityGrowsByPowersOfTwo(int current, int required, int expected)
 	{
 		Assert.Equal(expected, VoxelMesh.CalculateCapacity(current, required));
+	}
+
+	private static void AssertWave(VoxelVertex vertex, float influence)
+	{
+		Assert.Equal(0.1f, vertex.Wave.X, 6);
+		Assert.Equal(MathF.Tau / 6, vertex.Wave.Y, 6);
+		Assert.Equal(MathF.Tau * 0.2f, vertex.Wave.Z, 6);
+		Assert.Equal(influence, vertex.Wave.W);
 	}
 
 	private static (VoxelWorld World, VoxelPalette Palette, ushort Opaque, ushort Cutout, ushort Transparent)

@@ -4,6 +4,51 @@ using System.Collections.ObjectModel;
 
 namespace FishGfx.Voxels
 {
+	public readonly struct VoxelWaveSettings : IEquatable<VoxelWaveSettings>
+	{
+		public VoxelWaveSettings(float amplitude, float wavelength, float speed)
+		{
+			if (!float.IsFinite(amplitude) || amplitude < 0)
+				throw new ArgumentOutOfRangeException(nameof(amplitude));
+			if (!float.IsFinite(wavelength) || wavelength <= 0)
+				throw new ArgumentOutOfRangeException(nameof(wavelength));
+			if (!float.IsFinite(speed))
+				throw new ArgumentOutOfRangeException(nameof(speed));
+
+			Amplitude = amplitude;
+			Wavelength = wavelength;
+			Speed = speed;
+		}
+
+		public float Amplitude { get; }
+		public float Wavelength { get; }
+		public float Speed { get; }
+
+		public bool Equals(VoxelWaveSettings other)
+		{
+			return Amplitude == other.Amplitude
+				&& Wavelength == other.Wavelength
+				&& Speed == other.Speed;
+		}
+
+		public override bool Equals(object obj) => obj is VoxelWaveSettings other && Equals(other);
+		public override int GetHashCode() => HashCode.Combine(Amplitude, Wavelength, Speed);
+		public static bool operator ==(VoxelWaveSettings left, VoxelWaveSettings right) => left.Equals(right);
+		public static bool operator !=(VoxelWaveSettings left, VoxelWaveSettings right) => !left.Equals(right);
+
+		internal void Validate(string parameterName)
+		{
+			if (
+				!float.IsFinite(Amplitude)
+				|| Amplitude < 0
+				|| !float.IsFinite(Wavelength)
+				|| Wavelength <= 0
+				|| !float.IsFinite(Speed)
+			)
+				throw new ArgumentException("Voxel wave settings are invalid.", parameterName);
+		}
+	}
+
 	public sealed class VoxelMaterial
 	{
 		public VoxelMaterial(
@@ -13,11 +58,20 @@ namespace FishGfx.Voxels
 			Color? tint = null,
 			bool? occludesFaces = null,
 			bool doubleSided = false,
-			VoxelModelSet models = null
+			VoxelModelSet models = null,
+			VoxelWaveSettings? wave = null
 		)
 		{
 			if (string.IsNullOrWhiteSpace(name))
 				throw new ArgumentException("Voxel material names cannot be empty.", nameof(name));
+			if (wave.HasValue)
+			{
+				wave.Value.Validate(nameof(wave));
+				if (renderMode != VoxelRenderMode.Transparent)
+					throw new ArgumentException("Voxel waves require a transparent material.", nameof(wave));
+				if (models != null)
+					throw new ArgumentException("Voxel waves require standard cube geometry.", nameof(wave));
+			}
 
 			Name = name;
 			RenderMode = renderMode;
@@ -26,6 +80,7 @@ namespace FishGfx.Voxels
 			OccludesFaces = occludesFaces ?? renderMode == VoxelRenderMode.Opaque;
 			DoubleSided = doubleSided;
 			Models = models;
+			Wave = wave;
 		}
 
 		public string Name { get; }
@@ -35,6 +90,7 @@ namespace FishGfx.Voxels
 		public bool OccludesFaces { get; }
 		public bool DoubleSided { get; }
 		public VoxelModelSet Models { get; }
+		public VoxelWaveSettings? Wave { get; }
 	}
 
 	public sealed class VoxelPaletteBuilder

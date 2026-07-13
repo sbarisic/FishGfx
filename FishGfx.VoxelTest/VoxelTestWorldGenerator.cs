@@ -81,9 +81,12 @@ namespace FishGfx.VoxelTest
 
 			for (int z = minimumZ; z < minimumZ + VoxelWorld.ChunkSize; z++)
 				for (int x = minimumX; x < minimumX + VoxelWorld.ChunkSize; x++)
-					maximumY = Math.Max(maximumY, GetSurfaceHeight(x, z));
+				{
+					maximumY = Math.Max(maximumY, GetSurfaceHeight(x, z) + 8);
 
-			maximumY += 8;
+					if (GetWaterSurface(x, z) is int waterSurface)
+						maximumY = Math.Max(maximumY, waterSurface);
+				}
 
 			if (IntersectsGlassWall(minimumX, minimumZ))
 				for (
@@ -500,7 +503,8 @@ namespace FishGfx.VoxelTest
 					VoxelRenderMode.Transparent,
 					new VoxelFaceTiles(10),
 					occludesFaces: false,
-					doubleSided: true
+					doubleSided: true,
+					wave: new VoxelWaveSettings(amplitude: 0.1f, wavelength: 6, speed: 0.2f)
 				)
 			);
 			ids.Glass = Add(

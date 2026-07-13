@@ -390,6 +390,8 @@ namespace FishGfx.Voxels
 
 			GetUVBounds(tile, atlas, out float u0, out float v0, out float u1, out float v1);
 			Vector3[] corners = { face.Q0, face.Q1, face.Q2, face.Q3 };
+			bool animatedSurface = material.Wave.HasValue
+				&& snapshot.GetMaterialUnchecked(x, y + 1, z) != snapshot.GetMaterialUnchecked(x, y, z);
 			Vector2[] uvs =
 			{
 				MapFaceUv(face.UV0, u0, v0, u1, v1),
@@ -412,6 +414,7 @@ namespace FishGfx.Voxels
 					uvs[cornerIndex],
 					face.Normal
 				);
+				front[i].Wave = CreateWaveData(material, face, corners[cornerIndex], animatedSurface);
 			}
 
 			if (!material.DoubleSided)
@@ -433,9 +436,39 @@ namespace FishGfx.Voxels
 					uvs[cornerIndex],
 					-face.Normal
 				);
+				result[6 + i].Wave = CreateWaveData(material, face, corners[cornerIndex], animatedSurface);
 			}
 
 			return result;
+		}
+
+		private static Vector4 CreateWaveData(
+			VoxelMaterial material,
+			FaceDefinition face,
+			Vector3 corner,
+			bool animatedSurface
+		)
+		{
+			if (
+				!material.Wave.HasValue
+				|| !animatedSurface
+				|| face.Face == VoxelFace.NegativeY
+			)
+				return Vector4.Zero;
+
+			float influence = face.Face == VoxelFace.PositiveY
+				? 1
+				: corner.Y < 0.5f
+					? 0
+					: 1;
+
+			VoxelWaveSettings wave = material.Wave.Value;
+			return new Vector4(
+				wave.Amplitude,
+				MathF.Tau / wave.Wavelength,
+				MathF.Tau * wave.Speed,
+				influence
+			);
 		}
 
 		private static byte CalculateAo(

@@ -103,6 +103,28 @@ public class VoxelTestWorldTests
 	}
 
 	[Fact]
+	public void VerticalChunkRangesCoverEveryGeneratedWaterSurface()
+	{
+		VoxelTestWorldData data = Generated.Value.Data;
+
+		for (int chunkZ = VoxelTestWorldGenerator.MinimumChunkCoordinate; chunkZ <= VoxelTestWorldGenerator.MaximumChunkCoordinate; chunkZ++)
+			for (int chunkX = VoxelTestWorldGenerator.MinimumChunkCoordinate; chunkX <= VoxelTestWorldGenerator.MaximumChunkCoordinate; chunkX++)
+			{
+				(int minimumChunkY, int maximumChunkY) = data.GetVerticalChunkRange(chunkX, chunkZ);
+				int originX = chunkX * VoxelWorld.ChunkSize;
+				int originZ = chunkZ * VoxelWorld.ChunkSize;
+
+				for (int z = originZ; z < originZ + VoxelWorld.ChunkSize; z++)
+					for (int x = originX; x < originX + VoxelWorld.ChunkSize; x++)
+						if (data.GetWaterSurface(x, z) is int waterSurface)
+						{
+							ChunkCoordinate waterChunk = ChunkCoordinate.FromWorld(x, waterSurface, z, out _, out _, out _);
+							Assert.InRange(waterChunk.Y, minimumChunkY, maximumChunkY);
+						}
+			}
+	}
+
+	[Fact]
 	public void StreamerLoadsNearestChunksWithinBudgetAndClipsAtWorldBoundary()
 	{
 		GeneratedWorld generated = Generated.Value;
