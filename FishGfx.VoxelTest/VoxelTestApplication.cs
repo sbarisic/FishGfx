@@ -1,9 +1,7 @@
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Numerics;
-using FishGfx.Formats;
 using FishGfx.Game;
 using FishGfx.Graphics;
 using FishGfx.Voxels;
@@ -51,7 +49,6 @@ namespace FishGfx.VoxelTest
 			Camera uiCamera = new Camera();
 			uiCamera.SetOrthogonal(0, 0, Width, Height);
 			Texture atlas = VoxelTestCompatibilityAssets.CreateTexture();
-			TTFFont font = window.Graphics.CreateTrueTypeFont(AssetPath("fonts", "Consolas-Regular.ttf"));
 			VoxelRenderer renderer = new VoxelRenderer(
 				window.Graphics,
 				world,
@@ -71,6 +68,8 @@ namespace FishGfx.VoxelTest
 			overlayState.EnableDepthTest = false;
 			overlayState.EnableDepthMask = false;
 			overlayState.EnableDepthClamp = false;
+			VoxelTestUi voxelUi = new VoxelTestUi(window, hotbar);
+			window.OnWindowResize += (_, width, height) => uiCamera.SetOrthogonal(0, 0, width, height);
 			Stopwatch timer = Stopwatch.StartNew();
 			RollingFrameRateCounter frameRate = new RollingFrameRateCounter();
 			double previousTime = timer.Elapsed.TotalSeconds;
@@ -80,12 +79,15 @@ namespace FishGfx.VoxelTest
 			int autoGpuChunkCount = 0;
 			bool underwaterValidated = false;
 			bool staleEditsForced = false;
+			bool uiMode = false;
+			bool uiValidated = false;
 
 			try
 			{
 				while (!window.ShouldClose)
 				{
 					input.BeginNewFrame();
+					voxelUi.BeginFrame();
 					Events.Poll();
 					double now = timer.Elapsed.TotalSeconds;
 					float deltaTime = (float)(now - previousTime);
@@ -97,14 +99,39 @@ namespace FishGfx.VoxelTest
 
 					if (!autoMode)
 					{
-						UpdateCamera(camera, input, deltaTime, streamer);
-						UpdateHotbar(input, hotbar);
-
-						if (scrollDelta != 0)
+						if (input.GetKeyPressed(Key.Tab))
 						{
-							hotbar.Move(scrollDelta > 0 ? -1 : 1);
+							uiMode = !uiMode;
+							window.CaptureCursor = !uiMode;
+							mouseDelta = Vector2.Zero;
 							scrollDelta = 0;
 						}
+					}
+
+					voxelUi.InteractionEnabled = !autoMode && uiMode;
+					voxelUi.TickUpdate(deltaTime, (float)now);
+
+					if (!autoMode)
+					{
+						UpdateHotbar(input, hotbar);
+
+						if (!uiMode)
+						{
+							UpdateCamera(camera, input, deltaTime, streamer);
+							if (scrollDelta != 0)
+								hotbar.Move(scrollDelta > 0 ? -1 : 1);
+							if (input.GetKeyPressed(Key.MouseLeft))
+								DestroyTargetedVoxel(streamer, world, camera);
+							if (input.GetKeyPressed(Key.MouseRight))
+								PlaceTargetedVoxel(streamer, world, camera, hotbar.Selected.Id);
+						}
+						else
+						{
+							mouseDelta = Vector2.Zero;
+						}
+
+						if (scrollDelta != 0)
+							scrollDelta = 0;
 
 						if (input.GetKeyPressed(Key.E))
 							ToggleBoundaryBlock(streamer, materials);
@@ -114,12 +141,11 @@ namespace FishGfx.VoxelTest
 							cullingEnabled = !cullingEnabled;
 							renderer.CullingEnabled = cullingEnabled;
 						}
-
-						if (input.GetKeyPressed(Key.MouseLeft))
-							DestroyTargetedVoxel(streamer, world, camera);
-
-						if (input.GetKeyPressed(Key.MouseRight))
-							PlaceTargetedVoxel(streamer, world, camera, hotbar.Selected.Id);
+					}
+					else
+					{
+						mouseDelta = Vector2.Zero;
+						scrollDelta = 0;
 					}
 
 					if (window.ShouldClose)
@@ -172,18 +198,25 @@ namespace FishGfx.VoxelTest
 					if (underwater)
 						DrawUnderwaterTint(pass, uiCamera, overlayState);
 
-					DrawOverlay(
-						pass,
-						font,
-						uiCamera,
-						overlayState,
+					voxelUi.Update(
+						camera,
 						streamer,
 						frameRate,
 						renderer.Statistics,
 						renderer.FrameDiagnostics,
-						hotbar,
-						renderer.CullingEnabled
+						renderer.CullingEnabled,
+						uiMode
 					);
+					voxelUi.Draw(pass, new RenderView(uiCamera), overlayState, deltaTime, (float)now);
+					DrawCrosshair(pass, uiCamera, overlayState);
+					if (autoMode && !uiValidated)
+					{
+						if (!voxelUi.IsInitialized || voxelUi.HotbarButtonCount != hotbar.VisibleCount)
+							throw new InvalidOperationException("FishUI did not initialize the expected VoxelTest controls.");
+						if (voxelUi.LastDrawCallCount <= 0)
+							throw new InvalidOperationException("FishUI did not emit any VoxelTest draw operations.");
+						uiValidated = true;
+					}
 					pass.Dispose();
 					frame.Present();
 
@@ -278,9 +311,9 @@ namespace FishGfx.VoxelTest
 						);
 				}
 
-				if (autoMode && !underwaterValidated)
+				if (autoMode && (!underwaterValidated || !uiValidated))
 					throw new InvalidOperationException(
-						$"Voxel automatic validation closed before completion at stage {autoValidationStage}."
+						$"Voxel automatic validation closed before completion at stage {autoValidationStage}; UI={uiValidated}."
 					);
 
 				finalStatistics = renderer.Statistics;
@@ -289,7 +322,7 @@ namespace FishGfx.VoxelTest
 			finally
 			{
 				renderer.Dispose();
-				font.Dispose();
+				voxelUi.Dispose();
 				atlas.Dispose();
 				window.Graphics.CollectGarbage();
 				window.Dispose();
@@ -442,87 +475,20 @@ namespace FishGfx.VoxelTest
 		}
 
 
-		private static void DrawOverlay(
-			RenderPass pass,
-			TTFFont font,
-			Camera uiCamera,
-			RenderState overlayState,
-			VoxelTestChunkStreamer streamer,
-			RollingFrameRateCounter frameRate,
-			VoxelRendererStatistics stats,
-			VoxelRendererFrameDiagnostics diagnostics,
-			VoxelHotbarSelection hotbar,
-			bool cullingEnabled
-		)
+		private static void DrawCrosshair(RenderPass pass, Camera uiCamera, RenderState overlayState)
 		{
 			using IDisposable stateScope = pass.PushState(overlayState);
 			using IDisposable viewScope = pass.PushView(new RenderView(uiCamera));
-				pass.FilledRoundedRectangle(20, 700, 670, 350, new CornerRadii(16), new Color(10, 14, 24, 210));
-				pass.DrawText(font, new Vector2(45, 980), "FishGfx voxel chunks", new Color(110, 205, 255), 34);
-				pass.DrawText(
-					font,
-					new Vector2(400, 985),
-					$"FPS: {frameRate.FramesPerSecond:F1} | {frameRate.FrameMilliseconds:F1} ms",
-					new Color(145, 255, 170),
-					22
-				);
-				pass.DrawText(
-					font,
-					new Vector2(45, 735),
-					$"stream loaded/pending: {streamer.LoadedHorizontalCount} / {streamer.PendingHorizontalCount}\n"
-						+ $"chunks loaded/gpu/visible: {stats.LoadedChunks} / {stats.GpuChunks} / {stats.VisibleChunks}\n"
-						+ $"jobs: {stats.PendingJobs}   accepted: {stats.AcceptedMeshes}   stale: {stats.DiscardedMeshes}\n"
-						+ $"vertices opaque/cutout: {stats.OpaqueVertices} / {stats.CutoutVertices}\n"
-						+ $"transparent faces/vertices: {stats.TransparentFaces} / {stats.TransparentVertices}\n"
-						+ $"render prep: {diagnostics.CullingMilliseconds:F2} + {diagnostics.TransparentBuildMilliseconds:F2} ms"
-						+ $"   draws/binds: {diagnostics.DrawCalls} / {diagnostics.ShaderBinds}\n"
-						+ $"culling: {(cullingEnabled ? "on" : "off")}   C toggles, E edits a chunk boundary\n"
-						+ $"Left destroy, Right place: {hotbar.Selected.Name}; wheel or 1-9 selects\n"
-						+ "WASD + mouse, Space/Ctrl vertical, Shift fast",
-					new Color(220, 228, 240),
-					22
-				);
 				pass.Line(
 					new Vertex2(new Vector2(Width / 2 - 10, Height / 2), new Color(245, 245, 245, 220)),
 					new Vertex2(new Vector2(Width / 2 + 10, Height / 2), new Color(245, 245, 245, 220)),
 					2
 				);
-				DrawHotbar(pass, font, hotbar);
 				pass.Line(
 					new Vertex2(new Vector2(Width / 2, Height / 2 - 10), new Color(245, 245, 245, 220)),
 					new Vertex2(new Vector2(Width / 2, Height / 2 + 10), new Color(245, 245, 245, 220)),
 					2
 				);
-		}
-
-		private static void DrawHotbar(RenderPass pass, TTFFont font, VoxelHotbarSelection hotbar)
-		{
-			const float SlotWidth = 150;
-			const float SlotHeight = 58;
-			float startX = (Width - SlotWidth * hotbar.VisibleCount) / 2;
-
-			for (int slot = 0; slot < hotbar.VisibleCount; slot++)
-			{
-				float x = startX + slot * SlotWidth;
-				bool selected = hotbar.IsSelectedSlot(slot);
-				Color background = selected ? new Color(52, 112, 150, 235) : new Color(12, 18, 28, 215);
-				Color foreground = selected ? new Color(255, 235, 125) : new Color(215, 225, 235);
-				VoxelTestMaterialEntry entry = hotbar.GetVisible(slot);
-				pass.FilledRoundedRectangle(
-					x + 3,
-					18,
-					SlotWidth - 6,
-					SlotHeight,
-					new CornerRadii(8),
-					background
-				);
-				pass.DrawText(font, new Vector2(x + 12, 53), $"{slot + 1} {entry.Name}", foreground, 16);
-			}
-		}
-
-		private static string AssetPath(params string[] parts)
-		{
-			return Path.Combine(new[] { AppContext.BaseDirectory, "data" }.Concat(parts).ToArray());
 		}
 
 	}

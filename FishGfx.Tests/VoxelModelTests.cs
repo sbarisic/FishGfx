@@ -463,6 +463,9 @@ public class VoxelModelTests
 		hotbar.SelectVisibleSlot(8);
 		Assert.Equal(9, hotbar.Selected.Id);
 		Assert.True(hotbar.IsSelectedSlot(5));
+		Assert.Equal(hotbar.Selected, hotbar.GetVisible(5));
+		Assert.Equal((ushort)4, hotbar.GetVisible(0).Id);
+		Assert.Equal((ushort)12, hotbar.GetVisible(8).Id);
 	}
 
 	private static VoxelVertex[] CreateTriangle(VoxelRenderMode mode)

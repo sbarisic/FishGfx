@@ -19,6 +19,14 @@ The core tries OpenGL 4.6 first and falls back version-by-version to 4.0. OpenGL
 
 ## Build and run
 
+Clone with submodules, or initialize them before restoring:
+
+```powershell
+git clone --recurse-submodules https://github.com/sbarisic/FishGfx.git
+# Existing checkout:
+git submodule update --init --recursive
+```
+
 ```powershell
 dotnet restore FishGfx.Modern.sln
 dotnet build FishGfx.Modern.sln -c Debug
@@ -31,6 +39,7 @@ dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj
 `FishGfx.Modern.sln` contains the supported modern projects:
 
 - `FishGfx`: core rendering, windowing, input, formats, fonts, and node-graph APIs.
+- `FishGfx.FishUI`: reusable FishUI graphics, input, and rooted-file-system adapters.
 - `FishGfx.SmokeTest`: interactive primitive gallery and automated screenshot validation.
 - `FishGfx.NodeEditor`: reflected C# function-node editor with evaluation and JSON persistence.
 - `FishGfx.VoxelTest`: editable, multi-chunk voxel-rendering validation application.
@@ -85,6 +94,38 @@ frame.Present();
 Frames and passes enforce one active scope at a time, pass state/model/view/query scopes restore in LIFO order, and disposing a frame does not implicitly present it. Resources can be created through context factories such as `CreateTexture`, `CreateBuffer`, `CreateShaderProgram`, `CreateTrueTypeFont`, `CreateBitmapFont`, and `CreateRenderTarget`. They retain their owning context, reject cross-context use, and are destroyed on that context's thread. Use `MakeCurrent` before switching between windows on the same owning thread.
 
 `Gfx` remains available as a compatibility facade. Calls made inside a `RenderPass` use the current context's state, uniforms, and built-in resources, but new code should pass `RenderPass` explicitly. Command lists, immutable batches, deferred queues, queries, and voxel rendering all expose pass-aware entry points.
+
+### FishUI adapter
+
+FishUI is included as the `thirdparty/FishUI` git submodule, pinned to commit `fc2b733e34c3769e5510abde2820c323a69d1448`. FishUI and its bundled assets use the MIT license. `FishGfx.FishUI` references the upstream project directly and provides:
+
+- `FishGfxFishUIGraphics`, a disposable `SimpleFishUIGfx` backend bound to a caller-owned `RenderPass` through `UseRenderPass`.
+- `FishGfxFishUIInput`, a disposable `RenderWindow` input adapter with queued keys/characters, mouse transitions, scrolling, clipboard access, and an `Enabled` interaction gate.
+- `RootedFishUIFileSystem`, which resolves relative themes, layouts, fonts, and images from `AppContext.BaseDirectory` by default.
+- `FishUIConversions`, containing the tested top-left/bottom-left coordinate, atlas-UV, and color conversions used by the backend.
+
+The graphics backend supports nested scissoring, atlas regions, rotated/scaled images and nine-patches, filtering, text, lines, rectangles, and circles. It retains CPU bitmaps for FishUI pixel queries and shares loaded textures/fonts until deterministic disposal. FishUI's Gwen theme uses zero extra character spacing, which is rendered exactly; custom nonzero spacing is measured but is not inserted into FishGfx glyph layout.
+
+```csharp
+using FishGfx.FishUI;
+
+using FishGfxFishUIGraphics uiGraphics = new(window);
+using FishGfxFishUIInput uiInput = new(window);
+global::FishUI.FishUISettings settings = new();
+global::FishUI.FishUI ui = new(settings, uiGraphics, uiInput, new FishGfxFishUIEvents(), uiGraphics.FileSystem);
+ui.Init();
+settings.LoadTheme("data/themes/gwen.yaml");
+ui.Resized(window.WindowWidth, window.WindowHeight);
+
+uiInput.BeginFrame();
+Events.Poll();
+ui.TickUpdate(deltaTime, elapsedTime);
+
+using (uiGraphics.UseRenderPass(pass, new RenderView(uiCamera), overlayState))
+	ui.TickDraw(deltaTime, elapsedTime);
+```
+
+An application must copy the FishUI `data` tree into its output. `FishGfx.VoxelTest.csproj` demonstrates the required linked `Content` item with build and publish copying; the adapter intentionally does not impose assets on every consumer.
 
 ### Buffers and textures
 
@@ -232,7 +273,7 @@ Wave settings are intentionally limited to transparent materials using standard 
 
 `VoxelRaycast.Cast` performs bounded voxel-grid traversal and `VoxelMediumQuery` identifies the material containing a world position. `FishGfx.VoxelTest` demonstrates the complete RaylibGame visual block catalog using a copied, attributed asset snapshot: exact cube tiles, per-face grass/wood/crafting mappings, transparent materials, barrel/campfire/torch models, and deterministic foliage variants. The runtime compatibility texture uses RaylibGame's native 512², 16×16 tile layout and packs padded custom-model sheets into otherwise unused atlas rows; see `FishGfx/data/textures/voxels/raylibgame/PROVENANCE.md` and its bundled MIT license.
 
-The test world streams a seven-chunk radius in a deterministic 1280×1280 terrain, includes every vertical chunk needed by deep lake surfaces, and preserves edits across unloading. Left click destroys, right click places the selected material, the wheel cycles all materials, and 1–9 select the visible hotbar slots. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode is:
+The test world streams a seven-chunk radius in a deterministic 1280×1280 terrain, includes every vertical chunk needed by deep lake surfaces, and preserves edits across unloading. FishUI renders the statistics panel and nine clickable, Gwen-themed hotbar buttons; the crosshair and underwater tint remain renderer-level effects. The application starts with captured-cursor FPS controls. Tab releases the cursor and enables UI interaction, while another Tab restores FPS mode. Camera look and voxel mouse edits are suppressed in UI mode, but 1–9 hotbar shortcuts remain active. In FPS mode, left click destroys, right click places, and the wheel cycles materials. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode renders the disabled-input UI and verifies that its controls emit draw operations:
 
 ```powershell
 dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -- --auto -debug

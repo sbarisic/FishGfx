@@ -11,5 +11,12 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FishGfx\FishGfx.csproj" />
+    <ProjectReference Include="..\FishGfx.FishUI\FishGfx.FishUI.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\thirdparty\FishUI\FishUI\data\**\*"
+             Link="data\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

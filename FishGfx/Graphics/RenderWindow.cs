@@ -427,6 +427,14 @@ namespace FishGfx.Graphics
 				Graphics.MakeCurrent();
 		}
 
+		/// <summary>Brings this window to the foreground and gives it input focus.</summary>
+		public void Focus()
+		{
+			if (disposed)
+				throw new ObjectDisposedException(nameof(RenderWindow));
+			Glfw.FocusWindow(Wnd);
+		}
+
 		internal void MakeNativeCurrent()
 		{
 			Glfw.MakeContextCurrent(Wnd);

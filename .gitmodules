@@ -1,0 +1,3 @@
+[submodule "thirdparty/FishUI"]
+	path = thirdparty/FishUI
+	url = https://github.com/sbarisic/FishUI.git

@@ -17,13 +17,16 @@ Current core dependencies are:
 - StbTrueTypeSharp 1.26.12 for TrueType metrics and SDF glyph generation.
 - The bundled Windows x64 `glfw3.dll` and managed bindings under `FishGfx/Glfw3`.
 
+The optional `FishGfx.FishUI` integration references the MIT-licensed FishUI repository through `thirdparty/FishUI`, pinned to commit `fc2b733e34c3769e5510abde2820c323a69d1448`. FishUI targets .NET 9 and brings YamlDotNet 16.3.0 for its theme and layout formats; the adapter and VoxelTest remain .NET 10 applications.
+
 Intel RealSense support has been removed. Linux and macOS are not supported by the modern baseline.
 
 ## Modern solution
 
-`FishGfx.Modern.sln` is the supported entry point and contains five projects:
+`FishGfx.Modern.sln` is the supported entry point and contains six projects:
 
 - `FishGfx`: the core library.
+- `FishGfx.FishUI`: reusable FishUI rendering, input, resource-path, and event adapters.
 - `FishGfx.SmokeTest`: interactive primitive gallery, developer console, and automated screenshot validation.
 - `FishGfx.NodeEditor`: reflected function-node editor and headless JSON graph runner.
 - `FishGfx.VoxelTest`: interactive and automated voxel chunk renderer validation.
@@ -33,11 +36,19 @@ The older demos, tools, LiteTest, and Nuklear projects are intentionally outside
 
 ## Context and windowing
 
-`RenderWindow` owns a GLFW window and exposes its `GraphicsContext` through `Graphics`. `RenderWindowOptions` selects preferred/minimum OpenGL versions and exact-version behavior. The context negotiator records immutable per-context capabilities, owns the resize-aware backbuffer, and is explicitly made current when switching windows on its owning thread.
+`RenderWindow` owns a GLFW window and exposes its `GraphicsContext` through `Graphics`. `RenderWindowOptions` selects preferred/minimum OpenGL versions and exact-version behavior. The context negotiator records immutable per-context capabilities, owns the resize-aware backbuffer, and is explicitly made current when switching windows on its owning thread. `RenderWindow.Focus()` exposes GLFW window focus for UI backends.
 
 `GraphicsContext.BeginFrame` creates one active `GraphicsFrame`. Frames contain ordered `RenderPass` instances targeting the backbuffer or a context-created `RenderTarget`; `GraphicsFrame.Present` is the only frame API that swaps buffers. `RenderPassDescriptor` captures view, fixed-function state, load actions, clear values, texture size, alpha test, and multisample count. Pass-local state, model, view, and occlusion-query scopes enforce reverse-order disposal.
 
 `Internal_OpenGL` owns the Silk.NET `GL` dispatch table. Capability queries refresh for the current GLFW context, while debug callback initialization remains one-time. `InputManager` turns window callbacks into frame-coherent held, pressed, and released state; applications call `BeginNewFrame` before polling events.
+
+## FishUI integration
+
+`FishGfxFishUIGraphics` derives from FishUI's `SimpleFishUIGfx` and never owns a frame or render pass. `UseRenderPass` temporarily binds an active pass, `RenderView`, and overlay `RenderState`; FishUI's `BeginDrawing`/`EndDrawing` callbacks push and restore those scopes. Top-left FishUI coordinates and source-atlas rectangles are converted to FishGfx's bottom-left geometry and flipped texture convention. Scissor scopes are intersected by FishUI and mapped to pass-local render states. Rotated images use the pass model scope, while rotated atlas nine-patches share one screen-space transform across their nine regions.
+
+Images and fonts resolve through `RootedFishUIFileSystem`, whose default root is `AppContext.BaseDirectory`. Image resources retain both a shared GPU texture and CPU bitmap for `GetImageColor`; fonts and images are disposed with the graphics backend. The full upstream `FishUI/FishUI/data` tree is linked into VoxelTest build and publish output because direct project-reference content does not propagate reliably and FishUI initializes its default skins eagerly.
+
+`FishGfxFishUIInput` subscribes to `RenderWindow` key, character, and scroll events. It maps the shared GLFW keyboard values explicitly, separately maps mouse buttons, preserves held state, queues per-frame key and Unicode input, exposes clipboard text, and clears transitions through `BeginFrame` before event polling. Its `Enabled` gate hides all interactions without corrupting physical held state, which lets captured-mouse rendering applications draw a disabled UI safely.
 
 ## Render state and resource lifetime
 
@@ -174,9 +185,9 @@ Automatic mode captures the complete 1920×1080 frame before buffer swap, writes
 
 VoxelTest imports a fixed RaylibGame asset snapshot with provenance and license text. Its runtime compatibility texture preserves the native 512², 16×16 cube-tile layout and packs the original barrel, campfire, torch, and foliage texture sheets—with duplicated edge padding—into unused middle rows. The palette mirrors all 22 RaylibGame visual block definitions. A world-space showcase and nine-slot hotbar exercise exact face mappings, custom models, transparency, selection, and placement without accessing RaylibGame at runtime.
 
-The application demonstrates opaque blocks, cutout foliage, glass/water transparency, GPU water waves with a 0.1-unit amplitude and six-unit wavelength, ambient occlusion, neighbor culling, boundary edits, block raycasting, and material-specific underwater fog. Water crests stop at the original block height so shore waves remain below adjacent land. Its HUD includes rolling FPS and average frame milliseconds over the latest 0.5 seconds, so streaming and mesh-upload cost is included. Interactive controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, left click to destroy, right click to place stone, E fixed boundary editing, and C culling disable/enable. `--auto -debug` fills the initial stream radius, forces stale revisions and neighbor rebuilds, verifies resident chunk bounds, renders normal and underwater frames, and exits without user input.
+The application demonstrates opaque blocks, cutout foliage, glass/water transparency, GPU water waves with a 0.1-unit amplitude and six-unit wavelength, ambient occlusion, neighbor culling, boundary edits, block raycasting, and material-specific underwater fog. Water crests stop at the original block height so shore waves remain below adjacent land. FishUI owns the Gwen-themed statistics panel and clickable nine-slot hotbar; the crosshair and underwater tint remain direct FishGfx effects. The HUD includes rolling FPS and average frame milliseconds over the latest 0.5 seconds, so streaming and mesh-upload cost is included. Interactive controls start in captured FPS mode and use Tab to release the cursor for UI input. UI mode blocks camera look and voxel mouse edits, while 1–9 selection remains available. Other controls use WASD and mouse flight, Space/Ctrl vertical motion, Shift acceleration, left click to destroy, right click to place, E fixed boundary editing, and C culling disable/enable. `--auto -debug` fills the initial stream radius, forces stale revisions and neighbor rebuilds, verifies resident chunk bounds, compiles and draws FishUI, renders normal and underwater frames, and exits without user input.
 
-The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, voxel coordinates/palettes/meshing/revisions/culling/sorting, priority-flood lake drainage and containment, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
+The test project covers tessellation, UV orientation, rings, rounded rectangles, nine-patch geometry, TTF layout and atlas behavior, FishUI coordinate/UV/color conversion, rooted paths, key/mouse mappings and gated input transitions, voxel coordinates/palettes/meshing/revisions/culling/sorting, priority-flood lake drainage and containment, reflected graph registration/evaluation, JSON persistence, editor models, screenshot filename stability, and public enum compatibility.
 
 ## Roadmap and known defects
 
