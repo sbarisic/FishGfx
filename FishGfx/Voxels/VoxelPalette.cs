@@ -59,7 +59,8 @@ namespace FishGfx.Voxels
 			bool? occludesFaces = null,
 			bool doubleSided = false,
 			VoxelModelSet models = null,
-			VoxelWaveSettings? wave = null
+			VoxelWaveSettings? wave = null,
+			VoxelMaterialLightSettings? light = null
 		)
 		{
 			if (string.IsNullOrWhiteSpace(name))
@@ -81,6 +82,7 @@ namespace FishGfx.Voxels
 			DoubleSided = doubleSided;
 			Models = models;
 			Wave = wave;
+			Light = light ?? new VoxelMaterialLightSettings(OccludesFaces ? (byte)15 : (byte)0);
 		}
 
 		public string Name { get; }
@@ -91,6 +93,7 @@ namespace FishGfx.Voxels
 		public bool DoubleSided { get; }
 		public VoxelModelSet Models { get; }
 		public VoxelWaveSettings? Wave { get; }
+		public VoxelMaterialLightSettings Light { get; }
 	}
 
 	public sealed class VoxelPaletteBuilder

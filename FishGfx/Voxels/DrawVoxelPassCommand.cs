@@ -30,8 +30,7 @@ namespace FishGfx.Voxels
 		private readonly Texture atlas;
 		private readonly ShaderProgram shader;
 		private readonly RenderState state;
-		private readonly Vector3 lightDirection;
-		private readonly float ambientLight;
+		private VoxelSunSettings sun;
 		private readonly float alphaCutoff;
 		private VoxelPassEntry[] entries = Array.Empty<VoxelPassEntry>();
 		private int count;
@@ -48,13 +47,21 @@ namespace FishGfx.Voxels
 			this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
 			this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
 			this.state = state;
-			this.lightDirection = Vector3.Normalize(lightDirection);
-			this.ambientLight = ambientLight;
+			sun = new VoxelSunSettings(lightDirection, Color.White, 1, ambientLight);
 			this.alphaCutoff = alphaCutoff;
 		}
 
 		internal int Count => count;
 		internal VoxelFogSettings Fog { get; set; }
+		internal VoxelSunSettings Sun
+		{
+			get => sun;
+			set
+			{
+				value.Validate(nameof(value));
+				sun = value;
+			}
+		}
 
 		internal void Update(IReadOnlyList<VoxelPassEntry> source)
 		{
@@ -85,8 +92,10 @@ namespace FishGfx.Voxels
 			{
 				Gfx.PushRenderState(state);
 				statePushed = true;
-				shader.Uniform3f("LightDirection", lightDirection);
-				shader.Uniform1f("AmbientLight", ambientLight);
+				shader.Uniform3f("LightDirection", sun.Direction);
+				shader.Uniform1f("AmbientLight", sun.AmbientLight);
+				shader.Uniform3f("SunColor", (Vector3)sun.Color);
+				shader.Uniform1f("SunIntensity", sun.Intensity);
 				shader.Uniform1f("AlphaCutoff", alphaCutoff);
 				shader.Uniform1("FogEnabled", Fog.Enabled ? 1 : 0);
 				shader.Uniform3f("FogColor", (Vector3)Fog.Color);

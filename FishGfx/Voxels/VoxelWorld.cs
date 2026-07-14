@@ -7,15 +7,17 @@ namespace FishGfx.Voxels
 {
 	public sealed class VoxelChunk
 	{
-		private readonly VoxelCell[] cells = new VoxelCell[VoxelWorld.ChunkVolume];
+		private VoxelCell[] cells = new VoxelCell[VoxelWorld.ChunkVolume];
 
-		internal VoxelChunk(ChunkCoordinate coordinate)
+		internal VoxelChunk(ChunkCoordinate coordinate, long generation)
 		{
 			Coordinate = coordinate;
+			Generation = generation;
 			Revision = 1;
 		}
 
 		public ChunkCoordinate Coordinate { get; }
+		internal long Generation { get; }
 		public long Revision { get; internal set; }
 		public int NonAirCount { get; internal set; }
 		public bool IsEmpty => NonAirCount == 0;
@@ -23,20 +25,31 @@ namespace FishGfx.Voxels
 		public VoxelCell GetLocal(int x, int y, int z)
 		{
 			ValidateLocal(x, y, z);
-			return cells[Index(x, y, z)];
+			return System.Threading.Volatile.Read(ref cells)[Index(x, y, z)];
 		}
 
-		internal VoxelCell GetLocalUnchecked(int x, int y, int z) => cells[Index(x, y, z)];
+		internal VoxelCell GetLocalUnchecked(int x, int y, int z)
+		{
+			return System.Threading.Volatile.Read(ref cells)[Index(x, y, z)];
+		}
+
+		internal ReadOnlyMemory<VoxelCell> CaptureCellsUnchecked()
+		{
+			return System.Threading.Volatile.Read(ref cells);
+		}
 
 		internal bool SetLocalUnchecked(int x, int y, int z, VoxelCell value)
 		{
 			int index = Index(x, y, z);
-			VoxelCell previous = cells[index];
+			VoxelCell[] current = System.Threading.Volatile.Read(ref cells);
+			VoxelCell previous = current[index];
 
 			if (previous == value)
 				return false;
 
-			cells[index] = value;
+			VoxelCell[] replacement = (VoxelCell[])current.Clone();
+			replacement[index] = value;
+			System.Threading.Volatile.Write(ref cells, replacement);
 
 			if (previous.IsAir && !value.IsAir)
 				NonAirCount++;
@@ -48,18 +61,22 @@ namespace FishGfx.Voxels
 
 		internal void FillUnchecked(VoxelCell value)
 		{
-			Array.Fill(cells, value);
-			NonAirCount = value.IsAir ? 0 : cells.Length;
+			VoxelCell[] replacement = new VoxelCell[VoxelWorld.ChunkVolume];
+			if (!value.IsAir)
+				Array.Fill(replacement, value);
+			System.Threading.Volatile.Write(ref cells, replacement);
+			NonAirCount = value.IsAir ? 0 : replacement.Length;
 		}
 
 		internal bool ReplaceUnchecked(ReadOnlySpan<VoxelCell> values)
 		{
+			VoxelCell[] current = System.Threading.Volatile.Read(ref cells);
 			bool changed = false;
 			int nonAirCount = 0;
 
-			for (int i = 0; i < cells.Length; i++)
+			for (int i = 0; i < current.Length; i++)
 			{
-				changed |= cells[i] != values[i];
+				changed |= current[i] != values[i];
 
 				if (!values[i].IsAir)
 					nonAirCount++;
@@ -68,7 +85,9 @@ namespace FishGfx.Voxels
 			if (!changed)
 				return false;
 
-			values.CopyTo(cells);
+			VoxelCell[] replacement = new VoxelCell[VoxelWorld.ChunkVolume];
+			values.CopyTo(replacement);
+			System.Threading.Volatile.Write(ref cells, replacement);
 			NonAirCount = nonAirCount;
 			return true;
 		}
@@ -91,14 +110,21 @@ namespace FishGfx.Voxels
 		internal const int PaddedSize = VoxelWorld.ChunkSize + 2;
 		private readonly ushort[] paddedMaterials;
 
-		internal VoxelChunkSnapshot(ChunkCoordinate coordinate, long revision, ushort[] paddedMaterials)
+		internal VoxelChunkSnapshot(
+			ChunkCoordinate coordinate,
+			long generation,
+			long revision,
+			ushort[] paddedMaterials
+		)
 		{
 			Coordinate = coordinate;
+			Generation = generation;
 			Revision = revision;
 			this.paddedMaterials = paddedMaterials;
 		}
 
 		public ChunkCoordinate Coordinate { get; }
+		internal long Generation { get; }
 		public long Revision { get; }
 
 		public ushort GetMaterial(int localX, int localY, int localZ)
@@ -121,17 +147,66 @@ namespace FishGfx.Voxels
 		}
 	}
 
+	internal readonly struct VoxelWorldContentChange
+	{
+		private VoxelWorldContentChange(
+			ChunkCoordinate coordinate,
+			int localIndex,
+			ushort previousMaterialId,
+			ushort materialId,
+			bool isBulk
+		)
+		{
+			Coordinate = coordinate;
+			LocalIndex = localIndex;
+			PreviousMaterialId = previousMaterialId;
+			MaterialId = materialId;
+			IsBulk = isBulk;
+		}
+
+		internal ChunkCoordinate Coordinate { get; }
+		internal int LocalIndex { get; }
+		internal ushort PreviousMaterialId { get; }
+		internal ushort MaterialId { get; }
+		internal bool IsBulk { get; }
+
+		internal static VoxelWorldContentChange Single(
+			ChunkCoordinate coordinate,
+			int localIndex,
+			ushort previousMaterialId,
+			ushort materialId
+		)
+		{
+			return new VoxelWorldContentChange(
+				coordinate,
+				localIndex,
+				previousMaterialId,
+				materialId,
+				isBulk: false
+			);
+		}
+
+		internal static VoxelWorldContentChange Bulk(ChunkCoordinate coordinate)
+		{
+			return new VoxelWorldContentChange(coordinate, -1, 0, 0, isBulk: true);
+		}
+	}
+
 	public sealed class VoxelWorld
 	{
 		public const int ChunkSize = 16;
 		public const int ChunkVolume = ChunkSize * ChunkSize * ChunkSize;
+		private static readonly ReadOnlyMemory<VoxelCell> EmptyChunkCells =
+			new VoxelCell[ChunkVolume];
 
 		private readonly object sync = new object();
 		private readonly Dictionary<ChunkCoordinate, VoxelChunk> chunks =
 			new Dictionary<ChunkCoordinate, VoxelChunk>();
+		private long nextChunkGeneration;
 
 		public event Action<ChunkCoordinate, long> ChunkInvalidated;
 		public event Action<ChunkCoordinate> ChunkRemoved;
+		internal event Action<VoxelWorldContentChange> ContentChanged;
 
 		public int LoadedChunkCount
 		{
@@ -169,6 +244,7 @@ namespace FishGfx.Voxels
 		{
 			ChunkCoordinate coordinate = ChunkCoordinate.FromWorld(x, y, z, out int localX, out int localY, out int localZ);
 			List<(ChunkCoordinate Coordinate, long Revision)> invalidated;
+			ushort previousMaterialId;
 
 			lock (sync)
 			{
@@ -177,17 +253,25 @@ namespace FishGfx.Voxels
 					if (value.IsAir)
 						return false;
 
-					chunk = new VoxelChunk(coordinate);
+					chunk = CreateChunk(coordinate);
 					chunks.Add(coordinate, chunk);
 				}
 
+				VoxelCell previous = chunk.GetLocalUnchecked(localX, localY, localZ);
 				if (!chunk.SetLocalUnchecked(localX, localY, localZ, value))
 					return false;
+				previousMaterialId = previous.MaterialId;
 
 				invalidated = InvalidateBoundaryNeighborhood(coordinate, localX, localY, localZ);
 			}
 
 			RaiseInvalidated(invalidated);
+			ContentChanged?.Invoke(VoxelWorldContentChange.Single(
+				coordinate,
+				localX + ChunkSize * (localY + ChunkSize * localZ),
+				previousMaterialId,
+				value.MaterialId
+			));
 			return true;
 		}
 
@@ -202,7 +286,7 @@ namespace FishGfx.Voxels
 					if (value.IsAir)
 						return;
 
-					chunk = new VoxelChunk(coordinate);
+					chunk = CreateChunk(coordinate);
 					chunks.Add(coordinate, chunk);
 				}
 
@@ -211,6 +295,7 @@ namespace FishGfx.Voxels
 			}
 
 			RaiseInvalidated(invalidated);
+			ContentChanged?.Invoke(VoxelWorldContentChange.Bulk(coordinate));
 		}
 
 		public bool SetChunk(ChunkCoordinate coordinate, ReadOnlySpan<VoxelCell> cells)
@@ -236,7 +321,7 @@ namespace FishGfx.Voxels
 			{
 				if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
 				{
-					chunk = new VoxelChunk(coordinate);
+					chunk = CreateChunk(coordinate);
 					chunks.Add(coordinate, chunk);
 				}
 
@@ -247,6 +332,7 @@ namespace FishGfx.Voxels
 			}
 
 			RaiseInvalidated(invalidated);
+			ContentChanged?.Invoke(VoxelWorldContentChange.Bulk(coordinate));
 			return true;
 		}
 
@@ -264,6 +350,7 @@ namespace FishGfx.Voxels
 
 			RaiseInvalidated(invalidated);
 			ChunkRemoved?.Invoke(coordinate);
+			ContentChanged?.Invoke(VoxelWorldContentChange.Bulk(coordinate));
 			return true;
 		}
 
@@ -302,8 +389,26 @@ namespace FishGfx.Voxels
 							padded[(x + 1) + VoxelChunkSnapshot.PaddedSize * ((y + 1) + VoxelChunkSnapshot.PaddedSize * (z + 1))] = cell.MaterialId;
 						}
 
-				return new VoxelChunkSnapshot(coordinate, chunk.Revision, padded);
+				return new VoxelChunkSnapshot(
+					coordinate,
+					chunk.Generation,
+					chunk.Revision,
+					padded
+				);
 			}
+		}
+
+		private VoxelChunk CreateChunk(ChunkCoordinate coordinate)
+		{
+			return new VoxelChunk(coordinate, checked(++nextChunkGeneration));
+		}
+
+		internal ReadOnlyMemory<VoxelCell> CaptureChunkCells(ChunkCoordinate coordinate)
+		{
+			lock (sync)
+				return chunks.TryGetValue(coordinate, out VoxelChunk chunk)
+					? chunk.CaptureCellsUnchecked()
+					: EmptyChunkCells;
 		}
 
 		private VoxelCell GetVoxelWorldUnchecked(int x, int y, int z)

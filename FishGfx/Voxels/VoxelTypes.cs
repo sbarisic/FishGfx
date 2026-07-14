@@ -21,6 +21,71 @@ namespace FishGfx.Voxels
 		NegativeZ,
 	}
 
+	/// <summary>
+	/// Describes the directional skylight used when shading lit voxel geometry.
+	/// </summary>
+	public readonly struct VoxelSunSettings : IEquatable<VoxelSunSettings>
+	{
+		public VoxelSunSettings(
+			Vector3 direction,
+			Color color,
+			float intensity,
+			float ambientLight
+		)
+		{
+			float lengthSquared = direction.LengthSquared();
+			if (!IsFinite(direction) || !float.IsFinite(lengthSquared) || lengthSquared <= 0)
+				throw new ArgumentOutOfRangeException(nameof(direction));
+			if (!float.IsFinite(intensity) || intensity < 0)
+				throw new ArgumentOutOfRangeException(nameof(intensity));
+			if (!float.IsFinite(ambientLight) || ambientLight < 0 || ambientLight > 1)
+				throw new ArgumentOutOfRangeException(nameof(ambientLight));
+
+			Direction = Vector3.Normalize(direction);
+			Color = color;
+			Intensity = intensity;
+			AmbientLight = ambientLight;
+		}
+
+		public Vector3 Direction { get; }
+		public Color Color { get; }
+		public float Intensity { get; }
+		public float AmbientLight { get; }
+
+		public bool Equals(VoxelSunSettings other)
+		{
+			return Direction == other.Direction
+				&& Color == other.Color
+				&& Intensity == other.Intensity
+				&& AmbientLight == other.AmbientLight;
+		}
+
+		public override bool Equals(object obj) => obj is VoxelSunSettings other && Equals(other);
+		public override int GetHashCode() => HashCode.Combine(Direction, Color, Intensity, AmbientLight);
+		public static bool operator ==(VoxelSunSettings left, VoxelSunSettings right) => left.Equals(right);
+		public static bool operator !=(VoxelSunSettings left, VoxelSunSettings right) => !left.Equals(right);
+
+		internal void Validate(string parameterName)
+		{
+			if (
+				!IsFinite(Direction)
+				|| !float.IsFinite(Direction.LengthSquared())
+				|| Direction.LengthSquared() <= 0
+				|| !float.IsFinite(Intensity)
+				|| Intensity < 0
+				|| !float.IsFinite(AmbientLight)
+				|| AmbientLight < 0
+				|| AmbientLight > 1
+			)
+				throw new ArgumentException("Voxel sun settings are invalid.", parameterName);
+		}
+
+		private static bool IsFinite(Vector3 value)
+		{
+			return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+		}
+	}
+
 	public readonly struct ChunkCoordinate : IEquatable<ChunkCoordinate>
 	{
 		public ChunkCoordinate(int x, int y, int z)
@@ -152,6 +217,7 @@ namespace FishGfx.Voxels
 			UV = uv;
 			Normal = normal;
 			Wave = Vector4.Zero;
+			PackedLight = new Color(0, 0, 0, byte.MaxValue);
 		}
 
 		public Vector3 Position;
@@ -159,5 +225,6 @@ namespace FishGfx.Voxels
 		public Vector2 UV;
 		public Vector3 Normal;
 		internal Vector4 Wave;
+		internal Color PackedLight;
 	}
 }

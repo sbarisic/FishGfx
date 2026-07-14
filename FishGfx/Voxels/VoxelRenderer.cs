@@ -22,6 +22,7 @@ namespace FishGfx.Voxels
 		public float AmbientLight { get; set; } = 0.35f;
 		public Vector3 LightDirection { get; set; } = Vector3.Normalize(new Vector3(-0.45f, -1, -0.3f));
 		public VoxelMeshingOptions Meshing { get; set; } = new VoxelMeshingOptions();
+		public VoxelLighting Lighting { get; set; }
 	}
 
 	public readonly struct VoxelRendererStatistics
@@ -130,6 +131,7 @@ namespace FishGfx.Voxels
 	public sealed class VoxelRenderer : IDisposable
 	{
 		private readonly VoxelWorld world;
+		private readonly VoxelLighting lighting;
 		private readonly Texture atlasTexture;
 		private readonly VoxelRendererOptions options;
 		private readonly VoxelMeshingScheduler scheduler;
@@ -147,7 +149,8 @@ namespace FishGfx.Voxels
 		private readonly ShaderStage vertexShader;
 		private readonly ShaderStage waveVertexShader;
 		private readonly ShaderStage fragmentShader;
-		private GraphicsCommandBatch transparentBatch;
+		private readonly GraphicsCommandBatch transparentBatch;
+		private readonly DrawVoxelMeshCommand transparentMeshCommand;
 		private readonly DrawVoxelPassCommand opaquePassCommand;
 		private readonly DrawVoxelPassCommand cutoutPassCommand;
 		private readonly GraphicsCommandBatch opaquePassBatch;
@@ -169,6 +172,7 @@ namespace FishGfx.Voxels
 		private VoxelRendererFrameDiagnostics frameDiagnostics;
 		private bool cullingEnabled = true;
 		private VoxelFogSettings fog = VoxelFogSettings.Disabled;
+		private VoxelSunSettings sun;
 
 		public VoxelRenderer(GraphicsContext graphics, VoxelWorld world, VoxelPalette palette, Texture atlasTexture, VoxelAtlasLayout atlasLayout, VoxelRendererOptions options = null)
 			: this(world, palette, atlasTexture, atlasLayout, options)
@@ -190,8 +194,15 @@ namespace FishGfx.Voxels
 			this.world = world ?? throw new ArgumentNullException(nameof(world));
 			this.atlasTexture = atlasTexture ?? throw new ArgumentNullException(nameof(atlasTexture));
 			this.options = options ?? new VoxelRendererOptions();
+			lighting = this.options.Lighting;
 
 			ValidateOptions(this.options);
+			sun = new VoxelSunSettings(
+				this.options.LightDirection,
+				Color.White,
+				1,
+				this.options.AmbientLight
+			);
 
 			if (atlasTexture.Width != atlasLayout.TextureWidth || atlasTexture.Height != atlasLayout.TextureHeight)
 				throw new ArgumentException("Voxel atlas layout dimensions must match the supplied texture.", nameof(atlasLayout));
@@ -201,7 +212,8 @@ namespace FishGfx.Voxels
 				palette ?? throw new ArgumentNullException(nameof(palette)),
 				atlasLayout,
 				this.options.Meshing,
-				this.options.MaxWorkers
+				this.options.MaxWorkers,
+				lighting
 			);
 			world.ChunkRemoved += OnChunkRemoved;
 
@@ -226,6 +238,7 @@ namespace FishGfx.Voxels
 				this.options.AmbientLight,
 				alphaCutoff: -1
 			);
+			opaquePassCommand.Sun = sun;
 			cutoutPassCommand = new DrawVoxelPassCommand(
 				atlasTexture,
 				voxelShader,
@@ -234,9 +247,16 @@ namespace FishGfx.Voxels
 				this.options.AmbientLight,
 				this.options.AlphaCutoff
 			);
+			cutoutPassCommand.Sun = sun;
 			opaquePassBatch = new GraphicsCommandBatch(new GraphicsCommand[] { opaquePassCommand });
 			cutoutPassBatch = new GraphicsCommandBatch(new GraphicsCommand[] { cutoutPassCommand });
-			transparentBatch = CreateBatch(transparentMesh, transparentState, waveShader, alphaCutoff: -1);
+			transparentBatch = CreateBatch(
+				transparentMesh,
+				transparentState,
+				waveShader,
+				alphaCutoff: -1,
+				out transparentMeshCommand
+			);
 		}
 
 		public bool IsIdle => scheduler.PendingCount == 0;
@@ -248,6 +268,24 @@ namespace FishGfx.Voxels
 			{
 				ThrowIfDisposed();
 				cullingEnabled = value;
+			}
+		}
+
+		public VoxelSunSettings Sun
+		{
+			get => sun;
+			set
+			{
+				ThrowIfDisposed();
+				value.Validate(nameof(value));
+
+				if (sun == value)
+					return;
+
+				sun = value;
+				opaquePassCommand.Sun = value;
+				cutoutPassCommand.Sun = value;
+				transparentMeshCommand.Sun = value;
 			}
 		}
 
@@ -264,7 +302,7 @@ namespace FishGfx.Voxels
 				fog = value;
 				opaquePassCommand.Fog = value;
 				cutoutPassCommand.Fog = value;
-				transparentBatch = CreateBatch(transparentMesh, transparentState, waveShader, alphaCutoff: -1);
+				transparentMeshCommand.Fog = value;
 			}
 		}
 
@@ -308,7 +346,7 @@ namespace FishGfx.Voxels
 					continue;
 				}
 
-				if (chunk.Revision != result.Revision)
+				if (!IsMeshCurrent(result, chunk, lighting))
 				{
 					discardedMeshes++;
 					scheduler.MarkDirty(result.Coordinate);
@@ -326,6 +364,35 @@ namespace FishGfx.Voxels
 				throw failure;
 
 			return uploaded;
+		}
+
+		internal static bool IsMeshCurrent(
+			VoxelMeshData result,
+			VoxelChunk chunk,
+			VoxelLighting lighting
+		)
+		{
+			if (result == null)
+				throw new ArgumentNullException(nameof(result));
+			if (chunk == null)
+				throw new ArgumentNullException(nameof(chunk));
+
+			if (
+				chunk.Coordinate != result.Coordinate
+				|| chunk.Generation != result.WorldGeneration
+				|| chunk.Revision != result.Revision
+			)
+				return false;
+
+			if (lighting == null)
+				return result.LightGeneration == 0 && result.LightRevision == 0;
+
+			return lighting.TryGetChunkState(
+				result.Coordinate,
+				out long lightGeneration,
+				out long lightRevision
+			) && lightGeneration == result.LightGeneration
+				&& lightRevision == result.LightRevision;
 		}
 
 		public void SubmitVisible(DeferredRenderQueue queue, Camera camera, float? renderDistance = null)
@@ -506,6 +573,7 @@ namespace FishGfx.Voxels
 			cutoutVertices -= gpuChunk.Cutout?.VertexCount ?? 0;
 
 			gpuChunk.Revision = result.Revision;
+			gpuChunk.LightRevision = result.LightRevision;
 			gpuChunk.Bounds = result.Bounds;
 			gpuChunk.TransparentFaces = result.TransparentFaces;
 
@@ -528,22 +596,26 @@ namespace FishGfx.Voxels
 			VoxelMesh mesh,
 			RenderState state,
 			ShaderProgram shader,
-			float alphaCutoff
+			float alphaCutoff,
+			out DrawVoxelMeshCommand drawCommand
 		)
 		{
+			drawCommand = new DrawVoxelMeshCommand(
+				mesh,
+				atlasTexture,
+				shader,
+				sun.Direction,
+				sun.AmbientLight,
+				alphaCutoff,
+				fog
+			);
+			drawCommand.Sun = sun;
+
 			return new GraphicsCommandBatch(
 				new GraphicsCommand[]
 				{
 					new PushRenderStateCommand(state),
-					new DrawVoxelMeshCommand(
-						mesh,
-						atlasTexture,
-						shader,
-						options.LightDirection,
-						options.AmbientLight,
-						alphaCutoff,
-						fog
-					),
+					drawCommand,
 					new PopRenderStateCommand(),
 				}
 			);
@@ -642,7 +714,12 @@ namespace FishGfx.Voxels
 				throw new ArgumentOutOfRangeException(nameof(options.AlphaCutoff));
 			if (!float.IsFinite(options.AmbientLight) || options.AmbientLight < 0 || options.AmbientLight > 1)
 				throw new ArgumentOutOfRangeException(nameof(options.AmbientLight));
-			if (!IsFinite(options.LightDirection) || options.LightDirection.LengthSquared() <= 0)
+			float lightLengthSquared = options.LightDirection.LengthSquared();
+			if (
+				!IsFinite(options.LightDirection)
+				|| !float.IsFinite(lightLengthSquared)
+				|| lightLengthSquared <= 0
+			)
 				throw new ArgumentOutOfRangeException(nameof(options.LightDirection));
 			if (options.Meshing == null)
 				throw new ArgumentNullException(nameof(options.Meshing));
@@ -718,6 +795,7 @@ namespace FishGfx.Voxels
 
 			public ChunkCoordinate Coordinate { get; }
 			public long Revision;
+			public long LightRevision;
 			public AABB Bounds;
 			public VoxelMesh Opaque;
 			public VoxelMesh Cutout;

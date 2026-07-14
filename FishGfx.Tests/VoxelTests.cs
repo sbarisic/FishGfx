@@ -46,6 +46,24 @@ public class VoxelTests
 	}
 
 	[Fact]
+	public void CapturedChunkCellsRemainImmutableAcrossLaterWorldEdits()
+	{
+		VoxelWorld world = new();
+		ChunkCoordinate coordinate = new(0, 0, 0);
+		int index = 1 + VoxelWorld.ChunkSize * (2 + VoxelWorld.ChunkSize * 3);
+		world.SetVoxel(1, 2, 3, new VoxelCell(1));
+		ReadOnlyMemory<VoxelCell> captured = world.CaptureChunkCells(coordinate);
+
+		world.SetVoxel(1, 2, 3, new VoxelCell(2));
+		ReadOnlyMemory<VoxelCell> current = world.CaptureChunkCells(coordinate);
+
+		Assert.Equal(new VoxelCell(1), captured.Span[index]);
+		Assert.Equal(new VoxelCell(2), current.Span[index]);
+		Assert.Equal(VoxelWorld.ChunkVolume, captured.Length);
+		Assert.Equal(VoxelWorld.ChunkVolume, current.Length);
+	}
+
+	[Fact]
 	public void BoundaryEditInvalidatesOwningAndDiagonalNeighborChunks()
 	{
 		VoxelWorld world = new();
@@ -183,6 +201,7 @@ public class VoxelTests
 		Assert.Equal(36, mesh.OpaqueVertices.Length);
 		Assert.Empty(mesh.CutoutVertices);
 		Assert.Empty(mesh.TransparentFaces);
+		Assert.All(mesh.OpaqueVertices, vertex => Assert.Equal(new Color(0, 0, 0, 255), vertex.PackedLight));
 		Assert.Equal(new Vector3(1), mesh.Bounds.Position);
 		Assert.Equal(Vector3.One, mesh.Bounds.Size);
 	}
@@ -842,6 +861,7 @@ public class VoxelTests
 			new VoxelVertex(new Vector3(1, 0, 0), Color.Red, Vector2.Zero, Vector3.UnitZ)
 			{
 				Wave = new Vector4(0.1f, 2, 3, 1),
+				PackedLight = new Color(17, 34, 51, 68),
 			},
 		};
 		VoxelVertex[] farVertices =
@@ -863,6 +883,7 @@ public class VoxelTests
 		Assert.Equal(Color.Red, stream[1].Color);
 		Assert.Equal(new Vector3(11, 0, 0), stream[1].Position);
 		Assert.Equal(new Vector4(0.1f, 2, 3, 1), stream[1].Wave);
+		Assert.Equal(new Color(17, 34, 51, 68), stream[1].PackedLight);
 	}
 
 	[Fact]

@@ -5,11 +5,13 @@ layout (location = 1) in vec4 Clr;
 layout (location = 2) in vec2 UV;
 layout (location = 3) in vec3 Normal;
 layout (location = 4) in vec4 Wave;
+layout (location = 5) in vec4 Light;
 
 out vec4 frag_Clr;
 out vec2 frag_UV;
 out vec3 frag_Normal;
 out vec3 frag_WorldPosition;
+out vec4 frag_Light;
 
 uniform mat4 Model;
 uniform mat4 View;
@@ -46,5 +48,6 @@ void main()
 	frag_UV = UV;
 	frag_Normal = worldNormal;
 	frag_WorldPosition = worldPosition.xyz;
+	frag_Light = Light;
 	gl_Position = Project * View * worldPosition;
 }

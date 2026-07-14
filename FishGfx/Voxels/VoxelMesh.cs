@@ -5,7 +5,7 @@ using FishGfx.Graphics;
 namespace FishGfx.Voxels
 {
 	/// <summary>
-	/// Context-thread GPU storage for voxel vertices with a dedicated normal attribute.
+	/// Context-thread GPU storage for voxel vertices with dedicated normal, wave, and packed-light attributes.
 	/// </summary>
 	public sealed class VoxelMesh : IDisposable
 	{
@@ -40,6 +40,14 @@ namespace FishGfx.Voxels
 			vertexArray.AttribBinding(3, binding);
 			vertexArray.AttribFormat(4, 4, RelativeOffset: 36);
 			vertexArray.AttribBinding(4, binding);
+			vertexArray.AttribFormat(
+				5,
+				4,
+				VertexElementType.UnsignedByte,
+				Normalized: true,
+				RelativeOffset: 52
+			);
+			vertexArray.AttribBinding(5, binding);
 		}
 
 		public BufferUsage Usage { get; }

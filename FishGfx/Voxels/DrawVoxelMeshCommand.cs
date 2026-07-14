@@ -6,6 +6,8 @@ namespace FishGfx.Voxels
 {
 	public sealed class DrawVoxelMeshCommand : GraphicsCommand
 	{
+		private VoxelSunSettings sun;
+
 		public DrawVoxelMeshCommand(
 			VoxelMesh mesh,
 			Texture atlas,
@@ -47,8 +49,7 @@ namespace FishGfx.Voxels
 			if (!float.IsFinite(alphaCutoff))
 				throw new ArgumentOutOfRangeException(nameof(alphaCutoff));
 
-			LightDirection = Vector3.Normalize(lightDirection);
-			AmbientLight = ambientLight;
+			sun = new VoxelSunSettings(lightDirection, Color.White, 1, ambientLight);
 			AlphaCutoff = alphaCutoff;
 			Fog = fog;
 		}
@@ -56,10 +57,19 @@ namespace FishGfx.Voxels
 		public VoxelMesh Mesh { get; }
 		public Texture Atlas { get; }
 		public ShaderProgram Shader { get; }
-		public Vector3 LightDirection { get; }
-		public float AmbientLight { get; }
+		public Vector3 LightDirection => sun.Direction;
+		public float AmbientLight => sun.AmbientLight;
 		public float AlphaCutoff { get; }
-		public VoxelFogSettings Fog { get; }
+		public VoxelFogSettings Fog { get; internal set; }
+		internal VoxelSunSettings Sun
+		{
+			get => sun;
+			set
+			{
+				value.Validate(nameof(value));
+				sun = value;
+			}
+		}
 
 		public override void Execute()
 		{
@@ -70,6 +80,8 @@ namespace FishGfx.Voxels
 			{
 				Shader.Uniform3f("LightDirection", LightDirection);
 				Shader.Uniform1f("AmbientLight", AmbientLight);
+				Shader.Uniform3f("SunColor", (Vector3)sun.Color);
+				Shader.Uniform1f("SunIntensity", sun.Intensity);
 				Shader.Uniform1f("AlphaCutoff", AlphaCutoff);
 				Shader.Uniform1("FogEnabled", Fog.Enabled ? 1 : 0);
 				Shader.Uniform3f("FogColor", (Vector3)Fog.Color);

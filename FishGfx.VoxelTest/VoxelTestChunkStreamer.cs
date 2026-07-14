@@ -16,13 +16,16 @@ namespace FishGfx.VoxelTest
 		private readonly HashSet<(int X, int Z)> loadedHorizontal = new HashSet<(int, int)>();
 		private readonly Dictionary<ChunkCoordinate, Dictionary<int, VoxelCell>> overrides =
 			new Dictionary<ChunkCoordinate, Dictionary<int, VoxelCell>>();
+		private readonly Dictionary<(int X, int Z), (int MinimumY, int MaximumY)> residentVerticalRanges =
+			new Dictionary<(int, int), (int, int)>();
 		private readonly List<(int X, int Z)> generatedThisFrame = new List<(int, int)>();
+		private VoxelLighting lighting;
 
 		internal VoxelTestChunkStreamer(
 			VoxelTestWorldData data,
 			VoxelTestMaterialIds materials,
-			int loadRadius = 7,
-			int unloadRadius = 9,
+			int loadRadius = 8,
+			int unloadRadius = 10,
 			int generationBudget = 4
 		)
 		{
@@ -53,6 +56,18 @@ namespace FishGfx.VoxelTest
 				+ 1);
 		internal bool IsSettled => PendingHorizontalCount == 0;
 		internal IReadOnlyList<(int X, int Z)> GeneratedThisFrame => generatedThisFrame;
+
+		internal void AttachLighting(VoxelLighting value)
+		{
+			if (value == null)
+				throw new ArgumentNullException(nameof(value));
+			if (lighting != null)
+				throw new InvalidOperationException("Voxel lighting is already attached to the streamer.");
+			if (loadedHorizontal.Count != 0)
+				throw new InvalidOperationException("Voxel lighting must be attached before streaming begins.");
+
+			lighting = value;
+		}
 
 		internal int Update(Vector3 cameraPosition)
 		{
@@ -119,9 +134,11 @@ namespace FishGfx.VoxelTest
 				chunkOverrides[index] = value;
 			}
 
-			return loadedHorizontal.Contains((coordinate.X, coordinate.Z))
-				? World.SetVoxel(x, y, z, value)
-				: true;
+			if (!loadedHorizontal.Contains((coordinate.X, coordinate.Z)))
+				return true;
+
+			EnsureResidentVerticalRange(coordinate.X, coordinate.Z, coordinate.Y);
+			return World.SetVoxel(x, y, z, value);
 		}
 
 		internal Vector3 ClampPosition(Vector3 position)
@@ -166,9 +183,12 @@ namespace FishGfx.VoxelTest
 					maximumY = Math.Max(maximumY, coordinate.Y);
 				}
 
+			residentVerticalRanges.Add((chunkX, chunkZ), (minimumY, maximumY));
+
 			for (int chunkY = minimumY; chunkY <= maximumY; chunkY++)
 			{
 				ChunkCoordinate coordinate = new ChunkCoordinate(chunkX, chunkY, chunkZ);
+				lighting?.LoadChunk(coordinate, skyExposedAbove: chunkY == maximumY);
 				VoxelCell[] cells = data.GenerateChunk(coordinate, materials);
 
 				if (overrides.TryGetValue(coordinate, out Dictionary<int, VoxelCell> chunkOverrides))
@@ -190,6 +210,13 @@ namespace FishGfx.VoxelTest
 			if (distant.Length == 0)
 				return;
 
+			foreach ((int x, int z) in distant)
+			{
+				if (residentVerticalRanges.Remove((x, z), out (int MinimumY, int MaximumY) range))
+					for (int chunkY = range.MinimumY; chunkY <= range.MaximumY; chunkY++)
+						lighting?.UnloadChunk(new ChunkCoordinate(x, chunkY, z));
+			}
+
 			HashSet<(int X, int Z)> distantSet = distant.ToHashSet();
 			ChunkCoordinate[] chunks = World.LoadedChunks
 				.Where(chunk => distantSet.Contains((chunk.Coordinate.X, chunk.Coordinate.Z)))
@@ -201,6 +228,34 @@ namespace FishGfx.VoxelTest
 
 			foreach ((int x, int z) in distant)
 				loadedHorizontal.Remove((x, z));
+		}
+
+		private void EnsureResidentVerticalRange(int chunkX, int chunkZ, int chunkY)
+		{
+			if (!residentVerticalRanges.TryGetValue((chunkX, chunkZ), out (int MinimumY, int MaximumY) range))
+				throw new InvalidOperationException("A loaded horizontal chunk is missing its resident vertical range.");
+
+			if (chunkY >= range.MinimumY && chunkY <= range.MaximumY)
+				return;
+
+			int minimumY = Math.Min(range.MinimumY, chunkY);
+			int maximumY = Math.Max(range.MaximumY, chunkY);
+
+			if (maximumY != range.MaximumY)
+				lighting?.SetSkyExposedAbove(new ChunkCoordinate(chunkX, range.MaximumY, chunkZ), false);
+
+			for (int y = minimumY; y <= maximumY; y++)
+			{
+				if (y >= range.MinimumY && y <= range.MaximumY)
+					continue;
+
+				lighting?.LoadChunk(
+					new ChunkCoordinate(chunkX, y, chunkZ),
+					skyExposedAbove: y == maximumY
+				);
+			}
+
+			residentVerticalRanges[(chunkX, chunkZ)] = (minimumY, maximumY);
 		}
 
 		private static bool IsInsideHorizontalChunkBounds(int x, int z)

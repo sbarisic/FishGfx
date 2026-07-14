@@ -35,7 +35,10 @@ namespace FishGfx.Voxels
 	{
 		internal VoxelMeshData(
 			ChunkCoordinate coordinate,
+			long worldGeneration,
 			long revision,
+			long lightGeneration,
+			long lightRevision,
 			VoxelVertex[] opaqueVertices,
 			VoxelVertex[] cutoutVertices,
 			VoxelTransparentFace[] transparentFaces,
@@ -43,7 +46,10 @@ namespace FishGfx.Voxels
 		)
 		{
 			Coordinate = coordinate;
+			WorldGeneration = worldGeneration;
 			Revision = revision;
+			LightGeneration = lightGeneration;
+			LightRevision = lightRevision;
 			OpaqueVertices = opaqueVertices;
 			CutoutVertices = cutoutVertices;
 			TransparentFaces = transparentFaces;
@@ -51,7 +57,10 @@ namespace FishGfx.Voxels
 		}
 
 		public ChunkCoordinate Coordinate { get; }
+		internal long WorldGeneration { get; }
 		public long Revision { get; }
+		internal long LightGeneration { get; }
+		public long LightRevision { get; }
 		public VoxelVertex[] OpaqueVertices { get; }
 		public VoxelVertex[] CutoutVertices { get; }
 		public VoxelTransparentFace[] TransparentFaces { get; }
@@ -162,10 +171,23 @@ namespace FishGfx.Voxels
 			VoxelMeshingOptions options = null
 		)
 		{
+			return Build(snapshot, palette, atlas, options, lightSnapshot: null);
+		}
+
+		internal static VoxelMeshData Build(
+			VoxelChunkSnapshot snapshot,
+			VoxelPalette palette,
+			VoxelAtlasLayout atlas,
+			VoxelMeshingOptions options,
+			VoxelLightChunkSnapshot lightSnapshot
+		)
+		{
 			if (snapshot == null)
 				throw new ArgumentNullException(nameof(snapshot));
 			if (palette == null)
 				throw new ArgumentNullException(nameof(palette));
+			if (lightSnapshot != null && lightSnapshot.Coordinate != snapshot.Coordinate)
+				throw new ArgumentException("The light snapshot must match the voxel chunk coordinate.", nameof(lightSnapshot));
 
 			options ??= new VoxelMeshingOptions();
 			List<VoxelVertex> opaque = new List<VoxelVertex>();
@@ -199,6 +221,7 @@ namespace FishGfx.Voxels
 								model,
 								material,
 								blockPosition,
+								lightSnapshot,
 								opaque,
 								cutout,
 								transparent,
@@ -225,6 +248,7 @@ namespace FishGfx.Voxels
 								options,
 								material,
 								face,
+								lightSnapshot,
 								x,
 								y,
 								z,
@@ -260,7 +284,10 @@ namespace FishGfx.Voxels
 
 			return new VoxelMeshData(
 				snapshot.Coordinate,
+				snapshot.Generation,
 				snapshot.Revision,
+				lightSnapshot?.Generation ?? 0,
+				lightSnapshot?.Revision ?? 0,
 				opaque.ToArray(),
 				cutout.ToArray(),
 				transparent.ToArray(),
@@ -272,6 +299,7 @@ namespace FishGfx.Voxels
 			VoxelModel model,
 			VoxelMaterial material,
 			Vector3 blockPosition,
+			VoxelLightChunkSnapshot lightSnapshot,
 			List<VoxelVertex> opaque,
 			List<VoxelVertex> cutout,
 			List<VoxelTransparentFace> transparent,
@@ -288,8 +316,15 @@ namespace FishGfx.Voxels
 				for (int i = 0; i < triangle.Length; i++)
 				{
 					VoxelVertex vertex = source[triangleStart + i];
+					Vector3 localPosition = vertex.Position;
 					vertex.Position += blockPosition;
 					vertex.Color = Multiply(vertex.Color, material.Tint);
+					vertex.PackedLight = SampleCustomModelLight(
+						lightSnapshot,
+						blockPosition,
+						localPosition,
+						material.Light.Emission
+					);
 					triangle[i] = vertex;
 					center += vertex.Position;
 					boundsPoints.Add(vertex.Position);
@@ -377,6 +412,7 @@ namespace FishGfx.Voxels
 			VoxelMeshingOptions options,
 			VoxelMaterial material,
 			FaceDefinition face,
+			VoxelLightChunkSnapshot lightSnapshot,
 			int x,
 			int y,
 			int z,
@@ -415,6 +451,15 @@ namespace FishGfx.Voxels
 					face.Normal
 				);
 				front[i].Wave = CreateWaveData(material, face, corners[cornerIndex], animatedSurface);
+				front[i].PackedLight = SampleCubeLight(
+					lightSnapshot,
+					face,
+					corners[cornerIndex],
+					material.Light.Emission,
+					x,
+					y,
+					z
+				);
 			}
 
 			if (!material.DoubleSided)
@@ -437,6 +482,15 @@ namespace FishGfx.Voxels
 					-face.Normal
 				);
 				result[6 + i].Wave = CreateWaveData(material, face, corners[cornerIndex], animatedSurface);
+				result[6 + i].PackedLight = SampleCubeLight(
+					lightSnapshot,
+					face,
+					corners[cornerIndex],
+					material.Light.Emission,
+					x,
+					y,
+					z
+				);
 			}
 
 			return result;
@@ -469,6 +523,127 @@ namespace FishGfx.Voxels
 				MathF.Tau * wave.Speed,
 				influence
 			);
+		}
+
+		private static Color SampleCubeLight(
+			VoxelLightChunkSnapshot lightSnapshot,
+			FaceDefinition face,
+			Vector3 corner,
+			VoxelBlockLight emission,
+			int x,
+			int y,
+			int z
+		)
+		{
+			if (lightSnapshot == null)
+				return new Color(0, 0, 0, byte.MaxValue);
+
+			int signA = CornerSign(corner, face.TangentA);
+			int signB = CornerSign(corner, face.TangentB);
+			Int3 outside = face.Neighbor;
+			Int3 tangentA = Int3.FromVector(face.TangentA) * signA;
+			Int3 tangentB = Int3.FromVector(face.TangentB) * signB;
+			VoxelLight sample0 = GetLight(lightSnapshot, x, y, z, outside);
+			VoxelLight sample1 = GetLight(lightSnapshot, x, y, z, outside + tangentA);
+			VoxelLight sample2 = GetLight(lightSnapshot, x, y, z, outside + tangentB);
+			VoxelLight sample3 = GetLight(lightSnapshot, x, y, z, outside + tangentA + tangentB);
+
+			return AverageLight(sample0, sample1, sample2, sample3, emission);
+		}
+
+		private static Color SampleCustomModelLight(
+			VoxelLightChunkSnapshot lightSnapshot,
+			Vector3 blockPosition,
+			Vector3 localPosition,
+			VoxelBlockLight emission
+		)
+		{
+			if (lightSnapshot == null)
+				return new Color(0, 0, 0, byte.MaxValue);
+
+			Vector3 clampedLocal = Vector3.Clamp(localPosition, Vector3.Zero, Vector3.One);
+			Vector3 samplePosition = blockPosition + clampedLocal - new Vector3(0.5f);
+			int x0 = (int)MathF.Floor(samplePosition.X);
+			int y0 = (int)MathF.Floor(samplePosition.Y);
+			int z0 = (int)MathF.Floor(samplePosition.Z);
+			float tx = samplePosition.X - x0;
+			float ty = samplePosition.Y - y0;
+			float tz = samplePosition.Z - z0;
+			float red = 0;
+			float green = 0;
+			float blue = 0;
+			float sky = 0;
+
+			for (int dz = 0; dz <= 1; dz++)
+				for (int dy = 0; dy <= 1; dy++)
+					for (int dx = 0; dx <= 1; dx++)
+					{
+						float weight = (dx == 0 ? 1 - tx : tx)
+							* (dy == 0 ? 1 - ty : ty)
+							* (dz == 0 ? 1 - tz : tz);
+						VoxelLight sample = lightSnapshot.GetLightUnchecked(x0 + dx, y0 + dy, z0 + dz);
+						red += sample.Block.Red * weight;
+						green += sample.Block.Green * weight;
+						blue += sample.Block.Blue * weight;
+						sky += sample.Sky * weight;
+					}
+
+			red = MathF.Max(red, emission.Red);
+			green = MathF.Max(green, emission.Green);
+			blue = MathF.Max(blue, emission.Blue);
+
+			return new Color(
+				EncodeLightLevel(red),
+				EncodeLightLevel(green),
+				EncodeLightLevel(blue),
+				EncodeLightLevel(sky)
+			);
+		}
+
+		private static VoxelLight GetLight(
+			VoxelLightChunkSnapshot snapshot,
+			int x,
+			int y,
+			int z,
+			Int3 offset
+		)
+		{
+			return snapshot.GetLightUnchecked(x + offset.X, y + offset.Y, z + offset.Z);
+		}
+
+		private static Color AverageLight(
+			VoxelLight sample0,
+			VoxelLight sample1,
+			VoxelLight sample2,
+			VoxelLight sample3,
+			VoxelBlockLight emission
+		)
+		{
+			return new Color(
+				Math.Max(
+					EncodeAverage(sample0.Block.Red + sample1.Block.Red + sample2.Block.Red + sample3.Block.Red),
+					EncodeLightLevel(emission.Red)
+				),
+				Math.Max(
+					EncodeAverage(sample0.Block.Green + sample1.Block.Green + sample2.Block.Green + sample3.Block.Green),
+					EncodeLightLevel(emission.Green)
+				),
+				Math.Max(
+					EncodeAverage(sample0.Block.Blue + sample1.Block.Blue + sample2.Block.Blue + sample3.Block.Blue),
+					EncodeLightLevel(emission.Blue)
+				),
+				EncodeAverage(sample0.Sky + sample1.Sky + sample2.Sky + sample3.Sky)
+			);
+		}
+
+		private static byte EncodeAverage(int sum)
+		{
+			return (byte)((sum * 17 + 2) / 4);
+		}
+
+		private static byte EncodeLightLevel(float level)
+		{
+			return (byte)Math.Clamp((int)MathF.Round(level * 17), 0, byte.MaxValue);
 		}
 
 		private static byte CalculateAo(

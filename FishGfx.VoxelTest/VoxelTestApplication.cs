@@ -42,8 +42,21 @@ namespace FishGfx.VoxelTest
 			VoxelTestModelAssets modelAssets = VoxelTestCompatibilityAssets.LoadModels();
 			VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(modelAssets, out VoxelTestMaterialIds materials);
 			VoxelTestWorldData worldData = VoxelTestWorldGenerator.Generate(materials);
-			VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(worldData, materials);
+			VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(
+				worldData,
+				materials,
+				generationBudget: autoMode ? 16 : 4
+			);
 			VoxelWorld world = streamer.World;
+			VoxelLighting lighting = new VoxelLighting(
+				world,
+				palette,
+				new VoxelLightingOptions
+				{
+					UpdateBudget = autoMode ? 1_048_576 : 65_536,
+				}
+			);
+			streamer.AttachLighting(lighting);
 			VoxelHotbarSelection hotbar = new VoxelHotbarSelection(materials.Placeable);
 			Camera camera = CreateCamera(worldData);
 			Camera uiCamera = new Camera();
@@ -59,7 +72,8 @@ namespace FishGfx.VoxelTest
 				{
 					MaxWorkers = Math.Max(2, Environment.ProcessorCount - 1),
 					RenderDistance = 108,
-					UploadBudget = 24,
+					UploadBudget = autoMode ? 96 : 24,
+					Lighting = lighting,
 				}
 			);
 			DeferredRenderQueue renderQueue = new DeferredRenderQueue();
@@ -77,6 +91,7 @@ namespace FishGfx.VoxelTest
 			VoxelRendererFrameDiagnostics finalDiagnostics = default;
 			int autoValidationStage = 0;
 			int autoGpuChunkCount = 0;
+			int autoSunAcceptedMeshes = 0;
 			bool underwaterValidated = false;
 			bool staleEditsForced = false;
 			bool uiMode = false;
@@ -152,6 +167,7 @@ namespace FishGfx.VoxelTest
 						break;
 
 					streamer.Update(camera.Position);
+					lighting.Update();
 
 					if (autoMode && streamer.IsSettled && !staleEditsForced)
 					{
@@ -175,7 +191,7 @@ namespace FishGfx.VoxelTest
 						Time = (float)now,
 					});
 
-					if (!autoMode || (streamer.IsSettled && renderer.IsIdle))
+					if (!autoMode || (streamer.IsSettled && lighting.IsIdle && renderer.IsIdle))
 					{
 						renderer.SubmitVisible(renderQueue, camera);
 						renderQueue.Execute(
@@ -201,6 +217,7 @@ namespace FishGfx.VoxelTest
 					voxelUi.Update(
 						camera,
 						streamer,
+						lighting,
 						frameRate,
 						renderer.Statistics,
 						renderer.FrameDiagnostics,
@@ -224,6 +241,7 @@ namespace FishGfx.VoxelTest
 					VoxelRendererFrameDiagnostics diagnostics = renderer.FrameDiagnostics;
 
 					bool renderValidationReady = streamer.IsSettled
+						&& lighting.IsIdle
 						&& staleEditsForced
 						&& renderer.IsIdle
 						&& statistics.AcceptedMeshes > 0
@@ -250,6 +268,7 @@ namespace FishGfx.VoxelTest
 						if (underwater || renderer.Fog.Enabled)
 							throw new InvalidOperationException("The normal voxel validation frame unexpectedly used underwater fog.");
 						ValidateCompatibilityShowcase(world, worldData, materials);
+						ValidateVoxelLighting(lighting, worldData, materials);
 						if (
 							streamer.LoadedHorizontalCount > streamer.MaximumResidentHorizontalCount
 							|| statistics.LoadedChunks > streamer.MaximumResidentChunkCount
@@ -258,8 +277,13 @@ namespace FishGfx.VoxelTest
 							throw new InvalidOperationException("Voxel streaming exceeded its bounded resident chunk budget.");
 
 						autoGpuChunkCount = statistics.GpuChunks;
-						camera.Position = worldData.ShowcaseSouthCameraPosition;
-						camera.LookAt(worldData.ShowcaseTarget);
+						autoSunAcceptedMeshes = statistics.AcceptedMeshes;
+						renderer.Sun = new VoxelSunSettings(
+							new Vector3(-0.35f, -1, -0.25f),
+							new Color(255, 238, 215),
+							0.9f,
+							0.35f
+						);
 						autoValidationStage = 1;
 					}
 					else if (
@@ -271,25 +295,43 @@ namespace FishGfx.VoxelTest
 						&& diagnostics.TransparentCacheHit
 					)
 					{
+						if (statistics.AcceptedMeshes != autoSunAcceptedMeshes || !lighting.IsIdle)
+							throw new InvalidOperationException(
+								"Changing the runtime sun unexpectedly recalculated lighting or uploaded voxel chunk meshes."
+							);
 						ValidateCompatibilityShowcase(world, worldData, materials);
-						camera.Position = worldData.UnderwaterCameraPosition;
-						camera.LookAt(camera.Position + Vector3.Normalize(new Vector3(0.2f, 1, 0.1f)));
+						camera.Position = worldData.ShowcaseSouthCameraPosition;
+						camera.LookAt(worldData.ShowcaseTarget);
 						autoValidationStage = 2;
 					}
 					else if (
 						autoMode
 						&& autoValidationStage == 2
 						&& renderValidationReady
-						&& underwater
-						&& renderer.Fog == UnderwaterFog
+						&& !underwater
+						&& !renderer.Fog.Enabled
+						&& diagnostics.TransparentCacheHit
 					)
 					{
-						autoGpuChunkCount = statistics.GpuChunks;
+						ValidateCompatibilityShowcase(world, worldData, materials);
+						camera.Position = worldData.UnderwaterCameraPosition;
+						camera.LookAt(camera.Position + Vector3.Normalize(new Vector3(0.2f, 1, 0.1f)));
 						autoValidationStage = 3;
 					}
 					else if (
 						autoMode
 						&& autoValidationStage == 3
+						&& renderValidationReady
+						&& underwater
+						&& renderer.Fog == UnderwaterFog
+					)
+					{
+						autoGpuChunkCount = statistics.GpuChunks;
+						autoValidationStage = 4;
+					}
+					else if (
+						autoMode
+						&& autoValidationStage == 4
 						&& renderValidationReady
 						&& underwater
 					)
@@ -307,7 +349,8 @@ namespace FishGfx.VoxelTest
 					else if (autoMode && timer.Elapsed.TotalSeconds > 60)
 						throw new TimeoutException(
 							$"Voxel streaming validation did not settle within 60 seconds; stream={streamer.PendingHorizontalCount}, "
-								+ $"meshes={statistics.PendingJobs}, accepted={statistics.AcceptedMeshes}, stale={statistics.DiscardedMeshes}."
+								+ $"lighting={lighting.PendingCount}, meshes={statistics.PendingJobs}, "
+								+ $"accepted={statistics.AcceptedMeshes}, stale={statistics.DiscardedMeshes}."
 						);
 				}
 
@@ -322,6 +365,7 @@ namespace FishGfx.VoxelTest
 			finally
 			{
 				renderer.Dispose();
+				lighting.Dispose();
 				voxelUi.Dispose();
 				atlas.Dispose();
 				window.Graphics.CollectGarbage();
@@ -461,6 +505,28 @@ namespace FishGfx.VoxelTest
 				if (world.GetVoxel(x, y, z).MaterialId != expectedMaterial)
 					throw new InvalidOperationException("The voxel texture-orientation showcase is incomplete.");
 			}
+		}
+
+		private static void ValidateVoxelLighting(
+			VoxelLighting lighting,
+			VoxelTestWorldData worldData,
+			VoxelTestMaterialIds materials
+		)
+		{
+			int glowstoneIndex = materials.Placeable
+				.Select((entry, index) => (entry, index))
+				.Single(item => item.entry.Id == materials.Glowstone)
+				.index;
+			(int x, int y, int z) = worldData.GetShowcasePosition(glowstoneIndex);
+			VoxelLight emitted = lighting.GetLight(x + 1, y, z);
+
+			if (emitted.Block.Red < 14 || emitted.Block.Green < 11 || emitted.Block.Blue < 7)
+				throw new InvalidOperationException("The glowstone showcase did not propagate its configured RGB light.");
+
+			VoxelLight sky = lighting.GetLight(x, y + 2, z);
+
+			if (sky.Sky == 0)
+				throw new InvalidOperationException("The sky-exposed showcase column did not receive skylight.");
 		}
 
 		private static void UpdateHotbar(InputManager input, VoxelHotbarSelection hotbar)

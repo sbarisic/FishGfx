@@ -118,6 +118,7 @@ namespace FishGfx.VoxelTest
 		internal void Update(
 			Camera camera,
 			VoxelTestChunkStreamer streamer,
+			VoxelLighting lighting,
 			RollingFrameRateCounter frameRate,
 			VoxelRendererStatistics stats,
 			VoxelRendererFrameDiagnostics diagnostics,
@@ -129,6 +130,7 @@ namespace FishGfx.VoxelTest
 			statisticsLabel.Text =
 				$"camera: {camera.Position.X:F1}, {camera.Position.Y:F1}, {camera.Position.Z:F1}\n"
 				+ $"stream loaded/pending: {streamer.LoadedHorizontalCount} / {streamer.PendingHorizontalCount}\n"
+				+ $"lighting resident/pending: {lighting.ResidentChunkCount} / {lighting.PendingCount}\n"
 				+ $"chunks loaded/gpu/visible: {stats.LoadedChunks} / {stats.GpuChunks} / {stats.VisibleChunks}\n"
 				+ $"jobs: {stats.PendingJobs}   accepted: {stats.AcceptedMeshes}   stale: {stats.DiscardedMeshes}\n"
 				+ $"vertices opaque/cutout: {stats.OpaqueVertices} / {stats.CutoutVertices}\n"

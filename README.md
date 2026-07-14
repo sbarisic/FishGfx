@@ -248,6 +248,42 @@ pass.Execute(queue, RenderBucket.Transparent, RenderSubmissionComparers.Transpar
 
 The renderer owns its worker scheduler, shaders, per-chunk GPU meshes, and global transparent stream. The application retains ownership of the atlas texture and must keep it alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted separately. Transparent faces are gathered across all visible chunks, stably sorted back-to-front in camera space, and uploaded as one world-space stream. Face occlusion, per-face atlas tiles, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
 
+Propagated lighting is optional and remains separate from world generation. `VoxelLighting` stores 0–15 RGB block light and skylight in explicitly resident chunks, including known all-air chunks. Unregistered space blocks propagation, so a streaming application must register every loaded vertical chunk and mark the highest chunk in an open column with `skyExposedAbove`. Material light opacity is independent of face occlusion. Direct skylight loses no energy through opacity-zero cells; propagated light loses at least one level per step.
+
+```csharp
+VoxelMaterial glowstone = new VoxelMaterial(
+	"Glowstone",
+	VoxelRenderMode.Opaque,
+	new VoxelFaceTiles(12),
+	light: new VoxelMaterialLightSettings(
+		opacity: 15,
+		emission: new VoxelBlockLight(15, 12, 8)
+	)
+);
+
+using VoxelLighting lighting = new VoxelLighting(world, palette);
+lighting.LoadChunk(new ChunkCoordinate(0, 0, 0), skyExposedAbove: true);
+
+using VoxelRenderer renderer = new VoxelRenderer(
+	window.Graphics,
+	world,
+	palette,
+	atlasTexture,
+	atlasLayout,
+	new VoxelRendererOptions { Lighting = lighting }
+);
+
+// Run before UpdateMeshing. Work is budgeted and published atomically.
+lighting.Update();
+renderer.UpdateMeshing();
+```
+
+`VoxelLighting.GetLight` returns the last completely published solution. Edits remain visually responsive with the previous published light, then only chunks whose final light values changed are remeshed. Runtime `VoxelRenderer.Sun` changes direction, color, intensity, and shaded-face ambient contribution through uniforms; it does not propagate light or upload voxel geometry. Without a lighting instance, the renderer supplies full skylight and reproduces the original global directional/ambient result.
+
+`LoadChunk` and `UnloadChunk` control residency independently of `VoxelWorld`; `SetSkyExposedAbove` updates an existing resident boundary, and `RequestFullRebuild` provides an explicit recovery path. `Update` accepts an optional positive processed-lighting-work budget, otherwise using `VoxelLightingOptions.UpdateBudget` (65,536 by default). Preparation, material diffs, direct-sky traversal, propagation, and final comparison all consume that budget. `PendingCount`, `ResidentChunkCount`, and `IsIdle` support stateful streaming loops. Completed transactions publish all affected chunks together and advance independent light revisions only where light values or a sampled one-cell halo changed. `VoxelRendererOptions.Lighting` is borrowed: keep the lighting instance alive until after the renderer is disposed.
+
+Lit voxel meshes store RGB block light and skylight in a normalized RGBA8 vertex attribute at location 5; the existing color attribute continues to hold material tint, alpha, and ambient occlusion. `VoxelSunSettings` is immutable and validates its normalized direction, color, nonnegative intensity, and 0–1 ambient shading factor.
+
 Transparent cube materials can opt into GPU surface animation with `VoxelWaveSettings`. Amplitude is measured around a surface lowered by the same amount, so the original block top remains the crest: an amplitude of `0.1f` ranges from the original height to 0.2 units below it. Top faces and exposed upper side rims move together while bottoms and buried joins remain fixed. Wavelength is expressed in world units and speed in cycles per second. Supply elapsed seconds through `RenderPassDescriptor.Time`; changing time animates the shader without rebuilding or uploading voxel geometry.
 
 ```csharp
@@ -273,7 +309,7 @@ Wave settings are intentionally limited to transparent materials using standard 
 
 `VoxelRaycast.Cast` performs bounded voxel-grid traversal and `VoxelMediumQuery` identifies the material containing a world position. `FishGfx.VoxelTest` demonstrates the complete RaylibGame visual block catalog using a copied, attributed asset snapshot: exact cube tiles, per-face grass/wood/crafting mappings, transparent materials, barrel/campfire/torch models, and deterministic foliage variants. The runtime compatibility texture uses RaylibGame's native 512², 16×16 tile layout and packs padded custom-model sheets into otherwise unused atlas rows; see `FishGfx/data/textures/voxels/raylibgame/PROVENANCE.md` and its bundled MIT license.
 
-The test world streams a seven-chunk radius in a deterministic 1280×1280 terrain, includes every vertical chunk needed by deep lake surfaces, and preserves edits across unloading. FishUI renders the statistics panel and nine clickable, Gwen-themed hotbar buttons; the crosshair and underwater tint remain renderer-level effects. The application starts with captured-cursor FPS controls. Tab releases the cursor and enables UI interaction, while another Tab restores FPS mode. Camera look and voxel mouse edits are suppressed in UI mode, but 1–9 hotbar shortcuts remain active. In FPS mode, left click destroys, right click places, and the wheel cycles materials. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode renders the disabled-input UI and verifies that its controls emit draw operations:
+The test world streams an eight-chunk radius in a deterministic 1280×1280 terrain, includes every vertical chunk needed by deep lake surfaces and lighting, and preserves edits across unloading. It keeps a 15-block propagation margin outside the render distance, unloads beyond ten chunks, and demonstrates warm glowstone, torch, and campfire emission plus skylight attenuation through water and foliage. FishUI renders the statistics panel and nine clickable, Gwen-themed hotbar buttons; the crosshair and underwater tint remain renderer-level effects. The application starts with captured-cursor FPS controls. Tab releases the cursor and enables UI interaction, while another Tab restores FPS mode. Camera look and voxel mouse edits are suppressed in UI mode, but 1–9 hotbar shortcuts remain active. In FPS mode, left click destroys, right click places, and the wheel cycles materials. WASD/mouse fly, Space/Ctrl move vertically, Shift accelerates, E edits a fixed boundary voxel, and C toggles culling. The unattended validation mode renders the disabled-input UI and verifies that its controls emit draw operations:
 
 ```powershell
 dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -- --auto -debug
@@ -349,7 +385,7 @@ Automatic mode uses a fixed animation time, captures each complete 1920×1080 sc
 - Add advanced text shaping, combining-mark handling, right-to-left layout, and supplementary Unicode support.
 - Add a general 2D path/stroke API with configurable joins, caps, arcs, and filled paths.
 - Add node-editor undo/redo, grouping, clipboard operations, and multi-selection.
-- Add greedy voxel meshing, propagated block lighting, general biome/world generation, collision, and world serialization.
+- Add greedy voxel meshing, general biome/world generation, collision, and world serialization.
 - Replace Windows-only bitmap dependencies as part of broader platform support.
 
 ### Deferred migrations

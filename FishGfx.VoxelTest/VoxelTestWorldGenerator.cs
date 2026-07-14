@@ -479,7 +479,8 @@ namespace FishGfx.VoxelTest
 					VoxelRenderMode.Transparent,
 					new VoxelFaceTiles(7),
 					occludesFaces: false,
-					doubleSided: true
+					doubleSided: true,
+					light: new VoxelMaterialLightSettings(1)
 				)
 			);
 			ids.Test = Add(builder, ids, "Test", Opaque("Test", 8));
@@ -491,7 +492,8 @@ namespace FishGfx.VoxelTest
 					"Leaf",
 					VoxelRenderMode.Transparent,
 					new VoxelFaceTiles(9),
-					occludesFaces: false
+					occludesFaces: false,
+					light: new VoxelMaterialLightSettings(1)
 				)
 			);
 			ids.Water = Add(
@@ -504,7 +506,8 @@ namespace FishGfx.VoxelTest
 					new VoxelFaceTiles(10),
 					occludesFaces: false,
 					doubleSided: true,
-					wave: new VoxelWaveSettings(amplitude: 0.1f, wavelength: 6, speed: 0.2f)
+					wave: new VoxelWaveSettings(amplitude: 0.1f, wavelength: 6, speed: 0.2f),
+					light: new VoxelMaterialLightSettings(1)
 				)
 			);
 			ids.Glass = Add(
@@ -516,10 +519,20 @@ namespace FishGfx.VoxelTest
 					VoxelRenderMode.Transparent,
 					new VoxelFaceTiles(11),
 					occludesFaces: false,
-					doubleSided: true
+					doubleSided: true,
+					light: new VoxelMaterialLightSettings(0)
 				)
 			);
-			ids.Glowstone = Add(builder, ids, "Glowstone", Opaque("Glowstone", 12));
+			ids.Glowstone = Add(
+				builder,
+				ids,
+				"Glowstone",
+				Opaque(
+					"Glowstone",
+					12,
+					new VoxelMaterialLightSettings(15, new VoxelBlockLight(15, 12, 8))
+				)
+			);
 			ids.Test2 = Add(builder, ids, "Test 2", Opaque("Test 2", 13));
 			ids.Grass = Add(
 				builder,
@@ -552,8 +565,30 @@ namespace FishGfx.VoxelTest
 				)
 			);
 			ids.Barrel = Add(builder, ids, "Barrel", Custom("Barrel", VoxelRenderMode.Opaque, models.Barrel, true));
-			ids.Campfire = Add(builder, ids, "Campfire", Custom("Campfire", VoxelRenderMode.Cutout, models.Campfire, false));
-			ids.Torch = Add(builder, ids, "Torch", Custom("Torch", VoxelRenderMode.Cutout, models.Torch, false));
+			ids.Campfire = Add(
+				builder,
+				ids,
+				"Campfire",
+				Custom(
+					"Campfire",
+					VoxelRenderMode.Cutout,
+					models.Campfire,
+					false,
+					new VoxelMaterialLightSettings(0, new VoxelBlockLight(15, 7, 2))
+				)
+			);
+			ids.Torch = Add(
+				builder,
+				ids,
+				"Torch",
+				Custom(
+					"Torch",
+					VoxelRenderMode.Cutout,
+					models.Torch,
+					false,
+					new VoxelMaterialLightSettings(0, new VoxelBlockLight(15, 10, 5))
+				)
+			);
 			ids.Foliage = Add(
 				builder,
 				ids,
@@ -563,7 +598,8 @@ namespace FishGfx.VoxelTest
 					VoxelRenderMode.Cutout,
 					new VoxelFaceTiles(0),
 					occludesFaces: false,
-					models: models.Foliage
+					models: models.Foliage,
+					light: new VoxelMaterialLightSettings(1)
 				)
 			);
 			ids.Gravel = Add(builder, ids, "Gravel", Opaque("Gravel", 21));
@@ -571,12 +607,17 @@ namespace FishGfx.VoxelTest
 			return builder.Build();
 		}
 
-		private static VoxelMaterial Opaque(string name, int raylibTile)
+		private static VoxelMaterial Opaque(
+			string name,
+			int raylibTile,
+			VoxelMaterialLightSettings? light = null
+		)
 		{
 			return new VoxelMaterial(
 				name,
 				VoxelRenderMode.Opaque,
-				new VoxelFaceTiles(raylibTile)
+				new VoxelFaceTiles(raylibTile),
+				light: light
 			);
 		}
 
@@ -584,7 +625,8 @@ namespace FishGfx.VoxelTest
 			string name,
 			VoxelRenderMode mode,
 			VoxelModel model,
-			bool occludesFaces
+			bool occludesFaces,
+			VoxelMaterialLightSettings? light = null
 		)
 		{
 			return new VoxelMaterial(
@@ -592,7 +634,8 @@ namespace FishGfx.VoxelTest
 				mode,
 				new VoxelFaceTiles(0),
 				occludesFaces: occludesFaces,
-				models: new VoxelModelSet(model)
+				models: new VoxelModelSet(model),
+				light: light
 			);
 		}
 
