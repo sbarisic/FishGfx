@@ -1,530 +1,422 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Numerics;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-using FishGfx;
 using Glfw3;
 using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics
+namespace FishGfx.Graphics;
+
+public unsafe sealed partial class RenderWindow : IDisposable
 {
-	public sealed class RenderWindowOptions
-	{
-		public int Width { get; set; } = 1280;
-		public int Height { get; set; } = 720;
-		public string Title { get; set; } = "FishGfx";
-		public bool Resizable { get; set; }
-		public bool CenterWindow { get; set; } = true;
-		public OpenGLVersion PreferredVersion { get; set; } = new OpenGLVersion(4, 6);
-		public OpenGLVersion MinimumVersion { get; set; } = new OpenGLVersion(4, 0);
-		public bool RequireExactVersion { get; set; }
-	}
+	private Glfw.Window nativeWindow;
+	private Color[] pixelData = Array.Empty<Color>();
+	private bool captureCursor;
+	private bool showCursor = true;
+	private bool disposed;
 
-	[Flags]
-	public enum KeyMods
-	{
-		Shift = 1,
-		Control = 2,
-		Alt = 4,
-		Super = 8,
-	}
-
-	public enum Key
-	{
-		Unknown = -1,
-
-		// Printable keys
-		Space = 32,
-		Apostrophe = 39, // '
-		Comma = 44, // ,
-		Minus = 45, // -
-		Period = 46, // .
-		Slash = 47, // /
-		Alpha0 = 48,
-		Alpha1 = 49,
-		Alpha2 = 50,
-		Alpha3 = 51,
-		Alpha4 = 52,
-		Alpha5 = 53,
-		Alpha6 = 54,
-		Alpha7 = 55,
-		Alpha8 = 56,
-		Alpha9 = 57,
-		SemiColon = 59, // ;
-		Equal = 61, // =
-		A = 65,
-		B = 66,
-		C = 67,
-		D = 68,
-		E = 69,
-		F = 70,
-		G = 71,
-		H = 72,
-		I = 73,
-		J = 74,
-		K = 75,
-		L = 76,
-		M = 77,
-		N = 78,
-		O = 79,
-		P = 80,
-		Q = 81,
-		R = 82,
-		S = 83,
-		T = 84,
-		U = 85,
-		V = 86,
-		W = 87,
-		X = 88,
-		Y = 89,
-		Z = 90,
-		LeftBracket = 91, // [
-		Backslash = 92, // \
-		RightBracket = 93, // ]
-		GraveAccent = 96, // `
-		World1 = 161, // Non-US #1
-		World2 = 162, // Non-US #2
-
-		// Function keys
-		Escape = 256,
-		Enter = 257,
-		Tab = 258,
-		Backspace = 259,
-		Insert = 260,
-		Delete = 261,
-		Right = 262,
-		Left = 263,
-		Down = 264,
-		Up = 265,
-		PageUp = 266,
-		PageDown = 267,
-		Home = 268,
-		End = 269,
-		CapsLock = 280,
-		ScrollLock = 281,
-		NumLock = 282,
-		PrintScreen = 283,
-		Pause = 284,
-		F1 = 290,
-		F2 = 291,
-		F3 = 292,
-		F4 = 293,
-		F5 = 294,
-		F6 = 295,
-		F7 = 296,
-		F8 = 297,
-		F9 = 298,
-		F10 = 299,
-		F11 = 300,
-		F12 = 301,
-		F13 = 302,
-		F14 = 303,
-		F15 = 304,
-		F16 = 305,
-		F17 = 306,
-		F18 = 307,
-		F19 = 308,
-		F20 = 309,
-		F21 = 310,
-		F22 = 311,
-		F23 = 312,
-		F24 = 313,
-		F25 = 314,
-		Numpad0 = 320,
-		Numpad1 = 321,
-		Numpad2 = 322,
-		Numpad3 = 323,
-		Numpad4 = 324,
-		Numpad5 = 325,
-		Numpad6 = 326,
-		Numpad7 = 327,
-		Numpad8 = 328,
-		Numpad9 = 329,
-		NumpadDecimal = 330,
-		NumpadDivide = 331,
-		NumpadMultiply = 332,
-		NumpadSubtract = 333,
-		NumpadAdd = 334,
-		NumpadEnter = 335,
-		NumpadEqual = 336,
-		LeftShift = 340,
-		LeftControl = 341,
-		LeftAlt = 342,
-		LeftSuper = 343,
-		RightShift = 344,
-		RightControl = 345,
-		RightAlt = 346,
-		RightSuper = 347,
-		Menu = 348,
-
-		// Mouse buttons
-		MouseButton1 = 400,
-		MouseButton2 = 401,
-		MouseButton3 = 402,
-		MouseButton4 = 403,
-		MouseButton5 = 404,
-		MouseButton6 = 405,
-		MouseButton7 = 406,
-		MouseButton8 = 407,
-		MouseLast = MouseButton8,
-		MouseLeft = MouseButton1,
-		MouseRight = MouseButton2,
-		MouseMiddle = MouseButton3,
-	}
-
-	public delegate void OnMouseMoveFunc(RenderWindow Wnd, float X, float Y);
-	public delegate void OnKeyFunc(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods);
-	public delegate void OnCharFunc(RenderWindow Wnd, string Char, uint Unicode);
-	public delegate void OnScrollFunc(RenderWindow Wnd, float XOffset, float YOffset);
-	public delegate void OnWindowResizeFunc(RenderWindow Wnd, int W, int H);
-
-	public unsafe class RenderWindow : IDisposable
-	{
-		bool _CaptureCursor;
-		bool disposed;
-
-		Glfw.Window Wnd;
-		Glfw.CursorPosFunc GlfwOnMouseMove;
-		Glfw.KeyFunc GlfwOnKey;
-		Glfw.MouseButtonFunc GlfwOnMouseButton;
-		Glfw.CharFunc GlfwOnChar;
-		Glfw.ScrollFunc GlfwOnScroll;
-		Glfw.WindowSizeFunc GlfwOnWindowResize;
-
-		public event OnMouseMoveFunc OnMouseMove;
-		public event OnMouseMoveFunc OnMouseMoveDelta;
-		public event OnKeyFunc OnKey;
-		public event OnCharFunc OnChar;
-		public event OnScrollFunc OnScroll;
-		public event OnWindowResizeFunc OnWindowResize;
-
-		public Color[] PixelData;
-		public int MouseX { get; private set; }
-		public int MouseY { get; private set; }
-		public int WindowWidth { get; private set; }
-		public int WindowHeight { get; private set; }
-		public GraphicsContext Graphics { get; private set; }
-
-		public bool ShowCursor
+	public RenderWindow(
+		int width,
+		int height,
+		string title,
+		bool resizable = false,
+		bool centerWindow = true
+	)
+		: this(new RenderWindowOptions
 		{
-			set
+			Width = width,
+			Height = height,
+			Title = title,
+			Resizable = resizable,
+			CenterWindow = centerWindow,
+		})
+	{
+	}
+
+	public RenderWindow(RenderWindowOptions options)
+	{
+		ValidateOptions(options);
+		Internal_OpenGL.InitGLFW();
+		Glfw.WindowHint(Glfw.Hint.Resizable, options.Resizable);
+
+		OpenGlVersion selectedVersion = options.PreferredVersion;
+
+		while (selectedVersion >= options.MinimumVersion && !nativeWindow)
+		{
+			nativeWindow = TryCreateWindow(
+				selectedVersion,
+				options.Width,
+				options.Height,
+				options.Title ?? string.Empty
+			);
+
+			if (nativeWindow || options.RequireExactVersion)
 			{
-				Glfw.SetInputMode(Wnd, Glfw.InputMode.Cursor, value ? Glfw.CursorMode.Normal : Glfw.CursorMode.Hidden);
+				break;
 			}
+
+			selectedVersion = PreviousVersion(selectedVersion);
 		}
 
-		public string ClipboardString
+		if (!nativeWindow)
 		{
-			get { return Glfw.GetClipboardString(Wnd); }
-			set { Glfw.SetClipboardString(Wnd, value); }
+			throw new InvalidOperationException("Could not create a supported OpenGL context.");
 		}
 
-		public Vector2 WindowSize
+		try
 		{
-			get { return new Vector2(WindowWidth, WindowHeight); }
+			MakeNativeCurrent();
+			OpenGlVersion actualVersion = new(
+				Internal_OpenGL.MajorVersion,
+				Internal_OpenGL.MinorVersion
+			);
+			ValidateCreatedContextVersion(
+				selectedVersion,
+				actualVersion,
+				options.RequireExactVersion
+			);
+		}
+		catch
+		{
+			DestroyWindowAfterFailedInitialization();
+
+			throw;
 		}
 
-		public Vector2 MousePos
+		Width = options.Width;
+		Height = options.Height;
+		RegisterCallbacks();
+
+		if (options.CenterWindow)
 		{
-			get { return new Vector2(MouseX, MouseY); }
+			Center();
 		}
 
-		public bool ShouldClose
+		CaptureCursor = false;
+		Graphics = new GraphicsContext(this);
+	}
+
+	public event EventHandler<MouseMoveEventArgs> MouseMoved;
+
+	public event EventHandler<MouseMoveEventArgs> MouseDelta;
+
+	public event EventHandler<KeyEventArgs> KeyChanged;
+
+	public event EventHandler<MouseButtonEventArgs> MouseButtonChanged;
+
+	public event EventHandler<TextInputEventArgs> TextInput;
+
+	public event EventHandler<ScrollEventArgs> Scrolled;
+
+	public event EventHandler<WindowResizeEventArgs> Resized;
+
+	public int Width { get; private set; }
+
+	public int Height { get; private set; }
+
+	public Vector2 Size => new(Width, Height);
+
+	public Vector2 MousePosition { get; private set; }
+
+	public GraphicsContext Graphics { get; private set; }
+
+	public ReadOnlyMemory<Color> PixelData => pixelData;
+
+	public bool IsCloseRequested
+	{
+		get
 		{
-			get { return Glfw.WindowShouldClose(Wnd); }
-			set { Glfw.SetWindowShouldClose(Wnd, value); }
+			ThrowIfDisposed();
+
+			return Glfw.WindowShouldClose(nativeWindow);
+		}
+		set
+		{
+			ThrowIfDisposed();
+			Glfw.SetWindowShouldClose(nativeWindow, value);
+		}
+	}
+
+	public bool CaptureCursor
+	{
+		get => captureCursor;
+		set
+		{
+			ThrowIfDisposed();
+			captureCursor = value;
+			ApplyCursorMode();
+		}
+	}
+
+	public bool ShowCursor
+	{
+		get => showCursor;
+		set
+		{
+			ThrowIfDisposed();
+			showCursor = value;
+			ApplyCursorMode();
+		}
+	}
+
+	public string ClipboardText
+	{
+		get
+		{
+			ThrowIfDisposed();
+
+			return Glfw.GetClipboardString(nativeWindow);
+		}
+		set
+		{
+			ThrowIfDisposed();
+			Glfw.SetClipboardString(nativeWindow, value ?? string.Empty);
+		}
+	}
+
+	public void PollEvents()
+	{
+		ThrowIfDisposed();
+		Glfw.PollEvents();
+	}
+
+	public void MakeCurrent()
+	{
+		ThrowIfDisposed();
+
+		if (Graphics == null)
+		{
+			MakeNativeCurrent();
+			return;
 		}
 
-		public bool CaptureCursor
+		Graphics.MakeCurrent();
+	}
+
+	public void Focus()
+	{
+		ThrowIfDisposed();
+		Glfw.FocusWindow(nativeWindow);
+	}
+
+	public void Center()
+	{
+		ThrowIfDisposed();
+
+		Vector2 desktopSize = GetDesktopResolution();
+		GetNativeWindowSize(out int width, out int height);
+		int x = (int)desktopSize.X / 2 - width / 2;
+		int y = (int)desktopSize.Y / 2 - height / 2;
+
+		Glfw.SetWindowPos(nativeWindow, x, y);
+	}
+
+	public void SetTitle(string title)
+	{
+		ThrowIfDisposed();
+		Glfw.SetWindowTitle(nativeWindow, title ?? string.Empty);
+	}
+
+	public void ReadPixels()
+	{
+		ThrowIfDisposed();
+		Graphics.MakeCurrent();
+		GetNativeWindowSize(out int width, out int height);
+
+		if (pixelData.Length != width * height)
 		{
-			get { return _CaptureCursor; }
-			set
-			{
-				_CaptureCursor = value;
-				Glfw.SetInputMode(
-					Wnd,
-					Glfw.InputMode.Cursor,
-					_CaptureCursor ? Glfw.CursorMode.Disabled : Glfw.CursorMode.Normal
-				);
-			}
+			pixelData = new Color[width * height];
 		}
 
-		static void SetOpenGLHints(int Major, int Minor)
+		fixed (Color* colorPointer = pixelData)
 		{
-			Glfw.WindowHint(Glfw.Hint.ClientApi, Glfw.ClientApi.OpenGL);
-			Glfw.WindowHint(Glfw.Hint.ContextCreationApi, Glfw.ContextApi.Native);
-			Glfw.WindowHint(Glfw.Hint.OpenglProfile, Glfw.OpenGLProfile.Core);
-			Glfw.WindowHint(Glfw.Hint.OpenglForwardCompat, false);
+			Internal_OpenGL.GL.ReadPixels(
+				0,
+				0,
+				(uint)width,
+				(uint)height,
+				PixelFormat.Rgba,
+				PixelType.UnsignedByte,
+				colorPointer
+			);
+		}
+	}
+
+	public Color GetPixel(int x, int y)
+	{
+		GetNativeWindowSize(out int width, out int height);
+
+		if (pixelData.Length == 0 || x < 0 || x >= width || y < 0 || y >= height)
+		{
+			return Color.Black;
+		}
+
+		int index = (height - y - 1) * width + x;
+
+		return index < pixelData.Length ? pixelData[index] : Color.Black;
+	}
+
+	public void Close()
+	{
+		if (disposed)
+		{
+			return;
+		}
+
+		Glfw.SetWindowShouldClose(nativeWindow, true);
+		Graphics?.Dispose();
+		Glfw.DestroyWindow(nativeWindow);
+		disposed = true;
+	}
+
+	public void Dispose()
+	{
+		Close();
+		GC.SuppressFinalize(this);
+	}
+
+	public static Vector2 GetDesktopResolution()
+	{
+		Internal_OpenGL.InitGLFW();
+
+		Glfw.VideoMode videoMode = Glfw.GetVideoMode(Glfw.GetPrimaryMonitor());
+
+		return new Vector2(videoMode.Width, videoMode.Height);
+	}
+
+	internal void MakeNativeCurrent()
+	{
+		Glfw.MakeContextCurrent(nativeWindow);
+		Internal_OpenGL.InitOpenGL();
+		Internal_OpenGL.SetupOpenGL();
+		Internal_OpenGL.GL.Enable(EnableCap.Multisample);
+	}
+
+	internal void SwapNativeBuffers()
+	{
+		Glfw.SwapBuffers(nativeWindow);
+	}
+
+	private Glfw.Window TryCreateWindow(OpenGlVersion version, int width, int height, string title)
+	{
+		SetOpenGlHints(version);
+
+		return Glfw.CreateWindow(width, height, title);
+	}
+
+	private static void SetOpenGlHints(OpenGlVersion version)
+	{
+		Glfw.WindowHint(Glfw.Hint.ClientApi, Glfw.ClientApi.OpenGL);
+		Glfw.WindowHint(Glfw.Hint.ContextCreationApi, Glfw.ContextApi.Native);
+		Glfw.WindowHint(Glfw.Hint.OpenglProfile, Glfw.OpenGLProfile.Core);
+		Glfw.WindowHint(Glfw.Hint.OpenglForwardCompat, false);
+
 #if DEBUG
-			Glfw.WindowHint(Glfw.Hint.OpenglDebugContext, true);
+		Glfw.WindowHint(Glfw.Hint.OpenglDebugContext, true);
 #else
-			if ((Major == 4 && Minor >= 6) || (Major > 4))
-				Glfw.WindowHint(Glfw.Hint.ContextNoError, true);
+		if (version.Major > 4 || version.Major == 4 && version.Minor >= 6)
+		{
+			Glfw.WindowHint(Glfw.Hint.ContextNoError, true);
+		}
 #endif
 
-			Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
-			Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, Major);
-			Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, Minor);
-			Glfw.WindowHint(Glfw.Hint.Samples, 0);
+		Glfw.WindowHint(Glfw.Hint.Doublebuffer, true);
+		Glfw.WindowHint(Glfw.Hint.ContextVersionMajor, version.Major);
+		Glfw.WindowHint(Glfw.Hint.ContextVersionMinor, version.Minor);
+		Glfw.WindowHint(Glfw.Hint.Samples, 0);
+	}
+
+	private static OpenGlVersion PreviousVersion(OpenGlVersion version)
+	{
+		return version.Minor > 0
+			? new OpenGlVersion(version.Major, version.Minor - 1)
+			: new OpenGlVersion(version.Major - 1, 9);
+	}
+
+	internal static void ValidateOptions(RenderWindowOptions options)
+	{
+		ArgumentNullException.ThrowIfNull(options);
+
+		if (options.Width <= 0 || options.Height <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options), "Window dimensions must be positive.");
 		}
 
-		Glfw.Window TryCreateWindow(int Major, int Minor, int W, int H, string Title)
+		if (options.MinimumVersion > options.PreferredVersion)
 		{
-			SetOpenGLHints(Major, Minor);
-			return Glfw.CreateWindow(W, H, Title);
-		}
-
-		public RenderWindow(int Width, int Height, string Title, bool Resizable = false, bool CenterWindow = true)
-			: this(new RenderWindowOptions
-			{
-				Width = Width,
-				Height = Height,
-				Title = Title,
-				Resizable = Resizable,
-				CenterWindow = CenterWindow,
-			}) { }
-
-		public RenderWindow(RenderWindowOptions options)
-		{
-			if (options == null)
-				throw new ArgumentNullException(nameof(options));
-			if (options.Width <= 0 || options.Height <= 0)
-				throw new ArgumentOutOfRangeException(nameof(options), "Window dimensions must be positive.");
-			if (options.MinimumVersion > options.PreferredVersion)
-				throw new ArgumentException("The minimum OpenGL version cannot exceed the preferred version.", nameof(options));
-
-			int Width = options.Width;
-			int Height = options.Height;
-			string Title = options.Title ?? string.Empty;
-			bool Resizable = options.Resizable;
-			bool CenterWindow = options.CenterWindow;
-			Internal_OpenGL.InitGLFW();
-			Glfw.WindowHint(Glfw.Hint.Resizable, Resizable);
-
-			OpenGLVersion selected = options.PreferredVersion;
-			while (selected >= options.MinimumVersion && !Wnd)
-			{
-				Wnd = TryCreateWindow(selected.Major, selected.Minor, Width, Height, Title);
-				if (Wnd || options.RequireExactVersion)
-					break;
-				selected = selected.Minor > 0
-					? new OpenGLVersion(selected.Major, selected.Minor - 1)
-					: new OpenGLVersion(selected.Major - 1, 9);
-			}
-
-			if (!Wnd)
-				throw new Exception("Could not create any supported OpenGL context");
-			if (CenterWindow)
-				Center();
-
-			WindowWidth = Width;
-			WindowHeight = Height;
-
-			{
-				float OldMouseX = 0,
-					OldMouseY = 0;
-				bool MouseDeltaInitialized = false;
-
-				Glfw.SetCursorPosCallback(
-					Wnd,
-					GlfwOnMouseMove = (W, X, Y) =>
-					{
-						if (!CaptureCursor)
-						{
-							if (X < 0 || X >= WindowWidth)
-								return;
-
-							if (Y < 0 || Y >= WindowHeight)
-								return;
-						}
-
-						MouseX = (int)X;
-						MouseY = (int)Y;
-						OnMouseMove?.Invoke(this, (float)X, (float)Y);
-
-						if (MouseDeltaInitialized)
-							OnMouseMoveDelta?.Invoke(this, OldMouseX - (float)X, OldMouseY - (float)Y);
-						else
-							MouseDeltaInitialized = true;
-
-						OldMouseX = (float)X;
-						OldMouseY = (float)Y;
-					}
-				);
-			}
-
-			Glfw.SetKeyCallback(
-				Wnd,
-				GlfwOnKey = (Wnd, Key, Scancode, Action, Mods) =>
-				{
-					if (OnKey != null)
-					{
-						bool IsPressed =
-							Action == Glfw.InputState.Press || Action == Glfw.InputState.Repeat ? true : false;
-						bool IsRepeat = Action == Glfw.InputState.Repeat;
-						OnKey(this, (Key)Key, Scancode, IsPressed, IsRepeat, (KeyMods)Mods);
-					}
-				}
+			throw new ArgumentException(
+				"The minimum OpenGL version cannot exceed the preferred version.",
+				nameof(options)
 			);
+		}
 
-			Glfw.SetMouseButtonCallback(
-				Wnd,
-				GlfwOnMouseButton = (Wnd, Button, State, Mods) =>
-				{
-					if (OnKey != null)
-					{
-						bool IsPressed =
-							State == Glfw.InputState.Press || State == Glfw.InputState.Repeat ? true : false;
-						bool IsRepeat = State == Glfw.InputState.Repeat;
-						OnKey(this, Key.MouseButton1 + (int)Button, -1, IsPressed, IsRepeat, (KeyMods)Mods);
-					}
-				}
+		if (options.MinimumVersion < new OpenGlVersion(4, 0))
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(options),
+				"FishGfx requires OpenGL 4.0 or newer."
 			);
+		}
+	}
 
-			Glfw.SetCharCallback(
-				Wnd,
-				GlfwOnChar = (Wnd, Unicode) =>
-				{
-					OnChar?.Invoke(this, ((char)Unicode).ToString(), Unicode);
-				}
+	internal static void ValidateCreatedContextVersion(
+		OpenGlVersion requestedVersion,
+		OpenGlVersion actualVersion,
+		bool requireExactVersion
+	)
+	{
+		if (actualVersion < requestedVersion)
+		{
+			throw new InvalidOperationException(
+				$"OpenGL {requestedVersion} or newer was requested, but "
+					+ $"the created context reports OpenGL {actualVersion}."
 			);
+		}
 
-			Glfw.SetScrollCallback(
-				Wnd,
-				GlfwOnScroll = (Wnd, XOffset, YOffset) =>
-				{
-					OnScroll?.Invoke(this, (float)XOffset, (float)YOffset);
-				}
+		if (requireExactVersion && actualVersion != requestedVersion)
+		{
+			throw new InvalidOperationException(
+				$"OpenGL {requestedVersion} was requested exactly, but "
+					+ $"the created context reports OpenGL {actualVersion}."
 			);
+		}
+	}
 
-			Glfw.SetWindowSizeCallback(
-				Wnd,
-				GlfwOnWindowResize = (Wnd, W, H) =>
-				{
-					WindowWidth = W;
-					WindowHeight = H;
-					Graphics?.ResizeBackbuffer(W, H);
+	private void GetNativeWindowSize(out int width, out int height)
+	{
+		Glfw.GetWindowSize(nativeWindow, out width, out height);
+	}
 
-					OnWindowResize?.Invoke(this, W, H);
-				}
-			);
+	private void ApplyCursorMode()
+	{
+		Glfw.CursorMode mode = captureCursor
+			? Glfw.CursorMode.Disabled
+			: showCursor
+				? Glfw.CursorMode.Normal
+				: Glfw.CursorMode.Hidden;
 
-			CaptureCursor = false;
-			MakeNativeCurrent();
-			Graphics = new GraphicsContext(this);
+		Glfw.SetInputMode(nativeWindow, Glfw.InputMode.Cursor, mode);
+	}
+
+	private void DestroyWindowAfterFailedInitialization()
+	{
+		if (!nativeWindow)
+		{
+			return;
 		}
 
-		public void MakeCurrent()
+		if (Glfw.GetCurrentContext() == nativeWindow)
 		{
-			if (Graphics == null)
-				MakeNativeCurrent();
-			else
-				Graphics.MakeCurrent();
+			Glfw.MakeContextCurrent(Glfw.Window.None);
 		}
 
-		/// <summary>Brings this window to the foreground and gives it input focus.</summary>
-		public void Focus()
+		Glfw.DestroyWindow(nativeWindow);
+		nativeWindow = Glfw.Window.None;
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
 		{
-			if (disposed)
-				throw new ObjectDisposedException(nameof(RenderWindow));
-			Glfw.FocusWindow(Wnd);
-		}
-
-		internal void MakeNativeCurrent()
-		{
-			Glfw.MakeContextCurrent(Wnd);
-			Internal_OpenGL.InitOpenGL();
-			Internal_OpenGL.SetupOpenGL();
-			Internal_OpenGL.GL.Enable(EnableCap.Multisample);
-		}
-
-		public void SwapBuffers()
-		{
-			Graphics?.CollectGarbage();
-			SwapNativeBuffers();
-		}
-
-		internal void SwapNativeBuffers() => Glfw.SwapBuffers(Wnd);
-
-		public void ReadPixels()
-		{
-			if (disposed) throw new ObjectDisposedException(nameof(RenderWindow));
-			Graphics?.MakeCurrent();
-			GetWindowSize(out int W, out int H);
-
-			if (PixelData == null || PixelData.Length != W * H)
-				PixelData = new Color[W * H];
-
-			fixed (Color* ClrPtr = PixelData)
-				Internal_OpenGL.GL.ReadPixels(0, 0, W, H, PixelFormat.Rgba, PixelType.UnsignedByte, (IntPtr)ClrPtr);
-		}
-
-		public Color GetPixel(int X, int Y)
-		{
-			GetWindowSize(out int W, out int H);
-			if (PixelData == null || X < 0 || X >= W || Y < 0 || Y >= H)
-				return Color.Black;
-			int Idx = (H - Y - 1) * W + X;
-
-			if (Idx >= PixelData.Length)
-				return Color.Black;
-
-			return PixelData[Idx];
-		}
-
-		public void Close()
-		{
-			if (disposed)
-				return;
-			ShouldClose = true;
-			Graphics?.Dispose();
-			Glfw.DestroyWindow(Wnd);
-			disposed = true;
-		}
-
-		public void Dispose()
-		{
-			Close();
-			GC.SuppressFinalize(this);
-		}
-
-		void GetWindowSize(out int Width, out int Height)
-		{
-			Glfw.GetWindowSize(Wnd, out Width, out Height);
-		}
-
-		Vector2 GetWindowSizeVec()
-		{
-			GetWindowSize(out int W, out int H);
-			return new Vector2(W, H);
-		}
-
-		public void Center()
-		{
-			RenderAPI.GetDesktopResolution(out int W, out int H);
-			GetWindowSize(out int WW, out int WH);
-
-			int X = W / 2 - WW / 2;
-			int Y = H / 2 - WH / 2;
-
-			Glfw.SetWindowPos(Wnd, X, Y);
-		}
-
-		public void SetTitle(string Title)
-		{
-			Glfw.SetWindowTitle(Wnd, Title);
-		}
-
-		public static Vector2 GetDesktopResolution()
-		{
-			Internal_OpenGL.InitGLFW();
-			Glfw.VideoMode VMode = Glfw.GetVideoMode(Glfw.GetPrimaryMonitor());
-			return new Vector2(VMode.Width, VMode.Height);
+			throw new ObjectDisposedException(nameof(RenderWindow));
 		}
 	}
 }

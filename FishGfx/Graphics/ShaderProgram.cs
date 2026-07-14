@@ -1,457 +1,301 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Numerics;
 using Silk.NET.OpenGL;
-using Matrix4 = System.Numerics.Matrix4x4;
-using Vector2 = System.Numerics.Vector2;
-using Vector3 = System.Numerics.Vector3;
 
-namespace FishGfx.Graphics
+namespace FishGfx.Graphics;
+
+public unsafe sealed class ShaderProgram : GraphicsResource
 {
-	public enum ShaderType
+	private readonly Dictionary<string, int> uniformLocations = new();
+	private readonly Stack<uint> previousPrograms = new();
+	private readonly IReadOnlyList<ShaderStage> stages;
+
+	internal ShaderProgram(GraphicsContext owner, IReadOnlyList<ShaderStage> stages)
+		: base(owner)
 	{
-		FragmentShader = 35632,
-		VertexShader = 35633,
-		GeometryShader = 36313,
-		TessEvaluationShader = 36487,
-		TessControlShader = 36488,
-		ComputeShader = 37305,
-	}
-
-	public class ShaderUniforms
-	{
-		static readonly Stack<ShaderUniforms> LegacyUniforms = new Stack<ShaderUniforms>();
-		static Stack<ShaderUniforms> Uniforms => GraphicsContext.CurrentOrNull?.Uniforms ?? LegacyUniforms;
-
-		public static ShaderUniforms Current
+		if (stages == null)
 		{
-			get
-			{
-				if (Uniforms.Count < 1)
-					throw new Exception("No shader uniforms assigned");
-
-				return Uniforms.Peek();
-			}
+			throw new ArgumentNullException(nameof(stages));
 		}
 
-		static ShaderUniforms()
+		if (stages.Count == 0)
 		{
-			LegacyUniforms.Push(CreateDefault());
+			throw new ArgumentException("A shader program requires at least one stage.", nameof(stages));
 		}
 
-		public static ShaderUniforms CreateDefault()
+		ShaderStage[] stageCopy = new ShaderStage[stages.Count];
+
+		for (int index = 0; index < stages.Count; index++)
 		{
-			ShaderUniforms Uniforms = new ShaderUniforms();
+			ShaderStage stage = stages[index] ?? throw new ArgumentException(
+				"Shader stages cannot contain null values.",
+				nameof(stages)
+			);
 
-			Uniforms.Camera = new Camera();
-			Uniforms.Camera.SetOrthogonal(-1, -1, 1, 1, 1, -1);
-			Uniforms.Model = Matrix4.Identity;
-
-			return Uniforms;
+			stage.EnsureOwner(owner);
+			stageCopy[index] = stage;
 		}
 
-		public static void Push(ShaderUniforms U)
+		this.stages = Array.AsReadOnly(stageCopy);
+		Handle = Internal_OpenGL.GL.CreateProgram();
+
+		try
 		{
-			Uniforms.Push(U);
-		}
-
-		public static ShaderUniforms Pop()
-		{
-			return Uniforms.Pop();
-		}
-
-		//public static ShaderProgram NopShader;
-
-		public Camera Camera;
-		public Matrix4 Model;
-		public float AlphaTest;
-		public float Time;
-
-		public Vector2 Resolution;
-		public Vector2 TextureSize;
-		public int MultisampleCount;
-
-		public bool HasRenderView { get; private set; }
-		public RenderView RenderView { get; private set; }
-
-		public void SetRenderView(RenderView view)
-		{
-			RenderView = view;
-			HasRenderView = true;
-			Resolution = view.ViewportSize;
-		}
-
-		public void Bind(ShaderProgram Shader)
-		{
-			Matrix4 view = HasRenderView ? RenderView.View : Camera.View;
-			Matrix4 projection = HasRenderView ? RenderView.Projection : Camera.Projection;
-			Vector3 position = HasRenderView ? RenderView.Position : Camera.Position;
-			Vector2 viewport = HasRenderView ? RenderView.ViewportSize : Camera.ViewportSize;
-			float near = HasRenderView ? RenderView.Near : Camera.Near;
-			float far = HasRenderView ? RenderView.Far : Camera.Far;
-
-			Shader.Uniform1f("Near", near);
-			Shader.Uniform1f("Far", far);
-			Shader.UniformMatrix4f("View", view);
-			Shader.UniformMatrix4f("Project", projection);
-			Shader.UniformMatrix4f("Model", Model);
-			Shader.Uniform2f("Viewport", viewport);
-			Shader.Uniform1f("AlphaTest", AlphaTest);
-			Shader.Uniform1f("Time", Time);
-			Shader.Uniform1f("MultisampleCount", (float)MultisampleCount);
-			Shader.Uniform2f("TextureSize", TextureSize);
-			Shader.Uniform2f("Resolution", Resolution);
-			Shader.Uniform3f("ViewPos", position);
-		}
-	}
-
-	public unsafe class ShaderProgram : GraphicsObject
-	{
-		List<ShaderStage> ShaderStages;
-		Dictionary<string, int> UniformLocations;
-
-		public ShaderProgram(params ShaderStage[] Stages)
-		{
-			ID = Internal_OpenGL.GL.CreateProgram();
-
-			ShaderStages = new List<ShaderStage>();
-			UniformLocations = new Dictionary<string, int>();
-
-			foreach (var S in Stages)
-				AttachShader(S);
 			Link();
+			RegisterResource();
 		}
-
-		public void AttachShader(ShaderStage S)
+		catch
 		{
-			EnsureCurrentOwner();
-			if (S == null) throw new ArgumentNullException(nameof(S));
-			S.EnsureOwner(GraphicsContext.Current);
-			ShaderStages.Add(S);
+			Internal_OpenGL.GL.DeleteProgram(Handle);
+			Handle = 0;
 
-			Internal_OpenGL.GL.AttachShader(ID, S.ID);
-		}
-
-		public bool Link(out string ErrorString)
-		{
-			EnsureCurrentOwner();
-#if DEBUG
-			SetLabel(ToString());
-#endif
-
-			Internal_OpenGL.GL.LinkProgram(ID);
-
-			Internal_OpenGL.GL.GetProgram(ID, ProgramPropertyARB.LinkStatus, out int Linked);
-
-			if (Linked == 0)
-			{
-				ErrorString = Internal_OpenGL.GL.GetProgramInfoLog(ID);
-				return false;
-			}
-
-			string[] UniformKeys = UniformLocations.Keys.ToArray();
-			UniformLocations.Clear();
-
-			for (int i = 0; i < UniformKeys.Length; i++)
-				GetUniformLocation(UniformKeys[i]);
-
-			// Get some defaults
-			GetUniformLocation("Model");
-			GetUniformLocation("View");
-			GetUniformLocation("Project");
-
-			ErrorString = "";
-			return true;
-		}
-
-		public void Link()
-		{
-			if (!Link(out string ErrorString))
-				throw new Exception("Failed to link program\n" + ErrorString);
-		}
-
-		public virtual void Bind(ShaderUniforms Uniforms)
-		{
-			EnsureCurrentOwner();
-			if (Uniforms == null) throw new ArgumentNullException(nameof(Uniforms));
-			Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previous);
-			Internal_OpenGL.GL.UseProgram(ID);
-			if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = ID;
-			try { Uniforms.Bind(this); }
-			catch
-			{
-				Internal_OpenGL.GL.UseProgram((uint)previous);
-				if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = (uint)previous;
-				throw;
-			}
-		}
-
-		public override void Unbind()
-		{
-			Internal_OpenGL.GL.UseProgram(0);
-			if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = 0;
-		}
-
-		bool SupportsProgramUniforms => Internal_OpenGL.MajorVersion > 4 || (Internal_OpenGL.MajorVersion == 4 && Internal_OpenGL.MinorVersion >= 1);
-
-		uint BindForUniformUpdate()
-		{
-			Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int currentProgram);
-			uint previous = (uint)currentProgram;
-			GraphicsContext context = GraphicsContext.CurrentOrNull;
-			if (previous != ID)
-			{
-				Internal_OpenGL.GL.UseProgram(ID);
-				if (context != null) context.BoundProgram = ID;
-			}
-			return previous;
-		}
-
-		void RestoreProgram(uint previous)
-		{
-			if (previous == ID) return;
-			Internal_OpenGL.GL.UseProgram(previous);
-			if (GraphicsContext.CurrentOrNull != null) GraphicsContext.CurrentOrNull.BoundProgram = previous;
-		}
-
-		public int GetAttribLocation(string Name)
-		{
-			EnsureCurrentOwner();
-			return Internal_OpenGL.GL.GetAttribLocation(ID, Name);
-		}
-
-		public int GetUniformLocation(string Name)
-		{
-			EnsureCurrentOwner();
-			if (UniformLocations.ContainsKey(Name))
-				return UniformLocations[Name];
-
-			int Loc = Internal_OpenGL.GL.GetUniformLocation(ID, Name);
-
-			if (Loc != -1)
-				UniformLocations.Add(Name, Loc);
-
-			return Loc;
-		}
-
-		public void UniformMatrix4f(string Uniform, Matrix4 M, bool Transpose = false)
-		{
-			int location = GetUniformLocation(Uniform);
-			if (location == -1) return;
-			if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniformMatrix4(ID, location, 1, Transpose, (float*)&M);
-			else
-			{
-				uint previous = BindForUniformUpdate();
-				try { Internal_OpenGL.GL.UniformMatrix4(location, 1, Transpose, (float*)&M); }
-				finally { RestoreProgram(previous); }
-			}
-		}
-
-		public bool Uniform3f<T>(string Uniform, T Val)
-			where T : struct
-		{
-			int Loc = GetUniformLocation(Uniform);
-
-			if (Loc == -1)
-				return false;
-
-			if (Val is Vector3 V)
-			{
-				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform3(ID, Loc, V);
-				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform3(Loc, V); } finally { RestoreProgram(previous); } }
-			}
-			else
-				throw new NotSupportedException($"Uniform3f does not support {typeof(T)}");
-			return true;
-		}
-
-		public bool Uniform4f<T>(string Uniform, T Val)
-			where T : struct
-		{
-			int Loc = GetUniformLocation(Uniform);
-
-			if (Loc == -1)
-				return false;
-
-			if (Val is System.Numerics.Vector4 V)
-			{
-				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform4(ID, Loc, V);
-				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform4(Loc, V); } finally { RestoreProgram(previous); } }
-			}
-			else
-				throw new NotSupportedException($"Uniform4f does not support {typeof(T)}");
-			return true;
-		}
-
-		public bool Uniform2f<T>(string Uniform, T Val)
-			where T : struct
-		{
-			int Loc = GetUniformLocation(Uniform);
-
-			if (Loc == -1)
-				return false;
-
-			if (Val is Vector2 V)
-			{
-				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform2(ID, Loc, V);
-				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform2(Loc, V); } finally { RestoreProgram(previous); } }
-			}
-			else
-				throw new NotSupportedException($"Uniform2f does not support {typeof(T)}");
-			return true;
-		}
-
-		public bool Uniform1f<T>(string Uniform, T Val)
-			where T : struct
-		{
-			int Loc = GetUniformLocation(Uniform);
-
-			if (Loc == -1)
-				return false;
-
-			if (Val is float V)
-			{
-				if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform1(ID, Loc, V);
-				else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform1(Loc, V); } finally { RestoreProgram(previous); } }
-			}
-			else
-				throw new NotSupportedException($"Uniform1f does not support {typeof(T)}");
-			return true;
-		}
-
-		public bool Uniform1(string Uniform, int Val)
-		{
-			int Loc = GetUniformLocation(Uniform);
-
-			if (Loc == -1)
-				return false;
-
-			if (SupportsProgramUniforms) Internal_OpenGL.GL.ProgramUniform1(ID, Loc, Val);
-			else { uint previous = BindForUniformUpdate(); try { Internal_OpenGL.GL.Uniform1(Loc, Val); } finally { RestoreProgram(previous); } }
-			return true;
-		}
-
-		public override void GraphicsDispose()
-		{
-			Internal_OpenGL.GL.DeleteProgram(ID);
-		}
-
-		public override string ToString()
-		{
-			return string.Join(";", ShaderStages);
+			throw;
 		}
 	}
 
-	public class ShaderStage : GraphicsObject
+	public IReadOnlyList<ShaderStage> Stages => stages;
+
+	public int GetAttributeLocation(string name)
 	{
-		static Dictionary<string, ShaderStage> ShaderStages = new Dictionary<string, ShaderStage>();
+		EnsureCurrentOwner();
+		ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-		//public FileWatchHandle WatchHandle;
+		return Internal_OpenGL.GL.GetAttribLocation(Handle, name);
+	}
 
-		string Source;
-		string SrcFile;
-		ShaderType ShaderType;
+	public bool SetUniform(string name, Matrix4x4 value, bool transpose = false)
+	{
+		int location = GetUniformLocation(name);
 
-		public ShaderStage(ShaderType T, string SourceFile)
+		if (location == -1)
 		{
-			ID = Internal_OpenGL.GL.CreateShader((Silk.NET.OpenGL.ShaderType)T);
-			ShaderType = T;
-
-			SetSourceFile(SourceFile);
-			Compile();
+			return false;
 		}
 
-		public ShaderStage SetSourceCode(string Code)
+		if (Owner.Capabilities.SupportsProgramUniforms)
 		{
-			EnsureCurrentOwner();
-			Source = Code;
-			SrcFile = null;
-			//WatchHandle = null;
-			return this;
+			Internal_OpenGL.GL.ProgramUniformMatrix4(Handle, location, 1, transpose, (float*)&value);
 		}
-
-		public ShaderStage SetSourceFile(string FilePath)
+		else
 		{
-			Source = null;
-			SrcFile = Path.GetFullPath(FilePath);
-			//WatchHandle = FileWatcher.Watch(FilePath);
-			return this;
-		}
+			Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previousProgram);
 
-		public bool Compile(out string ErrorString)
-		{
-			EnsureCurrentOwner();
-#if DEBUG
-			SetLabel(ToString());
-#endif
-
-			// TODO: Find something better
-			if (SrcFile != null)
+			try
 			{
-				bool Succeeded = false;
-				int TryCount = 0;
-
-				while (!Succeeded)
-				{
-					try
-					{
-						Source = File.ReadAllText(SrcFile);
-						Succeeded = true;
-					}
-					catch (Exception)
-					{
-						Thread.Sleep(50);
-						TryCount++;
-
-						if (TryCount >= 10)
-							throw;
-					}
-				}
+				Internal_OpenGL.GL.UseProgram(Handle);
+				Internal_OpenGL.GL.UniformMatrix4(location, 1, transpose, (float*)&value);
 			}
-
-			Internal_OpenGL.GL.ShaderSource(ID, Source);
-			Internal_OpenGL.GL.CompileShader(ID);
-
-			Internal_OpenGL.GL.GetShader(ID, ShaderParameterName.CompileStatus, out int Status);
-
-			if (Status == 0)
+			finally
 			{
-				string Log = Internal_OpenGL.GL.GetShaderInfoLog(ID);
-
-				if (SrcFile != null)
-					ErrorString = SrcFile + "\n" + Log;
-				else
-					ErrorString = Log;
-				return false;
+				Internal_OpenGL.GL.UseProgram((uint)previousProgram);
 			}
-
-			ErrorString = "";
-			return true;
 		}
 
-		public ShaderStage Compile()
-		{
-			if (!Compile(out string ErrorString))
-				throw new Exception("Failed to compile shader\n" + ErrorString);
+		return true;
+	}
 
-			return this;
+	public bool SetUniform(string name, Vector2 value)
+	{
+		int location = GetUniformLocation(name);
+
+		if (location == -1)
+		{
+			return false;
 		}
 
-		public override void GraphicsDispose()
+		if (Owner.Capabilities.SupportsProgramUniforms)
 		{
-			Internal_OpenGL.GL.DeleteShader(ID);
+			Internal_OpenGL.GL.ProgramUniform2(Handle, location, value);
+		}
+		else
+		{
+			WithProgramBound(() => Internal_OpenGL.GL.Uniform2(location, value));
 		}
 
-		public override string ToString()
-		{
-			if (SrcFile != null)
-				return SrcFile;
+		return true;
+	}
 
-			return ShaderType.ToString();
+	public bool SetUniform(string name, Vector3 value)
+	{
+		int location = GetUniformLocation(name);
+
+		if (location == -1)
+		{
+			return false;
+		}
+
+		if (Owner.Capabilities.SupportsProgramUniforms)
+		{
+			Internal_OpenGL.GL.ProgramUniform3(Handle, location, value);
+		}
+		else
+		{
+			WithProgramBound(() => Internal_OpenGL.GL.Uniform3(location, value));
+		}
+
+		return true;
+	}
+
+	public bool SetUniform(string name, Vector4 value)
+	{
+		int location = GetUniformLocation(name);
+
+		if (location == -1)
+		{
+			return false;
+		}
+
+		if (Owner.Capabilities.SupportsProgramUniforms)
+		{
+			Internal_OpenGL.GL.ProgramUniform4(Handle, location, value);
+		}
+		else
+		{
+			WithProgramBound(() => Internal_OpenGL.GL.Uniform4(location, value));
+		}
+
+		return true;
+	}
+
+	public bool SetUniform(string name, float value)
+	{
+		int location = GetUniformLocation(name);
+
+		if (location == -1)
+		{
+			return false;
+		}
+
+		if (Owner.Capabilities.SupportsProgramUniforms)
+		{
+			Internal_OpenGL.GL.ProgramUniform1(Handle, location, value);
+		}
+		else
+		{
+			WithProgramBound(() => Internal_OpenGL.GL.Uniform1(location, value));
+		}
+
+		return true;
+	}
+
+	public bool SetUniform(string name, int value)
+	{
+		int location = GetUniformLocation(name);
+
+		if (location == -1)
+		{
+			return false;
+		}
+
+		if (Owner.Capabilities.SupportsProgramUniforms)
+		{
+			Internal_OpenGL.GL.ProgramUniform1(Handle, location, value);
+		}
+		else
+		{
+			WithProgramBound(() => Internal_OpenGL.GL.Uniform1(location, value));
+		}
+
+		return true;
+	}
+
+	internal void Bind(RenderUniformState uniforms)
+	{
+		EnsureCurrentOwner();
+		ArgumentNullException.ThrowIfNull(uniforms);
+		Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previousProgram);
+
+		Internal_OpenGL.GL.UseProgram(Handle);
+
+		try
+		{
+			uniforms.Apply(this);
+			previousPrograms.Push((uint)previousProgram);
+		}
+		catch
+		{
+			Internal_OpenGL.GL.UseProgram((uint)previousProgram);
+
+			throw;
+		}
+	}
+
+	internal void Unbind()
+	{
+		EnsureCurrentOwner();
+
+		if (previousPrograms.Count == 0)
+		{
+			throw new InvalidOperationException("The shader program is not bound.");
+		}
+
+		Internal_OpenGL.GL.UseProgram(previousPrograms.Pop());
+	}
+
+	internal override void DeleteResource()
+	{
+		Internal_OpenGL.GL.DeleteProgram(Handle);
+	}
+
+	public override string ToString()
+	{
+		return string.Join(";", stages);
+	}
+
+	private void Link()
+	{
+		foreach (ShaderStage stage in stages)
+		{
+			Internal_OpenGL.GL.AttachShader(Handle, stage.Handle);
+		}
+
+		Internal_OpenGL.GL.LinkProgram(Handle);
+		Internal_OpenGL.GL.GetProgram(Handle, ProgramPropertyARB.LinkStatus, out int status);
+
+		foreach (ShaderStage stage in stages)
+		{
+			Internal_OpenGL.GL.DetachShader(Handle, stage.Handle);
+		}
+
+		if (status != 0)
+		{
+			return;
+		}
+
+		string log = Internal_OpenGL.GL.GetProgramInfoLog(Handle);
+
+		throw new InvalidOperationException($"Failed to link shader program.{Environment.NewLine}{log}");
+	}
+
+	private int GetUniformLocation(string name)
+	{
+		EnsureCurrentOwner();
+		ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+		if (uniformLocations.TryGetValue(name, out int location))
+		{
+			return location;
+		}
+
+		location = Internal_OpenGL.GL.GetUniformLocation(Handle, name);
+		uniformLocations.Add(name, location);
+
+		return location;
+	}
+
+	private void WithProgramBound(Action action)
+	{
+		Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previousProgram);
+
+		try
+		{
+			Internal_OpenGL.GL.UseProgram(Handle);
+			action();
+		}
+		finally
+		{
+			Internal_OpenGL.GL.UseProgram((uint)previousProgram);
 		}
 	}
 }

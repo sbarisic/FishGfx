@@ -1,147 +1,240 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using System.Text;
-using FishGfx;
 using Glfw3;
 using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics
+namespace FishGfx.Graphics;
+
+internal static unsafe class Internal_OpenGL
 {
-	internal static class OpenGL_BODGES
-	{
-		public static bool INTEL_BIND_ZERO_TEXTURE_BUG = false;
-	}
-
-	internal static unsafe class Internal_OpenGL
-	{
-		public static GL GL { get; private set; }
 #if DEBUG
-		static DebugProc DebugCallback;
+	private static DebugProc debugCallback;
 #endif
-		static bool GLFWInitialized = false;
-		static bool OpenGLInitialized = false;
 
-		//static bool LastFrontFace;
+	private static bool glfwInitialized;
+	private static bool openGlInitialized;
 
-		public static string[] Extensions { get; private set; }
-		public static string Version { get; private set; }
-		public static int MajorVersion { get; private set; }
-		public static int MinorVersion { get; private set; }
+	internal static GL GL { get; private set; }
 
-		public static bool Is42OrAbove { get; private set; }
-		public static bool Is45OrAbove { get; private set; }
+	internal static string[] Extensions { get; private set; } = Array.Empty<string>();
 
-		public static void InitGLFW()
+	internal static string Version { get; private set; } = string.Empty;
+
+	internal static string Renderer { get; private set; } = string.Empty;
+
+	internal static int MajorVersion { get; private set; }
+
+	internal static int MinorVersion { get; private set; }
+
+	internal static bool Is42OrAbove { get; private set; }
+
+	internal static bool Is43OrAbove { get; private set; }
+
+	internal static bool Is45OrAbove { get; private set; }
+
+	internal static void InitGLFW()
+	{
+		if (glfwInitialized)
 		{
-			if (GLFWInitialized)
-				return;
-
-			GLFWInitialized = true;
-
-			//Glfw.ConfigureNativesDirectory(Path.GetFullPath(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)));
-
-			if (!Glfw.Init())
-				throw new Exception("Could not initialize glfw");
-
-			Glfw.SetErrorCallback(
-				(Err, Msg) =>
-				{
-					if (Err == Glfw.ErrorCode.VersionUnavailable)
-						return;
-
-					throw new Exception(string.Format("glfw({0}) {1}", Err, Msg));
-				}
-			);
+			return;
 		}
 
-		public static void InitOpenGL()
+		if (!Glfw.Init())
 		{
-			if (GL != null)
-				return;
-
-			GL = GL.GetApi(Glfw.GetProcAddress);
+			throw new InvalidOperationException("Could not initialize GLFW.");
 		}
 
-		public static void SetupOpenGL()
+		Glfw.SetErrorCallback((error, message) =>
 		{
-			if (!OpenGLInitialized)
+			if (error == Glfw.ErrorCode.VersionUnavailable)
 			{
-				OpenGLInitialized = true;
-#if DEBUG
-			bool IS_GL_DEBUG = Environment.GetCommandLineArgs().Contains("-debug");
-			const string LogName = "opengl_log.txt";
-
-			if (File.Exists(LogName))
-				File.Delete(LogName);
-
-			DebugCallback = (Src, DbgType, ID, Severity, Len, Buffer, UserPtr) =>
-			{
-				string Msg = Encoding.ASCII.GetString((byte*)Buffer, Len);
-
-				// Will use video memory blah blah
-				if (Src == GLEnum.DebugSourceApi && DbgType == GLEnum.DebugTypeOther && ID == 131185)
-					return;
-
-				if (Src == GLEnum.DebugSourceApplication)
-				{
-					if (DbgType == GLEnum.DebugTypeMarker)
-						return;
-
-					if (DbgType == GLEnum.DebugTypePushGroup || DbgType == GLEnum.DebugTypePopGroup)
-						return;
-				}
-
-				Console.WriteLine("OpenGL {0} {1} {2}, {3}", Src, DbgType, ID, Severity);
-				Console.WriteLine(Msg);
-
-				if ((Severity == GLEnum.DebugSeverityHigh) && Debugger.IsAttached)
-				{
-					if (!Msg.Contains("GL_INVALID_OPERATION in BindTextureUnit"))
-						Debugger.Break();
-				}
-			};
-			GL.DebugMessageCallback(DebugCallback, null);
-
-			GL.Enable(EnableCap.DebugOutput);
-				GL.Enable(EnableCap.DebugOutputSynchronous);
-#endif
+				return;
 			}
 
-			GL.GetInteger(GetPName.MajorVersion, out int Major);
-			GL.GetInteger(GetPName.MinorVersion, out int Minor);
-			MajorVersion = Major;
-			MinorVersion = Minor;
-			Is42OrAbove = Major > 4 || (Major == 4 && Minor >= 2);
-			Is45OrAbove = Major > 4 || (Major == 4 && Minor >= 5);
-			Version = $"{Major}.{Minor}";
+			throw new InvalidOperationException($"GLFW ({error}): {message}");
+		});
+		glfwInitialized = true;
+	}
 
-			GL.GetInteger(GetPName.NumExtensions, out int ExtensionCount);
-			List<string> SupportedExtensions = new List<string>(ExtensionCount);
-
-			for (uint i = 0; i < ExtensionCount; i++)
-				SupportedExtensions.Add(GL.GetStringS(StringName.Extensions, i));
-
-			Extensions = SupportedExtensions.ToArray();
-
-			string Renderer = GL.GetStringS(StringName.Renderer);
-			string GLSLVer = GL.GetStringS(StringName.ShadingLanguageVersion);
-			string Vendor = GL.GetStringS(StringName.Vendor);
-			string Vers = GL.GetStringS(StringName.Version);
-
-			RenderAPI.Renderer = string.Format("{0} by {1}; GL {2}; GLSL {3}", Renderer, Vendor, Vers, GLSLVer);
+	internal static void InitOpenGL()
+	{
+		if (GL != null)
+		{
+			return;
 		}
 
-		public static void Scissor(int X, int Y, int W, int H, bool Enable)
-		{
-			Internal_OpenGL.GL.Scissor(X, Y, (uint)W, (uint)H);
+		GL = GL.GetApi(Glfw.GetProcAddress);
+	}
 
-			if (Enable)
-				Internal_OpenGL.GL.Enable(EnableCap.ScissorTest);
-			else
-				Internal_OpenGL.GL.Disable(EnableCap.ScissorTest);
+	internal static void SetupOpenGL()
+	{
+		if (GL == null)
+		{
+			throw new InvalidOperationException("OpenGL has not been initialized.");
+		}
+
+		ReadVersion();
+		ReadExtensions();
+		InitializeDebugOutput();
+		ReadRenderer();
+	}
+
+	internal static void Scissor(
+		int x,
+		int y,
+		int width,
+		int height,
+		bool enabled
+	)
+	{
+		if (width < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(width));
+		}
+
+		if (height < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(height));
+		}
+
+		GL.Scissor(x, y, (uint)width, (uint)height);
+
+		if (enabled)
+		{
+			GL.Enable(EnableCap.ScissorTest);
+		}
+		else
+		{
+			GL.Disable(EnableCap.ScissorTest);
 		}
 	}
+
+	private static void InitializeDebugOutput()
+	{
+		if (openGlInitialized)
+		{
+			return;
+		}
+
+		bool supportsDebugOutput = Is43OrAbove || Array.IndexOf(
+			Extensions,
+			"GL_KHR_debug"
+		) >= 0;
+
+		if (!supportsDebugOutput)
+		{
+			return;
+		}
+
+		openGlInitialized = true;
+
+#if DEBUG
+		debugCallback = (
+			source,
+			type,
+			id,
+			severity,
+			length,
+			messagePointer,
+			userPointer
+		) =>
+		{
+			if (IsIgnoredDebugMessage(source, type, id))
+			{
+				return;
+			}
+
+			string message = Encoding.ASCII.GetString(
+				(byte*)messagePointer,
+				length
+			);
+			Console.WriteLine(
+				"OpenGL {0} {1} {2}, {3}",
+				source,
+				type,
+				id,
+				severity
+			);
+			Console.WriteLine(message);
+
+			if (severity == GLEnum.DebugSeverityHigh
+				&& Debugger.IsAttached
+				&& !message.Contains(
+					"GL_INVALID_OPERATION in BindTextureUnit",
+					StringComparison.Ordinal
+				))
+			{
+				Debugger.Break();
+			}
+		};
+		GL.DebugMessageCallback(debugCallback, null);
+		GL.Enable(EnableCap.DebugOutput);
+		GL.Enable(EnableCap.DebugOutputSynchronous);
+#endif
+	}
+
+	private static void ReadVersion()
+	{
+		GL.GetInteger(GetPName.MajorVersion, out int major);
+		GL.GetInteger(GetPName.MinorVersion, out int minor);
+		MajorVersion = major;
+		MinorVersion = minor;
+		Is42OrAbove = major > 4 || major == 4 && minor >= 2;
+		Is43OrAbove = major > 4 || major == 4 && minor >= 3;
+		Is45OrAbove = major > 4 || major == 4 && minor >= 5;
+		Version = $"{major}.{minor}";
+	}
+
+	private static void ReadExtensions()
+	{
+		GL.GetInteger(GetPName.NumExtensions, out int extensionCount);
+		List<string> extensions = new(extensionCount);
+
+		for (uint index = 0; index < extensionCount; index++)
+		{
+			extensions.Add(GL.GetStringS(StringName.Extensions, index));
+		}
+
+		Extensions = extensions.ToArray();
+	}
+
+	private static void ReadRenderer()
+	{
+		string renderer = GL.GetStringS(StringName.Renderer);
+		string shadingLanguageVersion = GL.GetStringS(
+			StringName.ShadingLanguageVersion
+		);
+		string vendor = GL.GetStringS(StringName.Vendor);
+		string version = GL.GetStringS(StringName.Version);
+		Renderer = $"{renderer} by {vendor}; GL {version}; " +
+			$"GLSL {shadingLanguageVersion}";
+	}
+
+#if DEBUG
+	private static bool IsIgnoredDebugMessage(
+		GLEnum source,
+		GLEnum type,
+		int id
+	)
+	{
+		if (source == GLEnum.DebugSourceApi
+			&& type == GLEnum.DebugTypeOther
+			&& id == 131185)
+		{
+			return true;
+		}
+
+		if (source != GLEnum.DebugSourceApplication)
+		{
+			return false;
+		}
+
+		return type is
+			GLEnum.DebugTypeMarker or
+			GLEnum.DebugTypePushGroup or
+			GLEnum.DebugTypePopGroup;
+	}
+#endif
 }

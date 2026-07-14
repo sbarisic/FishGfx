@@ -2,86 +2,69 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
-using FishGfx;
 
-namespace FishGfx.Formats
+namespace FishGfx.Formats;
+
+public sealed class GenericMesh
 {
-	public class GenericMesh
+	public GenericMesh(string materialName)
 	{
-		public string MaterialName;
-		public List<Vertex3> Vertices;
+		MaterialName = string.IsNullOrWhiteSpace(materialName) ? "none" : materialName;
+	}
 
-		public GenericMesh(string MaterialName)
+	public GenericMesh(IEnumerable<Vertex3> vertices, string materialName = "none")
+		: this(materialName)
+	{
+		ArgumentNullException.ThrowIfNull(vertices);
+
+		Vertices.AddRange(vertices);
+	}
+
+	public string MaterialName { get; set; }
+
+	public List<Vertex3> Vertices { get; } = new();
+
+	public AxisAlignedBoundingBox Bounds => AxisAlignedBoundingBox.FromPoints(
+		Vertices.Select(vertex => vertex.Position)
+	);
+
+	public BoundingSphere BoundingSphere => BoundingSphere.FromBounds(Bounds);
+
+	public void SwapYAndZ()
+	{
+		TransformPositions(position => new Vector3(-position.X, position.Z, position.Y));
+	}
+
+	public void ReverseWinding()
+	{
+		if (Vertices.Count % 3 != 0)
 		{
-			Vertices = new List<Vertex3>();
-			this.MaterialName = MaterialName;
+			throw new InvalidOperationException("A mesh must contain complete triangles to reverse its winding.");
 		}
 
-		public GenericMesh(Vertex3[] Verts, string MaterialName = "none")
-			: this(MaterialName)
+		for (int index = 0; index < Vertices.Count; index += 3)
 		{
-			Vertices.AddRange(Verts);
-		}
+			(Vertex3 first, Vertex3 second) = (Vertices[index], Vertices[index + 1]);
 
-		public void CalculateBoundingBox(out Vector3 Min, out Vector3 Max)
+			Vertices[index] = second;
+			Vertices[index + 1] = first;
+		}
+	}
+
+	public void TransformPositions(Func<Vector3, Vector3> transform)
+	{
+		ArgumentNullException.ThrowIfNull(transform);
+
+		for (int index = 0; index < Vertices.Count; index++)
 		{
-			Min = Vertices[0].Position;
-			Max = Vertices[0].Position;
-
-			foreach (var Vtx in Vertices)
-			{
-				Min.X = Math.Min(Min.X, Vtx.Position.X);
-				Min.Y = Math.Min(Min.Y, Vtx.Position.Y);
-				Min.Z = Math.Min(Min.Z, Vtx.Position.Z);
-
-				Max.X = Math.Max(Max.X, Vtx.Position.X);
-				Max.Y = Math.Max(Max.Y, Vtx.Position.Y);
-				Max.Z = Math.Max(Max.Z, Vtx.Position.Z);
-			}
+			Vertex3 vertex = Vertices[index];
+			vertex.Position = transform(vertex.Position);
+			Vertices[index] = vertex;
 		}
+	}
 
-		public void CalculateBoundingSphere(out Vector3 Pos, out float Radius)
-		{
-			CalculateBoundingBox(out Vector3 Min, out Vector3 Max);
-			Pos = Min + ((Max - Min) / 2);
-			Radius = ((Max - Min) / 2).MaxElement();
-		}
-
-		public void SwapYZ()
-		{
-			for (int i = 0; i < Vertices.Count; i++)
-				Vertices[i] = new Vertex3(
-					Vertices[i].Position.XZY() * new Vector3(-1, 1, 1),
-					Vertices[i].UV,
-					Vertices[i].Color
-				);
-		}
-
-		public void SwapWindingOrder()
-		{
-			for (int i = 0; i < Vertices.Count; i += 3)
-			{
-				Vertex3 Vtx = Vertices[i];
-				Vertices[i] = Vertices[i + 1];
-				Vertices[i + 1] = Vtx;
-			}
-		}
-
-		public void ForEachPosition(Func<Vector3, Vector3> OnVec)
-		{
-			for (int i = 0; i < Vertices.Count; i++)
-			{
-				Vertex3 V = Vertices[i];
-				V.Position = OnVec(V.Position);
-				Vertices[i] = V;
-			}
-		}
-
-		public override string ToString()
-		{
-			return string.Format("{0} ({1} verts)", MaterialName, Vertices?.Count ?? 0);
-		}
+	public override string ToString()
+	{
+		return $"{MaterialName} ({Vertices.Count} verts)";
 	}
 }

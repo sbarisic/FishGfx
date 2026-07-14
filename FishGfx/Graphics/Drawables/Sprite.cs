@@ -1,84 +1,153 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace FishGfx.Graphics.Drawables
+namespace FishGfx.Graphics.Drawables;
+
+public sealed class Sprite : IRenderable, IDisposable
 {
-	public class Sprite : IDrawable, IDisposable
+	private readonly GraphicsContext graphics;
+	private readonly Mesh3D mesh;
+	private Texture texture;
+	private bool disposed;
+
+	public Sprite(
+		GraphicsContext graphics,
+		ShaderProgram shader,
+		Texture texture = null
+	)
 	{
-		Mesh3D Mesh;
+		ArgumentNullException.ThrowIfNull(graphics);
+		this.graphics = graphics;
+		Shader = shader ?? throw new ArgumentNullException(nameof(shader));
+		Shader.EnsureOwner(graphics);
 
-		public ShaderProgram Shader;
-		public Texture Texture;
-		public Vector2 Center;
-		public Vector2 Position;
-		public Vector2 Scale;
-
-		public bool FlipX;
-
-		public Sprite()
+		if (texture != null)
 		{
-			Mesh = new Mesh3D(BufferUsage.Dynamic);
-			Mesh.PrimitiveType = PrimitiveType.Triangles;
-
-			Mesh.SetVertices(
-				new Vertex3[]
-				{
-					new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
-					new Vertex3(new Vector3(0, 1, 0), new Vector2(0, 1)),
-					new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
-					new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
-					new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
-					new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
-				}
-			);
-			Center = new Vector2(0, 0);
-			Position = new Vector2(0, 0);
-			Scale = new Vector2(1, 1);
+			texture.EnsureOwner(graphics);
 		}
 
-		public Sprite(Texture Tex)
-			: this()
-		{
-			Texture = Tex;
-		}
+		Texture = texture;
+		Scale = Vector2.One;
+		mesh = graphics.CreateMesh3D(BufferUsage.Dynamic);
+		mesh.PrimitiveType = PrimitiveType.Triangles;
+		mesh.SetVertices(CreateVertices());
+	}
 
-		public void SetUVs(Vector2 A, Vector2 B, Vector2 C, Vector2 D)
-		{
-			Mesh.SetUVs(new Vector2[] { A, B, C, C, D, A });
-		}
+	public ShaderProgram Shader { get; }
 
-		public void SetUVs(Vector2 Min, Vector2 Max)
+	public Texture Texture
+	{
+		get => texture;
+		set
 		{
-			SetUVs(Min, new Vector2(Min.X, Max.Y), Max, new Vector2(Max.X, Min.Y));
+			value?.EnsureOwner(graphics);
+			texture = value;
 		}
+	}
 
-		public void Draw()
+	public Vector2 Center { get; set; }
+
+	public Vector2 Position { get; set; }
+
+	public Vector2 Scale { get; set; }
+
+	public bool IsFlippedHorizontally { get; set; }
+
+	public void SetUvRectangle(Vector2 minimum, Vector2 maximum)
+	{
+		ThrowIfDisposed();
+
+		mesh.SetUVs(
+			new[]
+			{
+				minimum,
+				new Vector2(minimum.X, maximum.Y),
+				maximum,
+				maximum,
+				new Vector2(maximum.X, minimum.Y),
+				minimum,
+			}
+		);
+	}
+
+	public void Render(RenderPass pass)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(pass);
+		pass.EnsureActive();
+		Shader.EnsureOwner(pass.Context);
+		Texture?.EnsureOwner(pass.Context);
+
+		using IDisposable modelScope = pass.PushModel(CreateTransform());
+
+		Shader.Bind(pass.Uniforms);
+
+		try
 		{
-			Vector2 flipScale = new Vector2(FlipX ? -1 : 1, 1);
-			ShaderUniforms uniforms = ShaderUniforms.Current;
-			Matrix4x4 oldModel = uniforms.Model;
-			bool shaderBound = false;
-			bool textureBound = false;
+			Texture?.BindTextureUnit();
+
 			try
 			{
-				Matrix4x4 translation = Matrix4x4.CreateTranslation(Position.X - Center.X * flipScale.X, Position.Y - Center.Y * flipScale.Y, 0);
-				uniforms.Model = Matrix4x4.CreateScale(Scale.X * flipScale.X, Scale.Y * flipScale.Y, 1) * translation;
-				if (Shader != null) { Shader.Bind(uniforms); shaderBound = true; }
-				if (Texture != null) { Texture.BindTextureUnit(); textureBound = true; }
-				Mesh.Draw();
+				mesh.Draw();
 			}
 			finally
 			{
-				if (textureBound) Texture.UnbindTextureUnit();
-				if (shaderBound) Shader.Unbind();
-				uniforms.Model = oldModel;
+				Texture?.UnbindTextureUnit();
 			}
 		}
+		finally
+		{
+			Shader.Unbind();
+		}
+	}
 
-		public void Dispose() => Mesh.Dispose();
+	public void Dispose()
+	{
+		if (disposed)
+		{
+			return;
+		}
+
+		disposed = true;
+		mesh.Dispose();
+	}
+
+	private Matrix4x4 CreateTransform()
+	{
+		float horizontalDirection = IsFlippedHorizontally ? -1 : 1;
+		Vector2 directionalCenter = new(Center.X * horizontalDirection, Center.Y);
+		Matrix4x4 scale = Matrix4x4.CreateScale(
+			Scale.X * horizontalDirection,
+			Scale.Y,
+			1
+		);
+		Matrix4x4 translation = Matrix4x4.CreateTranslation(
+			Position.X - directionalCenter.X,
+			Position.Y - directionalCenter.Y,
+			0
+		);
+
+		return scale * translation;
+	}
+
+	private static Vertex3[] CreateVertices()
+	{
+		return new[]
+		{
+			new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
+			new Vertex3(new Vector3(0, 1, 0), new Vector2(0, 1)),
+			new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
+			new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
+			new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
+			new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
+		};
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
+		{
+			throw new ObjectDisposedException(nameof(Sprite));
+		}
 	}
 }

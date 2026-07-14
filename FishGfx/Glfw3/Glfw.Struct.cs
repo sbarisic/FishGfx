@@ -1,13 +1,16 @@
-﻿namespace Glfw3 {
+namespace Glfw3
+{
 	using System;
 	using System.Runtime.InteropServices;
 
-	public static partial class Glfw {
+	public static partial class Glfw
+	{
 		/// <summary>
 		/// Opaque cursor object.
 		/// </summary>
 		[StructLayout(LayoutKind.Sequential)]
-		public struct Cursor : IEquatable<Cursor> {
+		public struct Cursor : IEquatable<Cursor>
+		{
 			/// <summary>
 			/// <para>Null cursor pointer.</para>
 			/// </summary>
@@ -18,11 +21,13 @@
 			/// </summary>
 			public IntPtr Ptr;
 
-			internal Cursor(IntPtr ptr) {
+			internal Cursor(IntPtr ptr)
+			{
 				Ptr = ptr;
 			}
 
-			public override bool Equals(object obj) {
+			public override bool Equals(object obj)
+			{
 				if (obj is Cursor)
 					return Equals((Cursor)obj);
 				return false;
@@ -47,7 +52,8 @@
 		/// <seealso cref="GetGammaRamp(Monitor)"/>
 		/// <seealso cref="SetGammaRamp(Monitor, GammaRamp)"/>
 		[StructLayout(LayoutKind.Sequential)]
-		public struct GammaRamp {
+		public struct GammaRamp
+		{
 			/// <summary>
 			/// An array of value describing the response of the red channel.
 			/// </summary>
@@ -73,7 +79,8 @@
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
-		internal unsafe struct InternalGammaRamp {
+		internal unsafe struct InternalGammaRamp
+		{
 			/// <summary>
 			/// An array of value describing the response of the red channel.
 			/// </summary>
@@ -99,7 +106,8 @@
 		/// Image data.
 		/// </summary>
 		/// <seealso cref=""/>
-		public struct Image {
+		public struct Image
+		{
 			/// <summary>
 			/// The width, in pixels, of this image.
 			/// </summary>
@@ -120,7 +128,8 @@
 		/// Internal image data.
 		/// </summary>
 		[StructLayout(LayoutKind.Sequential)]
-		internal struct InternalImage {
+		internal struct InternalImage
+		{
 			/// <summary>
 			/// The width, in pixels, of this image.
 			/// </summary>
@@ -143,7 +152,8 @@
 		/// <seealso cref="GetMonitors"/>
 		/// <seealso cref="GetPrimaryMonitor"/>
 		[StructLayout(LayoutKind.Sequential)]
-		public struct Monitor : IEquatable<Monitor> {
+		public struct Monitor : IEquatable<Monitor>
+		{
 			/// <summary>
 			/// <para>Null monitor pointer.</para>
 			/// </summary>
@@ -154,11 +164,13 @@
 			/// </summary>
 			public IntPtr Ptr;
 
-			internal Monitor(IntPtr ptr) {
+			internal Monitor(IntPtr ptr)
+			{
 				Ptr = ptr;
 			}
 
-			public override bool Equals(object obj) {
+			public override bool Equals(object obj)
+			{
 				if (obj is Monitor)
 					return Equals((Monitor)obj);
 
@@ -184,7 +196,8 @@
 		/// <seealso cref="GetVideoMode(Monitor)"/>
 		/// <seealso cref="GetVideoModes(Monitor)"/>
 		[StructLayout(LayoutKind.Sequential)]
-		public struct VideoMode : IEquatable<VideoMode> {
+		public struct VideoMode : IEquatable<VideoMode>
+		{
 			/// <summary>
 			/// The width, in screen coordinates, of the video mode.
 			/// </summary>
@@ -215,14 +228,16 @@
 			/// </summary>
 			public int RefreshRate;
 
-			public override bool Equals(object obj) {
+			public override bool Equals(object obj)
+			{
 				if (obj is VideoMode)
 					return Equals((VideoMode)obj);
 
 				return false;
 			}
 
-			public bool Equals(VideoMode obj) {
+			public bool Equals(VideoMode obj)
+			{
 				return obj.Width == Width
 					&& obj.Height == Height
 					&& obj.RedBits == RedBits
@@ -231,7 +246,8 @@
 					&& obj.RefreshRate == RefreshRate;
 			}
 
-			public override string ToString() {
+			public override string ToString()
+			{
 				return string.Format("VideoMode(width: {0}, height: {1}, redBits: {2}, greenBits: {3}, blueBits: {4}, refreshRate: {5})",
 					Width.ToString(),
 					Height.ToString(),
@@ -242,8 +258,10 @@
 				);
 			}
 
-			public override int GetHashCode() {
-				unchecked {
+			public override int GetHashCode()
+			{
+				unchecked
+				{
 					int hash = 17;
 					hash = hash * 23 + Width.GetHashCode();
 					hash = hash * 23 + Height.GetHashCode();
@@ -265,7 +283,8 @@
 		/// </summary>
 		/// <seealso cref="CreateWindow(int, int, string, Monitor, Window)"/>
 		[StructLayout(LayoutKind.Sequential)]
-		public struct Window : IEquatable<Window> {
+		public struct Window : IEquatable<Window>
+		{
 			/// <summary>
 			/// <para>Null window pointer.</para>
 			/// </summary>
@@ -276,11 +295,13 @@
 			/// </summary>
 			public IntPtr Ptr;
 
-			internal Window(IntPtr ptr) {
+			internal Window(IntPtr ptr)
+			{
 				Ptr = ptr;
 			}
 
-			public override bool Equals(object obj) {
+			public override bool Equals(object obj)
+			{
 				if (obj is Window)
 					return Equals((Window)obj);
 

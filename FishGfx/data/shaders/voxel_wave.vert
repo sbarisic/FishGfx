@@ -13,23 +13,23 @@ out vec3 frag_Normal;
 out vec3 frag_WorldPosition;
 out vec4 frag_Light;
 
-uniform mat4 Model;
-uniform mat4 View;
-uniform mat4 Project;
-uniform float Time;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+uniform float uTime;
 
 const vec2 WaveDirectionA = vec2(0.943858, 0.330350);
 const vec2 WaveDirectionB = vec2(-0.371391, 0.928477);
 
 void main()
 {
-	vec4 worldPosition = Model * vec4(Pos, 1.0);
-	vec3 worldNormal = normalize(mat3(Model) * Normal);
+	vec4 worldPosition = uModel * vec4(Pos, 1.0);
+	vec3 worldNormal = normalize(mat3(uModel) * Normal);
 
 	if (Wave.w > 0.0 && Wave.x > 0.0)
 	{
-		float phaseA = dot(worldPosition.xz, WaveDirectionA) * Wave.y + Time * Wave.z;
-		float phaseB = dot(worldPosition.xz, WaveDirectionB) * (Wave.y * 0.73) - Time * (Wave.z * 1.17);
+		float phaseA = dot(worldPosition.xz, WaveDirectionA) * Wave.y + uTime * Wave.z;
+		float phaseB = dot(worldPosition.xz, WaveDirectionB) * (Wave.y * 0.73) - uTime * (Wave.z * 1.17);
 		float height = 0.5 * (sin(phaseA) + sin(phaseB));
 		worldPosition.y += Wave.w * Wave.x * (height - 1.0);
 
@@ -49,5 +49,5 @@ void main()
 	frag_Normal = worldNormal;
 	frag_WorldPosition = worldPosition.xyz;
 	frag_Light = Light;
-	gl_Position = Project * View * worldPosition;
+	gl_Position = uProjection * uView * worldPosition;
 }

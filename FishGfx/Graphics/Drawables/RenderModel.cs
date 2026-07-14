@@ -1,110 +1,172 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
-using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 using FishGfx.Formats;
-using FishGfx.Graphics;
 
-namespace FishGfx.Graphics.Drawables
+namespace FishGfx.Graphics.Drawables;
+
+public sealed class RenderModel : IRenderable, IDisposable
 {
-	public class RenderModel : IDrawable, IDisposable
-	{
-		class SubMesh
-		{
-			public string MaterialName;
-			public Texture Texture;
-			public Mesh3D Mesh;
+	private readonly GraphicsContext graphics;
+	private readonly MaterialPart[] parts;
+	private readonly ReadOnlyCollection<string> materialNames;
+	private bool disposed;
 
-			public SubMesh(string MatName, Texture Tex, Mesh3D Msh)
+	public RenderModel(
+		GraphicsContext graphics,
+		IEnumerable<GenericMesh> meshes,
+		ShaderProgram shader,
+		bool includeUvs = true,
+		bool includeColors = true
+	)
+	{
+		ArgumentNullException.ThrowIfNull(graphics);
+		ArgumentNullException.ThrowIfNull(meshes);
+		this.graphics = graphics;
+		Shader = shader ?? throw new ArgumentNullException(nameof(shader));
+		Shader.EnsureOwner(graphics);
+
+		GenericMesh[] sourceMeshes = meshes.ToArray();
+		parts = new MaterialPart[sourceMeshes.Length];
+		string[] names = new string[sourceMeshes.Length];
+
+		try
+		{
+			for (int index = 0; index < sourceMeshes.Length; index++)
 			{
-				MaterialName = MatName;
-				Texture = Tex;
-				Mesh = Msh;
+				GenericMesh source = sourceMeshes[index]
+					?? throw new ArgumentException("Meshes cannot contain null values.", nameof(meshes));
+				Mesh3D mesh = graphics.CreateMesh3D(source, includeUvs, includeColors);
+				parts[index] = new MaterialPart(source.MaterialName, mesh);
+				names[index] = source.MaterialName;
 			}
 		}
-
-		SubMesh[] Meshes;
-
-		public RenderModel(IEnumerable<GenericMesh> Meshes, bool HasUVs = true, bool HasColors = true)
+		catch
 		{
-			if (Meshes == null) throw new ArgumentNullException(nameof(Meshes));
-			GenericMesh[] GenericMeshes = Meshes.ToArray();
-			this.Meshes = new SubMesh[GenericMeshes.Length];
+			DisposeParts();
 
-			for (int i = 0; i < GenericMeshes.Length; i++)
-				this.Meshes[i] = new SubMesh(
-					GenericMeshes[i].MaterialName,
-					null,
-					new Mesh3D(GenericMeshes[i], HasUVs, HasColors)
-				);
+			throw;
 		}
 
-		public void SetMaterialTexture(string MaterialName, Texture Tex)
-		{
-			foreach (var M in Meshes)
-				if (M.MaterialName == MaterialName)
-				{
-					M.Texture = Tex;
-					return;
-				}
+		materialNames = Array.AsReadOnly(names);
+	}
 
-			throw new Exception("Material not found " + MaterialName);
+	public ShaderProgram Shader { get; }
+
+	public IReadOnlyList<string> MaterialNames => materialNames;
+
+	public void SetMaterialTexture(string materialName, Texture texture)
+	{
+		ThrowIfDisposed();
+		MaterialPart part = FindPart(materialName);
+
+		if (texture != null)
+		{
+			texture.EnsureOwner(graphics);
 		}
 
-		public Mesh3D GetMaterialMesh(string MaterialName)
-		{
-			foreach (var M in Meshes)
-				if (M.MaterialName == MaterialName)
-					return M.Mesh;
+		part.Texture = texture;
+	}
 
-			throw new Exception("Material mesh not found " + MaterialName);
+	public Mesh3D GetMaterialMesh(string materialName)
+	{
+		ThrowIfDisposed();
+
+		return FindPart(materialName).Mesh;
+	}
+
+	public void Render(RenderPass pass)
+	{
+		Render(pass, Shader);
+	}
+
+	public void Dispose()
+	{
+		if (disposed)
+		{
+			return;
 		}
 
-		public IEnumerable<string> GetMaterialNames()
-		{
-			foreach (var M in Meshes)
-				yield return M.MaterialName;
-		}
+		disposed = true;
+		DisposeParts();
+	}
 
-		public void Draw()
+	internal void Render(RenderPass pass, ShaderProgram shader)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(pass);
+		ArgumentNullException.ThrowIfNull(shader);
+		pass.EnsureActive();
+		shader.EnsureOwner(pass.Context);
+		shader.Bind(pass.Uniforms);
+
+		try
 		{
-			foreach (var M in Meshes)
+			foreach (MaterialPart part in parts)
 			{
-				bool textureBound = false;
+				part.Texture?.EnsureOwner(pass.Context);
+				part.Texture?.BindTextureUnit();
 
 				try
 				{
-					if (M.Texture != null)
-					{
-						M.Texture.BindTextureUnit();
-						textureBound = true;
-					}
-
-					M.Mesh.Draw();
+					part.Mesh.Draw();
 				}
 				finally
 				{
-					if (textureBound)
-						M.Texture.UnbindTextureUnit();
+					part.Texture?.UnbindTextureUnit();
 				}
 			}
 		}
-
-		public void Draw(ShaderProgram Shader, ShaderUniforms Uniforms)
+		finally
 		{
-			if (Shader == null) throw new ArgumentNullException(nameof(Shader));
-			if (Uniforms == null) throw new ArgumentNullException(nameof(Uniforms));
-			Shader.Bind(Uniforms);
-			try { Draw(); }
-			finally { Shader.Unbind(); }
+			shader.Unbind();
+		}
+	}
+
+	private MaterialPart FindPart(string materialName)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(materialName);
+
+		foreach (MaterialPart part in parts)
+		{
+			if (string.Equals(part.MaterialName, materialName, StringComparison.Ordinal))
+			{
+				return part;
+			}
 		}
 
-		public void Dispose()
+		throw new KeyNotFoundException($"Material '{materialName}' was not found.");
+	}
+
+	private void DisposeParts()
+	{
+		foreach (MaterialPart part in parts)
 		{
-			foreach (SubMesh mesh in Meshes)
-				mesh.Mesh.Dispose();
+			part?.Mesh.Dispose();
 		}
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
+		{
+			throw new ObjectDisposedException(nameof(RenderModel));
+		}
+	}
+
+	private sealed class MaterialPart
+	{
+		internal MaterialPart(string materialName, Mesh3D mesh)
+		{
+			MaterialName = materialName;
+			Mesh = mesh;
+		}
+
+		internal string MaterialName { get; }
+
+		internal Mesh3D Mesh { get; }
+
+		internal Texture Texture { get; set; }
 	}
 }

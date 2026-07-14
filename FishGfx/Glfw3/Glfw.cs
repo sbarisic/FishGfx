@@ -1,4 +1,5 @@
-﻿namespace Glfw3 {
+namespace Glfw3
+{
 	using System;
 	using System.IO;
 	using System.Runtime.InteropServices;
@@ -7,7 +8,8 @@
 	/// <summary>
 	/// <a href="http://www.glfw.org/">GLFW 3</a> bindings.
 	/// </summary>
-	public static partial class Glfw {
+	public static partial class Glfw
+	{
 		const string kLibrary = "glfw3";
 
 		/// <summary>
@@ -18,7 +20,8 @@
 		/// in.</param>
 		/// <exception cref="DirectoryNotFoundException">When <paramref name="nativeDirectory"/> is
 		/// not found.</exception>
-		public static void ConfigureNativesDirectory(string nativeDirectory) {
+		public static void ConfigureNativesDirectory(string nativeDirectory)
+		{
 			if (Directory.Exists(nativeDirectory))
 				Environment.SetEnvironmentVariable("Path", Environment.GetEnvironmentVariable("Path") + ";" + Path.GetFullPath(nativeDirectory) + ";");
 			else
@@ -49,7 +52,8 @@
 		public readonly static int VersionRevision = 1;
 
 		// string <> utf8 utility functions
-		internal static IntPtr ToUTF8(string text) {
+		internal static IntPtr ToUTF8(string text)
+		{
 			int len = Encoding.UTF8.GetByteCount(text);
 			byte[] buffer = new byte[len + 1];
 			Encoding.UTF8.GetBytes(text, 0, text.Length, buffer, 0);
@@ -58,7 +62,8 @@
 			return nativeUtf8;
 		}
 
-		internal static string FromUTF8(IntPtr ptr) {
+		internal static string FromUTF8(IntPtr ptr)
+		{
 			int len = 0;
 			while (Marshal.ReadByte(ptr, len) != 0)
 				++len;

@@ -1,20 +1,21 @@
-﻿#version 410
+﻿#version 400
 
-layout (location = 0) in vec2 Pos;
-layout (location = 1) in vec4 Clr;
-layout (location = 2) in vec2 UV;
+layout (location = 0) in vec2 aPosition;
+layout (location = 1) in vec4 aColor;
+layout (location = 2) in vec2 aUv;
 
-layout (location = 0) out vec4 frag_Clr;
-layout (location = 1) out vec2 frag_UV;
+out vec4 vColor;
+out vec2 vUv;
 
-uniform mat4 Model;
-uniform mat4 View;
-uniform mat4 Project;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
 
-void main() {
-	frag_Clr = Clr;
-	frag_UV = UV;
+void main()
+{
+	vColor = aColor;
+	vUv = aUv;
 
-	mat4 MVP = Project * View * Model;
-	gl_Position = MVP * vec4(Pos, 0.0, 1.0);
+	mat4 modelViewProjection = uProjection * uView * uModel;
+	gl_Position = modelViewProjection * vec4(aPosition, 0.0, 1.0);
 }

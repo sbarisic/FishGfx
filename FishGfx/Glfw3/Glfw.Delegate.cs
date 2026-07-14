@@ -1,7 +1,9 @@
-﻿namespace Glfw3 {
+namespace Glfw3
+{
 	using System.Runtime.InteropServices;
 
-	public static partial class Glfw {
+	public static partial class Glfw
+	{
 		/// <summary>
 		/// The function signature for Unicode character callbacks.
 		/// </summary>

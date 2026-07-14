@@ -10,435 +10,456 @@ using FishGfx.Game;
 using FishGfx.Graphics;
 using FishGfx.NodeGraph;
 
-namespace FishGfx.NodeEditor
-{
-	internal sealed class NodeEditorApplication
-	{
-		private const int InitialWidth = 1920;
-		private const int InitialHeight = 1080;
-		private RenderWindow window;
-		private readonly Camera renderCamera = new Camera();
-		private InputManager input;
-		private FunctionNodeGraph graph = new FunctionNodeGraph();
-		private readonly NodeFunctionRegistry registry = new NodeFunctionRegistry();
-		private readonly FunctionNodeEvaluator evaluator = new FunctionNodeEvaluator();
-		private readonly NodeCanvas canvas = new NodeCanvas();
-		private readonly ContextMenu menu;
-		private readonly InlineValueEditor editor = new InlineValueEditor();
-		private readonly List<string> typedCharacters = new List<string>();
-		private NodeRenderer renderer;
-		private object selected;
-		private FunctionNode draggedNode;
-		private Vector2 nodeDragOffset;
-		private NodePort draggedPort;
-		private NodePort hoverPort;
-		private Vector2 previousMouse;
-		private float scrollDelta;
-		private readonly bool autoMode;
-		private NodeEvaluationResult evaluationResult;
-		private readonly string layoutPath = Path.Combine(AppContext.BaseDirectory, "node-layout.json");
-		private string fileStatus;
-		private bool fileStatusError;
+namespace FishGfx.NodeEditor;
 
-		internal NodeEditorApplication(string[] args)
+internal sealed class NodeEditorApplication
+{
+	private const int InitialWidth = 1920;
+	private const int InitialHeight = 1080;
+
+	private readonly Camera renderCamera = new Camera();
+	private readonly NodeEditorSession session = new NodeEditorSession();
+	private readonly NodeCanvas canvas = new NodeCanvas();
+	private readonly ContextMenu menu;
+	private readonly InlineValueEditor editor = new InlineValueEditor();
+	private readonly List<string> typedCharacters = new List<string>();
+	private readonly bool autoMode;
+	private readonly string layoutPath = Path.Combine(AppContext.BaseDirectory, "node-layout.json");
+
+	private RenderWindow window;
+	private InputManager input;
+	private NodeRenderer renderer;
+	private object selected;
+	private FunctionNode draggedNode;
+	private Vector2 nodeDragOffset;
+	private NodePort draggedPort;
+	private NodePort hoverPort;
+	private Vector2 previousMouse;
+	private float scrollDelta;
+	private string fileStatus;
+	private bool fileStatusError;
+
+	internal NodeEditorApplication(string[] args)
+	{
+		autoMode = args.Any(a => string.Equals(a, "--auto", StringComparison.OrdinalIgnoreCase));
+		menu = new ContextMenu(session.Functions);
+	}
+
+	internal void Run()
+	{
+		window = new RenderWindow(InitialWidth, InitialHeight, "FishGfx Visual Node Editor", true);
+		input = new InputManager(window);
+
+		TrueTypeFont graphFont = new(
+			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf")
+		);
+		TrueTypeFont menuFont = new(
+			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Aaargh.ttf")
+		);
+
+		renderer = new NodeRenderer(graphFont, menuFont);
+		window.Scrolled += OnScroll;
+		window.TextInput += OnTextInput;
+		window.Resized += OnResize;
+
+		if (!autoMode && File.Exists(layoutPath))
 		{
-			autoMode = args.Any(a => string.Equals(a, "--auto", StringComparison.OrdinalIgnoreCase));
-			registry.Register(typeof(SampleNodeFunctions));
-			menu = new ContextMenu(registry.Functions);
+			LoadLayout();
 		}
 
-		internal void Run()
+		ConfigureProjection();
+		previousMouse = input.MousePosition;
+
+		if (autoMode)
 		{
-			window = new RenderWindow(InitialWidth, InitialHeight, "FishGfx Visual Node Editor", true);
-			input = new InputManager(window);
-			TTFFont graphFont = window.Graphics.CreateTrueTypeFont(Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf"));
-			TTFFont menuFont = window.Graphics.CreateTrueTypeFont(Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Aaargh.ttf"));
-			renderer = new NodeRenderer(graphFont, menuFont);
-			window.OnScroll += OnScroll;
-			window.OnChar += OnChar;
-			window.OnWindowResize += OnResize;
+			Vector2 menuPoint = new Vector2(820, 820);
+			menu.Open(menuPoint, canvas.ScreenToWorld(menuPoint), window.Width, window.Height);
+		}
 
-			if (!autoMode && File.Exists(layoutPath))
+		Stopwatch runtime = Stopwatch.StartNew();
+
+		while (!window.IsCloseRequested)
+		{
+			input.BeginFrame();
+			typedCharacters.Clear();
+			scrollDelta = 0;
+			window.PollEvents();
+			Update();
+			RenderState editorState = RenderState.Default with
 			{
-				SeedGraph();
+				CullMode = CullMode.None,
+				DepthTestEnabled = false,
+				DepthWriteEnabled = false,
+			};
+			using RenderFrame frame = window.Graphics.BeginFrame();
+			using (RenderPass pass = frame.BeginPass(window.Graphics.Backbuffer, new RenderPassDescriptor
+			{
+				View = new RenderView(renderCamera),
+				State = editorState,
+				ColorLoadAction = RenderLoadAction.Clear,
+				DepthLoadAction = RenderLoadAction.Clear,
+				StencilLoadAction = RenderLoadAction.Clear,
+				ClearColor = NodeRenderer.CanvasColor,
+			}))
+			{
+				renderer.Draw(
+					pass,
+					session.Graph,
+					canvas,
+					selected,
+					hoverPort,
+					draggedPort,
+					canvas.ScreenToWorld(input.MousePosition),
+					menu,
+					editor,
+					session.EvaluationResult,
+					fileStatus,
+					fileStatusError,
+					window.Width,
+					window.Height
+				);
+			}
+			frame.Present();
 
-				if (!LoadLayout())
-				{
-					graph = new FunctionNodeGraph();
-					SeedGraph();
-				}
+			if (autoMode && runtime.Elapsed.TotalSeconds >= 2)
+			{
+				window.IsCloseRequested = true;
+			}
+		}
+
+		window.Scrolled -= OnScroll;
+		window.TextInput -= OnTextInput;
+		window.Resized -= OnResize;
+		renderer.Dispose();
+		input.Dispose();
+		window.Graphics.CollectGarbage();
+		window.Dispose();
+	}
+
+	private void Update()
+	{
+		Vector2 mouse = input.MousePosition;
+		Vector2 world = canvas.ScreenToWorld(mouse);
+		Vector2 delta = mouse - previousMouse;
+		previousMouse = mouse;
+
+		if (menu.IsOpen)
+		{
+			menu.UpdateHover(mouse);
+			menu.Scroll(mouse, scrollDelta);
+
+			foreach (string chars in typedCharacters)
+			{
+				menu.Append(chars);
+			}
+
+			if (input.WasKeyPressed(Key.Backspace))
+			{
+				menu.Backspace();
+			}
+
+			if (input.WasKeyPressed(Key.Left))
+			{
+				menu.MoveCategory(-1);
+			}
+
+			if (input.WasKeyPressed(Key.Right))
+			{
+				menu.MoveCategory(1);
+			}
+
+			if (input.WasKeyPressed(Key.Up))
+			{
+				menu.MoveFunction(-1);
+			}
+
+			if (input.WasKeyPressed(Key.Down))
+			{
+				menu.MoveFunction(1);
+			}
+
+			if (input.WasKeyPressed(Key.Escape))
+			{
+				menu.Escape();
+			}
+
+			if (input.WasKeyPressed(Key.Enter))
+			{
+				CreateFromMenu(menu.Activate());
+			}
+
+			if (input.WasMouseButtonPressed(MouseButton.Left))
+			{
+				CreateFromMenu(menu.Click(mouse));
+			}
+
+			if (input.WasMouseButtonPressed(MouseButton.Right))
+			{
+				menu.Open(mouse, world, window.Width, window.Height);
+			}
+
+			return;
+		}
+
+		if (scrollDelta != 0)
+		{
+			canvas.ZoomAt(mouse, scrollDelta);
+		}
+
+		if (input.IsMouseButtonDown(MouseButton.Middle))
+		{
+			canvas.PanBy(delta);
+		}
+
+		hoverPort = NodeHitTester.FindPort(session.Graph, canvas, world);
+
+		if (editor.IsActive)
+		{
+			foreach (string chars in typedCharacters)
+			{
+				editor.Append(chars);
+			}
+
+			if (input.WasKeyPressed(Key.Backspace))
+			{
+				editor.Backspace();
+			}
+
+			if (input.WasKeyPressed(Key.Enter) && editor.Commit())
+			{
+				session.InvalidateEvaluation();
+			}
+
+			if (input.WasKeyPressed(Key.Escape))
+			{
+				editor.Cancel();
+			}
+
+			return;
+		}
+
+		if (input.WasKeyPressed(Key.Escape))
+		{
+			if (draggedPort != null)
+			{
+				draggedPort = null;
 			}
 			else
-				SeedGraph();
-			ConfigureProjection();
-			previousMouse = input.GetMousePos();
-
-			if (autoMode)
 			{
-				Vector2 menuPoint = new Vector2(820, 820);
-				menu.Open(menuPoint, canvas.ScreenToWorld(menuPoint), window.WindowWidth, window.WindowHeight);
+				window.IsCloseRequested = true;
 			}
-
-			Stopwatch runtime = Stopwatch.StartNew();
-
-			while (!window.ShouldClose)
-			{
-				input.BeginNewFrame();
-				typedCharacters.Clear();
-				scrollDelta = 0;
-				Events.Poll();
-				Update();
-				RenderState editorState = Gfx.CreateDefaultRenderState();
-				editorState.EnableDepthTest = false;
-				editorState.EnableDepthMask = false;
-				editorState.EnableCullFace = false;
-				using GraphicsFrame frame = window.Graphics.BeginFrame();
-				using (RenderPass pass = frame.BeginPass(window.Graphics.Backbuffer, new RenderPassDescriptor
-				{
-					View = new RenderView(renderCamera),
-					State = editorState,
-					ColorLoadAction = RenderLoadAction.Clear,
-					DepthLoadAction = RenderLoadAction.Clear,
-					StencilLoadAction = RenderLoadAction.Clear,
-					ClearColor = NodeRenderer.CanvasColor,
-				}))
-				{
-					renderer.Draw(
-						pass,
-						graph,
-						canvas,
-						selected,
-						hoverPort,
-						draggedPort,
-						canvas.ScreenToWorld(input.GetMousePos()),
-						menu,
-						editor,
-						evaluationResult,
-						fileStatus,
-						fileStatusError,
-						window.WindowWidth,
-						window.WindowHeight
-					);
-				}
-				frame.Present();
-
-				if (autoMode && runtime.Elapsed.TotalSeconds >= 2)
-					window.ShouldClose = true;
-			}
-
-			window.OnScroll -= OnScroll;
-			window.OnChar -= OnChar;
-			window.OnWindowResize -= OnResize;
-			renderer.Dispose();
-			window.Graphics.CollectGarbage();
-			window.Dispose();
 		}
 
-		private void Update()
+		if (input.WasKeyPressed(Key.Delete))
 		{
-			Vector2 mouse = input.GetMousePos();
-			Vector2 world = canvas.ScreenToWorld(mouse);
-			Vector2 delta = mouse - previousMouse;
-			previousMouse = mouse;
-
-			if (menu.IsOpen)
-			{
-				menu.UpdateHover(mouse);
-				menu.Scroll(mouse, scrollDelta);
-
-				foreach (string chars in typedCharacters)
-					menu.Append(chars);
-				if (input.GetKeyPressed(Key.Backspace))
-					menu.Backspace();
-				if (input.GetKeyPressed(Key.Left))
-					menu.MoveCategory(-1);
-				if (input.GetKeyPressed(Key.Right))
-					menu.MoveCategory(1);
-				if (input.GetKeyPressed(Key.Up))
-					menu.MoveFunction(-1);
-				if (input.GetKeyPressed(Key.Down))
-					menu.MoveFunction(1);
-				if (input.GetKeyPressed(Key.Escape))
-					menu.Escape();
-				if (input.GetKeyPressed(Key.Enter))
-					CreateFromMenu(menu.Activate());
-				if (input.GetKeyPressed(Key.MouseLeft))
-					CreateFromMenu(menu.Click(mouse));
-				if (input.GetKeyPressed(Key.MouseRight))
-					menu.Open(mouse, world, window.WindowWidth, window.WindowHeight);
-				return;
-			}
-
-			if (scrollDelta != 0)
-				canvas.ZoomAt(mouse, scrollDelta);
-			if (input.GetKeyDown(Key.MouseMiddle))
-				canvas.PanBy(delta);
-			hoverPort = FindPort(world);
-
-			if (editor.IsActive)
-			{
-				foreach (string chars in typedCharacters)
-					editor.Append(chars);
-				if (input.GetKeyPressed(Key.Backspace))
-					editor.Backspace();
-				if (input.GetKeyPressed(Key.Enter) && editor.Commit())
-				{
-					graph.InvalidateEvaluation();
-					evaluationResult = null;
-				}
-
-				if (input.GetKeyPressed(Key.Escape))
-					editor.Cancel();
-				return;
-			}
-
-			if (input.GetKeyPressed(Key.Escape))
-			{
-				if (draggedPort != null)
-					draggedPort = null;
-				else
-					window.ShouldClose = true;
-			}
-
-			if (input.GetKeyPressed(Key.Delete))
-				DeleteSelected();
-			bool control = input.GetKeyDown(Key.LeftControl) || input.GetKeyDown(Key.RightControl);
-
-			if (control && input.GetKeyPressed(Key.S))
-				SaveLayout();
-			if (control && input.GetKeyPressed(Key.O))
-				LoadLayout();
-			if (input.GetKeyPressed(Key.F5))
-				evaluationResult = evaluator.Evaluate(graph);
-			if (input.GetKeyPressed(Key.MouseRight))
-			{
-				menu.Open(mouse, world, window.WindowWidth, window.WindowHeight);
-				selected = null;
-			}
-
-			if (input.GetKeyPressed(Key.MouseLeft))
-				HandleLeftPress(world);
-			if (draggedNode != null && input.GetKeyDown(Key.MouseLeft))
-				draggedNode.Position = world - nodeDragOffset;
-			if (input.GetKeyReleased(Key.MouseLeft))
-				HandleLeftRelease(world);
+			DeleteSelected();
 		}
 
-		private void HandleLeftPress(Vector2 world)
+		bool control = input.IsKeyDown(Key.LeftControl) || input.IsKeyDown(Key.RightControl);
+
+		if (control && input.WasKeyPressed(Key.S))
 		{
-			Vector2 screen = input.GetMousePos();
-
-			if (
-				screen.X >= 220
-				&& screen.X <= 352
-				&& screen.Y >= window.WindowHeight - 58
-				&& screen.Y <= window.WindowHeight - 20
-			)
-			{
-				evaluationResult = evaluator.Evaluate(graph);
-				return;
-			}
-
-			FunctionNode nodeAt = FindNode(world);
-
-			if (nodeAt != null && NodeGeometry.CloseOf(nodeAt).Contains(world))
-			{
-				graph.Remove(nodeAt);
-				evaluationResult = null;
-
-				if (selected == nodeAt)
-					selected = null;
-				return;
-			}
-
-			NodePort port = FindPort(world);
-
-			if (port != null)
-			{
-				if (port.Direction == NodePortDirection.Input)
-				{
-					NodeConnection existing = graph.ConnectionAtInput(port);
-
-					if (existing != null)
-					{
-						graph.Remove(existing);
-						evaluationResult = null;
-						draggedPort = existing.Output;
-						selected = null;
-						return;
-					}
-				}
-
-				draggedPort = port;
-				selected = null;
-				return;
-			}
-
-			if (nodeAt != null)
-			{
-				for (int i = 0; i < nodeAt.BodyValues.Count; i++)
-					if (NodeGeometry.ValueBounds(nodeAt, i).Contains(world))
-					{
-						editor.Begin(nodeAt.BodyValues[i]);
-						return;
-					}
-				selected = nodeAt;
-
-				if (NodeGeometry.HeaderOf(nodeAt).Contains(world))
-				{
-					draggedNode = nodeAt;
-					nodeDragOffset = world - nodeAt.Position;
-				}
-
-				return;
-			}
-
-			NodeConnection connection = FindConnection(world);
-			selected = connection;
+			SaveLayout();
 		}
 
-		private void HandleLeftRelease(Vector2 world)
+		if (control && input.WasKeyPressed(Key.O))
 		{
-			draggedNode = null;
-
-			if (draggedPort == null)
-				return;
-			NodePort target = FindPort(world);
-
-			if (target != null && target != draggedPort)
-			{
-				selected = graph.Connect(draggedPort, target);
-				evaluationResult = null;
-			}
-
-			draggedPort = null;
+			LoadLayout();
 		}
 
-		private void CreateFromMenu(NodeFunctionDescriptor descriptor)
+		if (input.WasKeyPressed(Key.F5))
 		{
-			if (descriptor == null)
-				return;
-			selected = graph.CreateNode(descriptor, menu.InsertionWorld);
-			evaluationResult = null;
-			menu.Close();
+			session.Evaluate();
 		}
 
-		private FunctionNode FindNode(Vector2 world)
+		if (input.WasMouseButtonPressed(MouseButton.Right))
 		{
-			for (int i = graph.Nodes.Count - 1; i >= 0; i--)
-				if (NodeGeometry.BoundsOf(graph.Nodes[i]).Contains(world))
-					return graph.Nodes[i];
-			return null;
-		}
-
-		private NodePort FindPort(Vector2 world)
-		{
-			float radius = NodeGeometry.PortRadius + 5 / canvas.Zoom;
-
-			for (int n = graph.Nodes.Count - 1; n >= 0; n--)
-				foreach (NodePort port in graph.Nodes[n].Inputs.Concat(graph.Nodes[n].Outputs))
-					if (Vector2.Distance(world, NodeGeometry.PortPosition(port)) <= radius)
-						return port;
-			return null;
-		}
-
-		private NodeConnection FindConnection(Vector2 world)
-		{
-			foreach (NodeConnection connection in graph.Connections)
-				if (
-					NodeGeometry.NearConnection(
-						world,
-						NodeGeometry.PortPosition(connection.Output),
-						NodeGeometry.PortPosition(connection.Input),
-						10 / canvas.Zoom
-					)
-				)
-					return connection;
-			return null;
-		}
-
-		private void DeleteSelected()
-		{
-			if (selected is FunctionNode node)
-				graph.Remove(node);
-			else if (selected is NodeConnection connection)
-				graph.Remove(connection);
-			evaluationResult = null;
+			menu.Open(mouse, world, window.Width, window.Height);
 			selected = null;
 		}
 
-		private void SaveLayout()
+		if (input.WasMouseButtonPressed(MouseButton.Left))
 		{
-			try
-			{
-				NodeGraphJson.SaveFile(layoutPath, graph, canvas.Capture());
-				fileStatus = "Saved node-layout.json";
-				fileStatusError = false;
-			}
-			catch (Exception ex)
-			{
-				fileStatus = "Save failed: " + ex.Message;
-				fileStatusError = true;
-			}
+			HandleLeftPress(world);
 		}
 
-		private bool LoadLayout()
+		if (draggedNode != null && input.IsMouseButtonDown(MouseButton.Left))
 		{
-			NodeGraphLoadResult load = NodeGraphJson.LoadFile(layoutPath, registry);
-
-			if (!load.Success)
-			{
-				fileStatus = "Load failed: " + string.Join(" | ", load.Errors);
-				fileStatusError = true;
-				return false;
-			}
-
-			graph = load.Graph;
-			canvas.Apply(load.View);
-			selected = null;
-			draggedNode = null;
-			draggedPort = null;
-			evaluationResult = null;
-			fileStatus = "Loaded node-layout.json";
-			fileStatusError = false;
-			return true;
+			draggedNode.Position = world - nodeDragOffset;
 		}
 
-		private void SeedGraph()
+		if (input.WasMouseButtonReleased(MouseButton.Left))
 		{
-			NodeFunctionDescriptor scalar = registry.Functions.Single(f => f.Title == "Scalar");
-			NodeFunctionDescriptor add = registry.Functions.Single(f => f.Title == "Add");
-			NodeFunctionDescriptor vector = registry.Functions.Single(f => f.Title == "Vector");
-			NodeFunctionDescriptor multiply = registry.Functions.Single(f => f.Title == "Multiply");
-			NodeFunctionDescriptor split = registry.Functions.Single(f => f.Title == "Split Vector");
-			NodeFunctionDescriptor display = registry.Functions.Single(f => f.Title == "Display");
-			FunctionNode scalarA = graph.CreateNode(scalar, new Vector2(20, 710));
-			scalarA.BodyValues[0].Text = "2";
-			FunctionNode scalarB = graph.CreateNode(scalar, new Vector2(20, 510));
-			scalarB.BodyValues[0].Text = "3";
-			FunctionNode addNode = graph.CreateNode(add, new Vector2(350, 650));
-			FunctionNode vectorNode = graph.CreateNode(vector, new Vector2(20, 260));
-			FunctionNode multiplyNode = graph.CreateNode(multiply, new Vector2(690, 500));
-			FunctionNode splitNode = graph.CreateNode(split, new Vector2(1010, 500));
-			FunctionNode displayNode = graph.CreateNode(display, new Vector2(1320, 580));
-			graph.Connect(scalarA.Outputs[0], addNode.Inputs[0]);
-			graph.Connect(scalarB.Outputs[0], addNode.Inputs[1]);
-			graph.Connect(vectorNode.Outputs[0], multiplyNode.Inputs[0]);
-			graph.Connect(addNode.Outputs[0], multiplyNode.Inputs[1]);
-			graph.Connect(multiplyNode.Outputs[0], splitNode.Inputs[0]);
-			graph.Connect(splitNode.Outputs[0], displayNode.Inputs[0]);
-			evaluationResult = evaluator.Evaluate(graph);
+			HandleLeftRelease(world);
 		}
-
-		private void ConfigureProjection()
-		{
-			renderCamera.SetOrthogonal(0, 0, window.WindowWidth, window.WindowHeight);
-		}
-
-		private void OnResize(RenderWindow wnd, int width, int height) => ConfigureProjection();
-
-		private void OnScroll(RenderWindow wnd, float x, float y) => scrollDelta += y;
-
-		private void OnChar(RenderWindow wnd, string chars, uint unicode) => typedCharacters.Add(chars);
 	}
+
+	private void HandleLeftPress(Vector2 world)
+	{
+		Vector2 screen = input.MousePosition;
+
+		if (
+			screen.X >= 220
+			&& screen.X <= 352
+			&& screen.Y >= window.Height - 58
+			&& screen.Y <= window.Height - 20
+		)
+		{
+			session.Evaluate();
+			return;
+		}
+
+		FunctionNode nodeAt = NodeHitTester.FindNode(session.Graph, world);
+
+		if (nodeAt != null && NodeGeometry.CloseOf(nodeAt).Contains(world))
+		{
+			session.RemoveNode(nodeAt);
+
+			if (selected == nodeAt)
+			{
+				selected = null;
+			}
+
+			return;
+		}
+
+		NodePort port = NodeHitTester.FindPort(session.Graph, canvas, world);
+
+		if (port != null)
+		{
+			if (port.Direction == NodePortDirection.Input)
+			{
+				if (session.Graph.TryGetInputConnection(port, out NodeConnection existing))
+				{
+					session.Disconnect(existing);
+					draggedPort = existing.Output;
+					selected = null;
+					return;
+				}
+			}
+
+			draggedPort = port;
+			selected = null;
+			return;
+		}
+
+		if (nodeAt != null)
+		{
+			for (int index = 0; index < nodeAt.InlineValues.Count; index++)
+			{
+				if (NodeGeometry.ValueBounds(nodeAt, index).Contains(world))
+				{
+					editor.Begin(nodeAt.InlineValues[index]);
+					return;
+				}
+			}
+
+			selected = nodeAt;
+
+			if (NodeGeometry.HeaderOf(nodeAt).Contains(world))
+			{
+				draggedNode = nodeAt;
+				nodeDragOffset = world - nodeAt.Position;
+			}
+
+			return;
+		}
+
+		NodeConnection connection = NodeHitTester.FindConnection(session.Graph, canvas, world);
+		selected = connection;
+	}
+
+	private void HandleLeftRelease(Vector2 world)
+	{
+		draggedNode = null;
+
+		if (draggedPort == null)
+		{
+			return;
+		}
+
+		NodePort target = NodeHitTester.FindPort(session.Graph, canvas, world);
+
+		if (target != null && target != draggedPort)
+		{
+			NodePort output = draggedPort.Direction == NodePortDirection.Output ? draggedPort : target;
+			NodePort inputPort = draggedPort.Direction == NodePortDirection.Input ? draggedPort : target;
+
+			if (session.TryConnect(output, inputPort, out NodeConnection connection))
+			{
+				selected = connection;
+			}
+		}
+
+		draggedPort = null;
+	}
+
+	private void CreateFromMenu(NodeFunctionDescriptor descriptor)
+	{
+		if (descriptor == null)
+		{
+			return;
+		}
+
+		selected = session.AddNode(descriptor, menu.InsertionWorld);
+		menu.Close();
+	}
+
+	private void DeleteSelected()
+	{
+		if (selected is FunctionNode node)
+		{
+			session.RemoveNode(node);
+		}
+		else if (selected is NodeConnection connection)
+		{
+			session.Disconnect(connection);
+		}
+
+		selected = null;
+	}
+
+	private void SaveLayout()
+	{
+		try
+		{
+			session.Save(layoutPath, canvas.Capture());
+			fileStatus = "Saved node-layout.json";
+			fileStatusError = false;
+		}
+		catch (Exception ex)
+		{
+			fileStatus = "Save failed: " + ex.Message;
+			fileStatusError = true;
+		}
+	}
+
+	private bool LoadLayout()
+	{
+		if (!session.TryLoad(layoutPath, out NodeGraphViewState view, out IReadOnlyList<string> errors))
+		{
+			fileStatus = "Load failed: " + string.Join(" | ", errors);
+			fileStatusError = true;
+			return false;
+		}
+
+		canvas.Apply(view);
+		selected = null;
+		draggedNode = null;
+		draggedPort = null;
+		fileStatus = "Loaded node-layout.json";
+		fileStatusError = false;
+		return true;
+	}
+
+	private void ConfigureProjection()
+	{
+		renderCamera.SetOrthogonal(0, 0, window.Width, window.Height);
+	}
+
+	private void OnResize(object sender, WindowResizeEventArgs args) => ConfigureProjection();
+
+	private void OnScroll(object sender, ScrollEventArgs args) => scrollDelta += args.Offset.Y;
+
+	private void OnTextInput(object sender, TextInputEventArgs args) => typedCharacters.Add(args.Text);
 }

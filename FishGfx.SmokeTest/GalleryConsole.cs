@@ -7,182 +7,214 @@ using FishGfx.Formats;
 using FishGfx.Game;
 using FishGfx.Graphics;
 
-namespace FishGfx.SmokeTest
+namespace FishGfx.SmokeTest;
+
+internal sealed class GalleryConsole : IDisposable
 {
-	internal sealed class GalleryConsole : IDisposable
+	private const int FontSize = 16;
+	private const int Columns = 120;
+	private const int VisibleRows = 24;
+	private const int BufferRows = 96;
+
+	private readonly RenderWindow window;
+	private readonly GalleryScene[] scenes;
+	private readonly PrimitiveGallery gallery;
+	private readonly TrueTypeFont font;
+	private readonly DevConsole console;
+	private readonly EventHandler<TextInputEventArgs> textInputHandler;
+	private bool disposed;
+
+	internal bool IsOpen => console.IsEnabled;
+
+	internal GalleryConsole(RenderWindow window, GalleryScene[] scenes, PrimitiveGallery gallery)
 	{
-		private const int FontSize = 16;
-		private const int Columns = 120;
-		private const int VisibleRows = 24;
-		private const int BufferRows = 96;
+		this.window = window;
+		this.scenes = scenes;
+		this.gallery = gallery;
 
-		private readonly RenderWindow window;
-		private readonly GalleryScene[] scenes;
-		private readonly PrimitiveGallery gallery;
-		private readonly TTFFont font;
-		private readonly DevConsole console;
-		private readonly OnCharFunc charHandler;
-		private bool disposed;
-
-		internal bool IsOpen => console.Enabled;
-
-		internal GalleryConsole(RenderWindow window, GalleryScene[] scenes, PrimitiveGallery gallery)
+		font = new TrueTypeFont(PrimitiveGallery.AssetPath("fonts", "Consolas-Regular.ttf"));
+		console = new DevConsole(font, FontSize, Columns, VisibleRows, BufferRows)
 		{
-			this.window = window;
-			this.scenes = scenes;
-			this.gallery = gallery;
+			Position = Vector2.Zero,
+			BackgroundColor = new Color(Color.Coal.R, Color.Coal.G, Color.Coal.B, 204),
+			IsEnabled = false,
+		};
 
-			font = new TTFFont(PrimitiveGallery.AssetPath("fonts", "Consolas-Regular.ttf"));
-			console = new DevConsole(font, FontSize, Columns, VisibleRows, BufferRows)
-			{
-				Position = Vector2.Zero,
-				BackgroundColor = new Color(Color.Coal.R, Color.Coal.G, Color.Coal.B, 204),
-				Enabled = false,
-			};
+		console.InputSubmitted += Execute;
+		textInputHandler = (_, args) => console.SendInput(args.Text);
+		window.TextInput += textInputHandler;
+		window.KeyChanged += console.HandleKeyChanged;
 
-			console.OnInput += Execute;
-			charHandler = (sender, text, unicode) => console.SendInput(text);
-			window.OnChar += charHandler;
-			window.OnKey += console.SendKey;
+		console.PrintLine("FishGfx developer console");
+		console.PrintLine("F1 toggles the console; type 'help' for commands.");
+		console.BeginInput();
+	}
 
-			console.PrintLine("FishGfx developer console");
-			console.PrintLine("F1 toggles the console; type 'help' for commands.");
-			console.BeginInput();
+	internal void Draw(RenderPass pass)
+	{
+		if (!console.IsEnabled)
+		{
+			return;
 		}
 
-		internal void Draw(RenderPass pass)
+		RenderState overlayState = RenderState.Default with
 		{
-			if (!console.Enabled)
-				return;
+			DepthTestEnabled = false,
+			DepthWriteEnabled = false,
+			CullMode = CullMode.None,
+		};
 
-			RenderState overlayState = Gfx.CreateDefaultRenderState();
-			overlayState.EnableDepthTest = false;
-			overlayState.EnableDepthMask = false;
-			overlayState.EnableCullFace = false;
-			using (pass.PushState(overlayState))
-				console.Draw();
+		using (pass.PushState(overlayState))
+		{
+			console.Render(pass);
+		}
+	}
+
+	internal void Close()
+	{
+		console.IsEnabled = false;
+	}
+
+	private void Execute(string input)
+	{
+		string commandLine = input.Trim();
+
+		if (commandLine.Length == 0)
+		{
+			return;
 		}
 
-		internal void Close() => console.Enabled = false;
+		int separator = commandLine.IndexOf(' ');
+		string command = (
+			separator < 0
+				? commandLine
+				: commandLine.Substring(0, separator)
+		).ToLowerInvariant();
+		string argument = separator < 0
+			? string.Empty
+			: commandLine.Substring(separator + 1).Trim();
 
-		private void Execute(string input)
+		switch (command)
 		{
-			string commandLine = input.Trim();
-
-			if (commandLine.Length == 0)
-				return;
-
-			int separator = commandLine.IndexOf(' ');
-			string command = (separator < 0 ? commandLine : commandLine.Substring(0, separator)).ToLowerInvariant();
-			string argument = separator < 0 ? "" : commandLine.Substring(separator + 1).Trim();
-
-			switch (command)
-			{
-				case "help":
-					PrintHelp();
-					break;
-				case "scenes":
-					PrintScenes();
-					break;
-				case "scene":
-					SelectScene(argument);
-					break;
-				case "next":
-					gallery.NextScene();
-					PrintSelection();
-					break;
-				case "previous":
-				case "prev":
-					gallery.PreviousScene();
-					PrintSelection();
-					break;
-				case "renderer":
-					console.PrintLine(RenderAPI.Renderer);
-					console.PrintLine("OpenGL context: {0}", RenderAPI.Version);
-					break;
-				case "quit":
-					console.PrintLine("Closing gallery.");
-					gallery.RequestClose();
-					break;
-				default:
-					console.PrintLine("Unknown command '{0}'. Type 'help'.", command);
-					break;
-			}
-		}
-
-		private void PrintHelp()
-		{
-			console.PrintLine("help                 show commands");
-			console.PrintLine("scenes               list scenes");
-			console.PrintLine("scene <index|name>   select scene");
-			console.PrintLine("next / prev          change scene");
-			console.PrintLine("renderer             show GPU and OpenGL");
-			console.PrintLine("quit                 close gallery");
-		}
-
-		private void PrintScenes()
-		{
-			for (int i = 0; i < scenes.Length; i++)
-				console.PrintLine("{0,2}. {1}", i + 1, scenes[i].Title);
-		}
-
-		private void SelectScene(string argument)
-		{
-			if (argument.Length == 0)
-			{
-				console.PrintLine("Usage: scene <index|name>");
-				return;
-			}
-
-			if (int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
-			{
-				if (number < 1 || number > scenes.Length)
-				{
-					console.PrintLine("Scene index must be between 1 and {0}.", scenes.Length);
-					return;
-				}
-
-				gallery.SelectScene(number - 1);
+			case "help":
+				PrintHelp();
+				break;
+			case "scenes":
+				PrintScenes();
+				break;
+			case "scene":
+				SelectScene(argument);
+				break;
+			case "next":
+				gallery.NextScene();
 				PrintSelection();
+				break;
+			case "previous":
+			case "prev":
+				gallery.PreviousScene();
+				PrintSelection();
+				break;
+			case "renderer":
+				console.PrintLine(window.Graphics.Capabilities.Renderer);
+				console.PrintLine(
+					"OpenGL context: {0}",
+					window.Graphics.Capabilities.Version
+				);
+				break;
+			case "quit":
+				console.PrintLine("Closing gallery.");
+				gallery.RequestClose();
+				break;
+			default:
+				console.PrintLine("Unknown command '{0}'. Type 'help'.", command);
+				break;
+		}
+	}
+
+	private void PrintHelp()
+	{
+		console.PrintLine("help                 show commands");
+		console.PrintLine("scenes               list scenes");
+		console.PrintLine("scene <index|name>   select scene");
+		console.PrintLine("next / prev          change scene");
+		console.PrintLine("renderer             show GPU and OpenGL");
+		console.PrintLine("quit                 close gallery");
+	}
+
+	private void PrintScenes()
+	{
+		for (int index = 0; index < scenes.Length; index++)
+		{
+			console.PrintLine("{0,2}. {1}", index + 1, scenes[index].Title);
+		}
+	}
+
+	private void SelectScene(string argument)
+	{
+		if (argument.Length == 0)
+		{
+			console.PrintLine("Usage: scene <index|name>");
+			return;
+		}
+
+		if (int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
+		{
+			if (number < 1 || number > scenes.Length)
+			{
+				console.PrintLine("Scene index must be between 1 and {0}.", scenes.Length);
 				return;
 			}
 
-			string requested = NormalizeSceneName(argument);
-
-			for (int i = 0; i < scenes.Length; i++)
-				if (NormalizeSceneName(scenes[i].Title) == requested)
-				{
-					gallery.SelectScene(i);
-					PrintSelection();
-					return;
-				}
-
-			console.PrintLine("Unknown scene '{0}'. Type 'scenes'.", argument);
+			gallery.SelectScene(number - 1);
+			PrintSelection();
+			return;
 		}
 
-		private void PrintSelection()
-		{
-			console.PrintLine("Selected {0}: {1}", gallery.SceneIndex + 1, scenes[gallery.SceneIndex].Title);
-		}
+		string requested = NormalizeSceneName(argument);
 
-		private static string NormalizeSceneName(string name)
+		for (int index = 0; index < scenes.Length; index++)
 		{
-			string normalized = name.Trim();
+			if (NormalizeSceneName(scenes[index].Title) == requested)
+			{
+				gallery.SelectScene(index);
+				PrintSelection();
 
-			if (normalized.StartsWith("Gfx.", StringComparison.OrdinalIgnoreCase))
-				normalized = normalized.Substring(4);
-			return normalized.ToLowerInvariant();
-		}
-
-		public void Dispose()
-		{
-			if (disposed)
 				return;
-			disposed = true;
-			window.OnChar -= charHandler;
-			window.OnKey -= console.SendKey;
-			console.OnInput -= Execute;
-			font.Dispose();
+			}
 		}
+
+		console.PrintLine("Unknown scene '{0}'. Type 'scenes'.", argument);
+	}
+
+	private void PrintSelection()
+	{
+		console.PrintLine("Selected {0}: {1}", gallery.SceneIndex + 1, scenes[gallery.SceneIndex].Title);
+	}
+
+	private static string NormalizeSceneName(string name)
+	{
+		string normalized = name.Trim();
+
+		if (normalized.StartsWith("RenderPass.", StringComparison.OrdinalIgnoreCase))
+		{
+			normalized = normalized.Substring("RenderPass.".Length);
+		}
+
+		return normalized.ToLowerInvariant();
+	}
+
+	public void Dispose()
+	{
+		if (disposed)
+		{
+			return;
+		}
+
+		disposed = true;
+		window.TextInput -= textInputHandler;
+		window.KeyChanged -= console.HandleKeyChanged;
+		console.InputSubmitted -= Execute;
+		console.Dispose();
+		font.Dispose();
 	}
 }

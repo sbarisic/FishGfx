@@ -1,10 +1,9 @@
-namespace FishGfx.VoxelTest
+namespace FishGfx.VoxelTest;
+
+internal static class Program
 {
-	internal static class Program
+	private static void Main(string[] args)
 	{
-		private static void Main(string[] args)
-		{
-			new VoxelTestApplication(args).Run();
-		}
+		new VoxelTestApplication(args).Run();
 	}
 }

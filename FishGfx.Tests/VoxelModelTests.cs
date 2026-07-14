@@ -12,20 +12,6 @@ namespace FishGfx.Tests;
 
 public class VoxelModelTests
 {
-	private const string OneFaceJson = """
-		{
-		  "elements": [
-		    {
-		      "from": [0, 0, 0],
-		      "to": [16, 16, 16],
-		      "faces": {
-		        "north": { "uv": [0, 0, 16, 16], "texture": "#0" }
-		      }
-		    }
-		  ]
-		}
-		""";
-
 	[Fact]
 	public void TextureRegionMapsTopDownPixelsIntoBottomUpAtlasUvs()
 	{
@@ -61,117 +47,6 @@ public class VoxelModelTests
 		Assert.Contains(set.Select(5, 7, 11), set.Models);
 	}
 
-	[Fact]
-	public void MinecraftLoaderCreatesCorrectFaceGeometryAndUvs()
-	{
-		VoxelTextureRegion region = new(0, 0, 16, 16, 32, 32);
-		VoxelModel model = MinecraftVoxelModelLoader.Load(
-			OneFaceJson,
-			new Dictionary<string, VoxelTextureRegion> { ["0"] = region }
-		);
-
-		Assert.Equal(6, model.Vertices.Count);
-		Assert.All(model.Vertices, vertex => Assert.Equal(-Vector3.UnitZ, vertex.Normal));
-		Assert.All(model.Vertices, vertex =>
-		{
-			Assert.InRange(vertex.UV.X, 0, 0.5f);
-			Assert.InRange(vertex.UV.Y, 0.5f, 1);
-		});
-	}
-
-	[Fact]
-	public void MinecraftLoaderUsesBlockbenchUvOrientationForEveryDirection()
-	{
-		Dictionary<string, Vector2[]> expected = new()
-		{
-			["east"] = new[] { new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0) },
-			["west"] = new[] { new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0) },
-			["up"] = new[] { new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0) },
-			["down"] = new[] { new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0) },
-			["south"] = new[] { new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0) },
-			["north"] = new[] { new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1) },
-		};
-
-		foreach ((string direction, Vector2[] expectedCorners) in expected)
-		{
-			VoxelModel model = LoadSingleFace(direction, "[0, 0, 16, 16]");
-
-			for (int corner = 0; corner < 4; corner++)
-				Assert.Equal(expectedCorners[corner], model.Vertices[corner].UV);
-		}
-	}
-
-	[Fact]
-	public void MinecraftLoaderAppliesFaceRotationsAndPreservesReversedUvEndpoints()
-	{
-		Dictionary<int, Vector2[]> expected = new()
-		{
-			[0] = new[] { new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0) },
-			[90] = new[] { new Vector2(0, 1), new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1) },
-			[180] = new[] { new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1) },
-			[270] = new[] { new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1), new Vector2(0, 0) },
-		};
-
-		foreach ((int rotation, Vector2[] expectedCorners) in expected)
-		{
-			VoxelModel model = LoadSingleFace("east", "[0, 0, 16, 16]", rotation);
-
-			for (int corner = 0; corner < 4; corner++)
-				Assert.Equal(expectedCorners[corner], model.Vertices[corner].UV);
-		}
-
-		VoxelModel reversed = LoadSingleFace("east", "[16, 16, 0, 0]");
-		Vector2[] reversedExpected =
-		{
-			new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1),
-		};
-
-		for (int corner = 0; corner < 4; corner++)
-			Assert.Equal(reversedExpected[corner], reversed.Vertices[corner].UV);
-	}
-
-	[Theory]
-	[InlineData("[-1, 0, 16, 16]", null)]
-	[InlineData("[0, 0, 17, 16]", null)]
-	[InlineData("[0, 0, 16, 16]", 45)]
-	[InlineData("[0, 0, 16, 16]", -90)]
-	public void MinecraftLoaderRejectsUvsOutsideTheirRegionAndUnsupportedFaceRotations(
-		string uv,
-		int? rotation
-	)
-	{
-		Assert.Throws<FormatException>(() => LoadSingleFace("north", uv, rotation));
-	}
-
-	[Fact]
-	public void MinecraftLoaderValidatesDeclaredTextureSizeAgainstPackedRegion()
-	{
-		VoxelModel valid = LoadSingleFace(
-			"north",
-			"[0, 0, 16, 16]",
-			declaredTextureSize: 64,
-			regionSize: 64
-		);
-
-		Assert.Equal(6, valid.Vertices.Count);
-		Assert.Throws<FormatException>(
-			() => LoadSingleFace(
-				"north",
-				"[0, 0, 16, 16]",
-				declaredTextureSize: 64,
-				regionSize: 16
-			)
-		);
-	}
-
-	[Fact]
-	public void MinecraftLoaderRejectsMalformedAndUnresolvedModels()
-	{
-		Assert.Throws<FormatException>(() => MinecraftVoxelModelLoader.Load("{}", new Dictionary<string, VoxelTextureRegion>()));
-		Assert.Throws<FormatException>(() => MinecraftVoxelModelLoader.Load(OneFaceJson, new Dictionary<string, VoxelTextureRegion>()));
-		Assert.Throws<FormatException>(() => MinecraftVoxelModelLoader.Load("{", new Dictionary<string, VoxelTextureRegion>()));
-	}
-
 	[Theory]
 	[InlineData(VoxelRenderMode.Opaque, 3, 0, 0)]
 	[InlineData(VoxelRenderMode.Cutout, 0, 3, 0)]
@@ -205,7 +80,7 @@ public class VoxelModelTests
 		Assert.Equal(opaqueVertices, result.OpaqueVertices.Length);
 		Assert.Equal(cutoutVertices, result.CutoutVertices.Length);
 		Assert.Equal(transparentVertices, result.TransparentVertexCount);
-		Assert.True(result.Bounds.IsInside(new Vector3(3, 4, 5)));
+		Assert.True(result.Bounds.Contains(new Vector3(3, 4, 5)));
 	}
 
 	[Fact]
@@ -244,7 +119,13 @@ public class VoxelModelTests
 		Assert.Equal(512, composite.Height);
 		Assert.Equal(source.GetPixel(0, 0), composite.GetPixel(0, 0));
 		Assert.Equal(source.GetPixel(511, 511), composite.GetPixel(511, 511));
-		Assert.NotEqual(0, composite.GetPixel(VoxelTestCompatibilityAssets.BarrelRegion.X, VoxelTestCompatibilityAssets.BarrelRegion.Y).A);
+		Assert.NotEqual(
+			0,
+			composite.GetPixel(
+				VoxelTestCompatibilityAssets.BarrelRegion.X,
+				VoxelTestCompatibilityAssets.BarrelRegion.Y
+			).A
+		);
 	}
 
 	[Fact]
@@ -278,7 +159,9 @@ public class VoxelModelTests
 				Vector2 uv = Vector2.Zero;
 
 				for (int i = 0; i < vertices.Count; i++)
-					uv += vertices[i].UV;
+				{
+					uv += vertices[i].TextureCoordinates;
+				}
 
 				uv /= vertices.Count;
 				System.Drawing.Color actual = SampleUv(composite, uv);
@@ -302,12 +185,20 @@ public class VoxelModelTests
 		int z = VoxelTestWorldGenerator.WorldMinimum + 1;
 
 		while (data.GetWaterSurface(x, z).HasValue)
+		{
 			x++;
+		}
 
 		int surface = data.GetSurfaceHeight(x, z);
 		ushort generatedMaterial = data.GetTerrainMaterial(x, surface, z, ids);
 		VoxelMeshData mesh = BuildIsolatedCompatibilityBlock(generatedMaterial, palette);
-		Vector2 topUv = mesh.OpaqueVertices.Skip(12).Take(6).Aggregate(Vector2.Zero, (sum, vertex) => sum + vertex.UV) / 6;
+		Vector2 topUv = mesh.OpaqueVertices
+			.Skip(12)
+			.Take(6)
+			.Aggregate(
+				Vector2.Zero,
+				(sum, vertex) => sum + vertex.TextureCoordinates
+			) / 6;
 		using System.Drawing.Bitmap composite = VoxelTestCompatibilityAssets.CreateBitmap();
 		using System.Drawing.Bitmap source = new(VoxelTestCompatibilityAssets.AssetPath("atlas.png"));
 
@@ -326,12 +217,21 @@ public class VoxelModelTests
 		AssertModelInside(models.Torch, VoxelTestCompatibilityAssets.TorchRegion);
 
 		foreach (VoxelModel foliage in models.Foliage.Models)
+		{
 			AssertModelInside(foliage, VoxelTestCompatibilityAssets.FoliageRegion);
+		}
 
 		using System.Drawing.Bitmap atlas = VoxelTestCompatibilityAssets.CreateBitmap();
 		VoxelTextureRegion region = VoxelTestCompatibilityAssets.BarrelRegion;
-		Assert.Equal(atlas.GetPixel(region.X, region.Y + region.Height / 2), atlas.GetPixel(region.X - 1, region.Y + region.Height / 2));
-		Assert.Equal(atlas.GetPixel(region.X + region.Width - 1, region.Y + region.Height / 2), atlas.GetPixel(region.X + region.Width, region.Y + region.Height / 2));
+		int middleY = region.Y + region.Height / 2;
+		Assert.Equal(
+			atlas.GetPixel(region.X, middleY),
+			atlas.GetPixel(region.X - 1, middleY)
+		);
+		Assert.Equal(
+			atlas.GetPixel(region.X + region.Width - 1, middleY),
+			atlas.GetPixel(region.X + region.Width, middleY)
+		);
 	}
 
 	[Fact]
@@ -380,8 +280,12 @@ public class VoxelModelTests
 			);
 
 			for (int y = 0; y < source.Height; y++)
+			{
 				for (int x = 0; x < source.Width; x++)
+				{
 					Assert.Equal(source.GetPixel(x, y).A, atlas.GetPixel(region.X + x, region.Y + y).A);
+				}
+			}
 
 			for (int y = 0; y < source.Height; y++)
 			{
@@ -433,7 +337,7 @@ public class VoxelModelTests
 
 		foreach ((VoxelModel model, Vector3 position, Vector3 size) in cases)
 		{
-			Assert.Equal(position, model.Bounds.Position);
+			Assert.Equal(position, model.Bounds.Min);
 			Assert.Equal(size, model.Bounds.Size);
 
 			for (int triangle = 0; triangle < model.Vertices.Count; triangle += 3)
@@ -479,40 +383,6 @@ public class VoxelModelTests
 		};
 	}
 
-	private static VoxelModel LoadSingleFace(
-		string direction,
-		string uv,
-		int? rotation = null,
-		int? declaredTextureSize = null,
-		int regionSize = 16
-	)
-	{
-		string rotationProperty = rotation.HasValue ? $", \"rotation\": {rotation.Value}" : string.Empty;
-		string textureSizeProperty = declaredTextureSize.HasValue
-			? $"\"texture_size\": [{declaredTextureSize.Value}, {declaredTextureSize.Value}],"
-			: string.Empty;
-		string json = $$"""
-			{
-			  {{textureSizeProperty}}
-			  "elements": [
-			    {
-			      "from": [0, 0, 0],
-			      "to": [16, 16, 16],
-			      "faces": {
-			        "{{direction}}": { "uv": {{uv}}, "texture": "#0"{{rotationProperty}} }
-			      }
-			    }
-			  ]
-			}
-			""";
-		VoxelTextureRegion region = new(0, 0, regionSize, regionSize, regionSize, regionSize);
-
-		return MinecraftVoxelModelLoader.Load(
-			json,
-			new Dictionary<string, VoxelTextureRegion> { ["0"] = region }
-		);
-	}
-
 	private static VoxelMeshData BuildIsolatedCompatibilityBlock(ushort material, VoxelPalette palette)
 	{
 		VoxelWorld world = new();
@@ -552,8 +422,8 @@ public class VoxelModelTests
 
 		Assert.All(model.Vertices, vertex =>
 		{
-			Assert.InRange(vertex.UV.X, minimumU, maximumU);
-			Assert.InRange(vertex.UV.Y, minimumV, maximumV);
+			Assert.InRange(vertex.TextureCoordinates.X, minimumU, maximumU);
+			Assert.InRange(vertex.TextureCoordinates.Y, minimumV, maximumV);
 		});
 	}
 }

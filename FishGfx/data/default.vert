@@ -1,11 +1,11 @@
-﻿#version 410
+﻿#version 400
 
 layout (location = 0) in vec2 Pos;
 layout (location = 1) in vec4 Clr;
 layout (location = 2) in vec2 UV;
 
-layout (location = 0) out vec4 frag_Clr;
-layout (location = 1) out vec2 frag_UV;
+out vec4 frag_Clr;
+out vec2 frag_UV;
 
 uniform mat4 Model;
 uniform mat4 View;

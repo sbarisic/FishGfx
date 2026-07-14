@@ -1,68 +1,121 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Collections.ObjectModel;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
-using FishGfx.Game;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
 
-namespace FishGfx.AdvGraphics
+namespace FishGfx.AdvGraphics;
+
+public sealed class ParallaxSprite : IRenderable, IDisposable
 {
-	public class ParallaxSprite
+	private readonly GraphicsContext graphics;
+	private readonly List<Texture> layers = new();
+	private readonly ReadOnlyCollection<Texture> readOnlyLayers;
+	private readonly Sprite sprite;
+	private bool disposed;
+
+	public ParallaxSprite(
+		GraphicsContext graphics,
+		ShaderProgram shader,
+		Camera camera
+	)
 	{
-		Texture[] Layers = new Texture[] { };
-		Sprite Sprite;
+		this.graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
+		Camera = camera ?? throw new ArgumentNullException(nameof(camera));
+		readOnlyLayers = layers.AsReadOnly();
+		sprite = new Sprite(graphics, shader);
+	}
 
-		public ParallaxSprite(FishGfxGame Game)
+	public IReadOnlyList<Texture> Layers => readOnlyLayers;
+
+	public Camera Camera { get; set; }
+
+	public float LayerScrollScale { get; set; } = 0.8f;
+
+	public float TextureScale { get; set; } = 3;
+
+	public void AddLayer(Texture texture)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(texture);
+		texture.EnsureOwner(graphics);
+		layers.Add(texture);
+	}
+
+	public void AddLayers(IEnumerable<Texture> textures)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(textures);
+
+		foreach (Texture texture in textures)
 		{
-			Sprite = new Sprite();
-			Sprite.Shader = Game.DefaultShader;
+			AddLayer(texture);
+		}
+	}
+
+	public void Render(RenderPass pass)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(pass);
+
+		if (!float.IsFinite(LayerScrollScale) || LayerScrollScale <= 0)
+		{
+			throw new InvalidOperationException("LayerScrollScale must be finite and positive.");
 		}
 
-		public void AddLayer(Texture Tex)
+		if (!float.IsFinite(TextureScale) || TextureScale <= 0)
 		{
-			Layers = Layers.Add(Tex);
+			throw new InvalidOperationException("TextureScale must be finite and positive.");
 		}
 
-		public void AddLayers(params Texture[] Tex)
+		Vector2 cameraPosition = new(Camera.Position.X, Camera.Position.Y);
+
+		for (int index = 0; index < layers.Count; index++)
 		{
-			foreach (var T in Tex)
-				AddLayer(T);
+			Texture texture = layers[index];
+			sprite.Texture = texture;
+			sprite.Scale = texture.Size * TextureScale;
+
+			float horizontalScale = MathF.Pow(LayerScrollScale, index + 1);
+			Vector2 scrollPosition = cameraPosition * new Vector2(horizontalScale, 1);
+			RenderTiled(pass, scrollPosition, cameraPosition);
+		}
+	}
+
+	public void Dispose()
+	{
+		if (disposed)
+		{
+			return;
 		}
 
-		void DrawTiled(Sprite S, Vector2 ScrollPos, Vector2 CamPos)
+		disposed = true;
+		sprite.Dispose();
+	}
+
+	private void RenderTiled(
+		RenderPass pass,
+		Vector2 scrollPosition,
+		Vector2 cameraPosition
+	)
+	{
+		float difference = cameraPosition.X - scrollPosition.X;
+		int tileOffset = (int)(difference / sprite.Scale.X);
+
+		for (int index = 0; index < 2; index++)
 		{
-			float DiffX = (CamPos - ScrollPos).X;
-			float ModX = (int)(DiffX / S.Scale.X);
-
-			for (int i = 0; i < 2; i++)
-			{
-				Vector2 Scroll = new Vector2(S.Scale.X, 0) * i;
-
-				S.Position = ScrollPos + new Vector2(S.Scale.X, 0) * ModX + Scroll;
-				S.Draw();
-			}
+			Vector2 offset = new(sprite.Scale.X * (tileOffset + index), 0);
+			sprite.Position = scrollPosition + offset;
+			sprite.Render(pass);
 		}
+	}
 
-		public void Draw(Camera Cam)
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
 		{
-			const float LayerScale = 0.8f;
-
-			for (int i = 0; i < Layers.Length; i++)
-			{
-				//int i = Layers.Length - 1;
-
-				Sprite.Texture = Layers[i];
-				Sprite.Scale = Sprite.Texture.Size * 3;
-
-				float ScaleX = (float)Math.Pow(LayerScale, i + 1);
-				float ScaleY = 1;
-
-				Vector2 ScrollPos = Cam.Position.XY() * new Vector2(ScaleX, ScaleY);
-				DrawTiled(Sprite, ScrollPos, Cam.Position.XY());
-			}
+			throw new ObjectDisposedException(nameof(ParallaxSprite));
 		}
 	}
 }

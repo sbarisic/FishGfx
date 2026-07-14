@@ -37,7 +37,9 @@ public class PrimitiveTessellatorTests
 		Vector2[] vertices = PrimitiveTessellator.EllipseOutline(center, new Vector2(75), 32);
 
 		foreach (Vector2 vertex in vertices)
+		{
 			Assert.InRange(Vector2.Distance(center, vertex), 74.999f, 75.001f);
+		}
 	}
 
 	[Fact]

@@ -13,10 +13,10 @@ public class GraphicsCorrectnessTests
 	{
 		Color first = new(10, 20, 30, 40);
 		Color second = new(12, 20, 30, 40);
-		Assert.Equal(first, Color.Clamp(new Color(11, 20, 30, 40), new[] { first, second }));
-		Assert.Equal(second, Color.Clamp(new Color(12, 20, 30, 40), new[] { first, second }));
-		Assert.Throws<ArgumentNullException>(() => Color.Clamp(Color.Black, null));
-		Assert.Throws<ArgumentException>(() => Color.Clamp(Color.Black, Array.Empty<Color>()));
+		Assert.Equal(first, Color.ClampToPalette(new Color(11, 20, 30, 40), new[] { first, second }));
+		Assert.Equal(second, Color.ClampToPalette(new Color(12, 20, 30, 40), new[] { first, second }));
+		Assert.Throws<ArgumentNullException>(() => Color.ClampToPalette(Color.Black, null));
+		Assert.Throws<ArgumentException>(() => Color.ClampToPalette(Color.Black, Array.Empty<Color>()));
 	}
 
 	[Fact]
@@ -58,7 +58,7 @@ public class GraphicsCorrectnessTests
 	public void PerspectivePickingRayPointsThroughViewportCenter()
 	{
 		Camera camera = new();
-		camera.SetPerspective(800, 600, NearPlane: 0.1f, FarPlane: 100);
+		camera.SetPerspective(800, 600, nearPlane: 0.1f, farPlane: 100);
 
 		PickingRay ray = camera.CreatePickingRay(new Vector2(400, 300));
 

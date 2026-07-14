@@ -53,7 +53,10 @@ public sealed class FishUIIntegrationTests
 			Assert.Equal("theme: test", fileSystem.ReadAllText(Path.Combine("data", "theme.yaml")));
 			Assert.StartsWith(Path.GetFullPath(root), fileSystem.GetFullPath("data"), StringComparison.OrdinalIgnoreCase);
 		}
-		finally { Directory.Delete(root, true); }
+		finally
+		{
+			Directory.Delete(root, true);
+		}
 	}
 
 	[Fact]
@@ -81,9 +84,9 @@ public sealed class FishUIIntegrationTests
 	{
 		FishUIInputState state = new FishUIInputState { Enabled = true };
 		state.BeginFrame();
-		state.OnChar('x');
+		state.OnCharacter('x');
 		state.OnScroll(2.5f);
-		state.OnKey(Key.MouseLeft, true, false);
+		state.OnMouseButton(MouseButton.Left, true, false);
 
 		Assert.Equal('x', state.GetCharPressed());
 		Assert.Equal(0, state.GetCharPressed());
@@ -92,7 +95,7 @@ public sealed class FishUIIntegrationTests
 		Assert.True(state.IsMousePressed(global::FishUI.FishMouseButton.Left));
 
 		state.BeginFrame();
-		state.OnKey(Key.MouseLeft, false, false);
+		state.OnMouseButton(MouseButton.Left, false, false);
 		Assert.True(state.IsMouseReleased(global::FishUI.FishMouseButton.Left));
 	}
 
@@ -101,8 +104,8 @@ public sealed class FishUIIntegrationTests
 	{
 		FishUIInputState state = new FishUIInputState();
 		state.OnKey(Key.W, true, false);
-		state.OnKey(Key.MouseRight, true, false);
-		state.OnChar('x');
+		state.OnMouseButton(MouseButton.Right, true, false);
+		state.OnCharacter('x');
 		state.OnScroll(1);
 
 		Assert.False(state.IsKeyDown(global::FishUI.FishKey.W));
@@ -123,7 +126,7 @@ public sealed class FishUIIntegrationTests
 	[InlineData(Key.NumpadEnter, global::FishUI.FishKey.KpEnter)]
 	public void KeyboardMappingUsesSharedGlfwValues(Key key, global::FishUI.FishKey expected)
 	{
-		Assert.True(FishGfxFishUIInput.TryMapKey(key, out global::FishUI.FishKey actual));
+		Assert.True(FishUIInputAdapter.TryMapKey(key, out global::FishUI.FishKey actual));
 		Assert.Equal(expected, actual);
 	}
 }

@@ -1,7 +1,7 @@
-﻿#version 410
+﻿#version 400
 
-layout (location = 0) in vec4 Clr;
-layout (location = 1) in vec2 UV;
+in vec4 frag_Clr;
+in vec2 frag_UV;
 
 uniform sampler2D Texture;
 
@@ -9,8 +9,8 @@ layout (location = 0) out vec4 OutClr;
 layout (location = 1) out vec4 RayClr;
 
 void main() {
-	vec4 TexClr = texture(Texture, UV);
+	vec4 TexClr = texture(Texture, frag_UV);
 
 	OutClr = TexClr;
-	RayClr = Clr;
+	RayClr = frag_Clr;
 }

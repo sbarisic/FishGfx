@@ -1,110 +1,123 @@
 using System;
 using System.Numerics;
+using System.Threading;
 using FishGfx.Graphics;
 
-namespace FishGfx.Voxels
+namespace FishGfx.Voxels;
+
+internal sealed class DrawVoxelMeshCommand : RenderCommand, IDisposable
 {
-	public sealed class DrawVoxelMeshCommand : GraphicsCommand
+	private readonly VoxelMesh mesh;
+	private readonly Texture atlas;
+	private readonly ShaderProgram shader;
+	private readonly RenderState state;
+	private readonly float alphaCutoff;
+	private readonly VoxelSunSettings sunSettings;
+	private readonly VoxelFogSettings fogSettings;
+	private int disposed;
+
+	internal DrawVoxelMeshCommand(
+		VoxelMesh mesh,
+		Texture atlas,
+		ShaderProgram shader,
+		RenderState state,
+		VoxelSunSettings sunSettings,
+		float alphaCutoff,
+		VoxelFogSettings fogSettings
+	)
 	{
-		private VoxelSunSettings sun;
+		ArgumentNullException.ThrowIfNull(mesh);
+		this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
+		this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
 
-		public DrawVoxelMeshCommand(
-			VoxelMesh mesh,
-			Texture atlas,
-			ShaderProgram shader,
-			Vector3 lightDirection,
-			float ambientLight,
-			float alphaCutoff
-		)
-			: this(
-				mesh,
-				atlas,
-				shader,
-				lightDirection,
-				ambientLight,
-				alphaCutoff,
-				VoxelFogSettings.Disabled
-			)
+		if (!float.IsFinite(alphaCutoff))
 		{
+			throw new ArgumentOutOfRangeException(nameof(alphaCutoff));
 		}
 
-		public DrawVoxelMeshCommand(
-			VoxelMesh mesh,
-			Texture atlas,
-			ShaderProgram shader,
-			Vector3 lightDirection,
-			float ambientLight,
-			float alphaCutoff,
-			VoxelFogSettings fog
-		)
+		sunSettings.Validate(nameof(sunSettings));
+		this.state = state;
+		this.sunSettings = sunSettings;
+		this.alphaCutoff = alphaCutoff;
+		this.fogSettings = fogSettings;
+		mesh.RetainReference();
+		this.mesh = mesh;
+	}
+
+	~DrawVoxelMeshCommand()
+	{
+		ReleaseReference();
+	}
+
+	public override void Execute(RenderPass pass)
+	{
+		if (pass == null)
 		{
-			Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
-			Atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
-			Shader = shader ?? throw new ArgumentNullException(nameof(shader));
-
-			if (!IsFinite(lightDirection) || lightDirection.LengthSquared() <= 0)
-				throw new ArgumentOutOfRangeException(nameof(lightDirection));
-			if (!float.IsFinite(ambientLight) || ambientLight < 0 || ambientLight > 1)
-				throw new ArgumentOutOfRangeException(nameof(ambientLight));
-			if (!float.IsFinite(alphaCutoff))
-				throw new ArgumentOutOfRangeException(nameof(alphaCutoff));
-
-			sun = new VoxelSunSettings(lightDirection, Color.White, 1, ambientLight);
-			AlphaCutoff = alphaCutoff;
-			Fog = fog;
+			throw new ArgumentNullException(nameof(pass));
 		}
 
-		public VoxelMesh Mesh { get; }
-		public Texture Atlas { get; }
-		public ShaderProgram Shader { get; }
-		public Vector3 LightDirection => sun.Direction;
-		public float AmbientLight => sun.AmbientLight;
-		public float AlphaCutoff { get; }
-		public VoxelFogSettings Fog { get; internal set; }
-		internal VoxelSunSettings Sun
+		ThrowIfDisposed();
+
+		bool shaderBound = false;
+		bool textureBound = false;
+
+		using IDisposable stateScope = pass.PushState(state);
+
+		try
 		{
-			get => sun;
-			set
+			shader.SetUniform("LightDirection", sunSettings.Direction);
+			shader.SetUniform("AmbientLight", sunSettings.AmbientLight);
+			shader.SetUniform("SunColor", (Vector3)sunSettings.Color);
+			shader.SetUniform("SunIntensity", sunSettings.Intensity);
+			shader.SetUniform("AlphaCutoff", alphaCutoff);
+			shader.SetUniform("FogEnabled", fogSettings.Enabled ? 1 : 0);
+			shader.SetUniform("FogColor", (Vector3)fogSettings.Color);
+			shader.SetUniform("FogDensity", fogSettings.Density);
+			shader.SetUniform(
+				"LightMultiplier",
+				fogSettings.Enabled ? fogSettings.LightMultiplier : 1
+			);
+			shader.Bind(pass.Uniforms);
+			shaderBound = true;
+			atlas.BindTextureUnit();
+			textureBound = true;
+			mesh.DrawRetained();
+		}
+		finally
+		{
+			if (textureBound)
 			{
-				value.Validate(nameof(value));
-				sun = value;
+				atlas.UnbindTextureUnit();
+			}
+
+			if (shaderBound)
+			{
+				shader.Unbind();
 			}
 		}
+	}
 
-		public override void Execute()
+	public void Dispose()
+	{
+		ReleaseReference();
+		GC.SuppressFinalize(this);
+	}
+
+	private void ReleaseReference()
+	{
+		if (Interlocked.Exchange(ref disposed, 1) != 0)
 		{
-			bool shaderBound = false;
-			bool textureBound = false;
-
-			try
-			{
-				Shader.Uniform3f("LightDirection", LightDirection);
-				Shader.Uniform1f("AmbientLight", AmbientLight);
-				Shader.Uniform3f("SunColor", (Vector3)sun.Color);
-				Shader.Uniform1f("SunIntensity", sun.Intensity);
-				Shader.Uniform1f("AlphaCutoff", AlphaCutoff);
-				Shader.Uniform1("FogEnabled", Fog.Enabled ? 1 : 0);
-				Shader.Uniform3f("FogColor", (Vector3)Fog.Color);
-				Shader.Uniform1f("FogDensity", Fog.Density);
-				Shader.Uniform1f("LightMultiplier", Fog.Enabled ? Fog.LightMultiplier : 1);
-				Shader.Bind(ShaderUniforms.Current);
-				shaderBound = true;
-				Atlas.BindTextureUnit();
-				textureBound = true;
-				Mesh.Draw();
-			}
-			finally
-			{
-				if (textureBound)
-					Atlas.UnbindTextureUnit();
-				if (shaderBound)
-					Shader.Unbind();
-			}
+			return;
 		}
 
-		private static bool IsFinite(Vector3 value)
+		mesh?.ReleaseReference();
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (Volatile.Read(ref disposed) != 0)
 		{
-			return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+			throw new ObjectDisposedException(nameof(DrawVoxelMeshCommand));
 		}
 	}
 }

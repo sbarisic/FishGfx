@@ -1,9 +1,11 @@
-﻿namespace Glfw3 {
+namespace Glfw3
+{
 	using System;
 	using System.Runtime.InteropServices;
 	using System.Security;
 
-	public static partial class Glfw {
+	public static partial class Glfw
+	{
 		/// <summary>
 		/// <para>This function initializes the GLFW library. Before most GLFW functions can be
 		/// used, GLFW must be initialized, and before an application terminates GLFW should be
@@ -104,7 +106,8 @@
 		/// <returns>An array of monitor handles, or <c>null</c> if no monitors were found or if an
 		/// error occurred.</returns>
 		/// <seealso cref="GetPrimaryMonitor"/>
-		public static unsafe Monitor[] GetMonitors() {
+		public static unsafe Monitor[] GetMonitors()
+		{
 			int count;
 			var array = glfwGetMonitors(&count);
 
@@ -114,7 +117,8 @@
 			var monitors = new Monitor[count];
 			int size = Marshal.SizeOf(typeof(IntPtr));
 
-			for (int i = 0; i < count; i++) {
+			for (int i = 0; i < count; i++)
+			{
 				var ptr = Marshal.ReadIntPtr(array, i * size);
 				monitors[i] = new Monitor(ptr);
 			}
@@ -146,10 +150,12 @@
 		/// <param name="monitor">The monitor to query.</param>
 		/// <param name="xpos">Where to store the monitor x-coordinate.</param>
 		/// <param name="ypos">Where to store the monitor y-coordinate.</param>
-		public static unsafe void GetMonitorPos(Monitor monitor, out int xpos, out int ypos) {
+		public static unsafe void GetMonitorPos(Monitor monitor, out int xpos, out int ypos)
+		{
 			int xx, yy;
 			glfwGetMonitorPos(monitor.Ptr, &xx, &yy);
-			xpos = xx; ypos = yy;
+			xpos = xx;
+			ypos = yy;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -171,10 +177,12 @@
 		/// <strong>Win32: </strong> Calculates the returned physical size from the current
 		/// resolution and system DPI instead of querying the monitor EDID data.
 		/// </remarks>
-		public static unsafe void GetMonitorPhysicalSize(Monitor monitor, out int widthMM, out int heightMM) {
+		public static unsafe void GetMonitorPhysicalSize(Monitor monitor, out int widthMM, out int heightMM)
+		{
 			int ww, hh;
 			glfwGetMonitorPhysicalSize(monitor.Ptr, &ww, &hh);
-			widthMM = ww; heightMM = hh;
+			widthMM = ww;
+			heightMM = hh;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -212,7 +220,8 @@
 		/// <param name="monitor">The monitor to query.</param>
 		/// <returns>An array of video modes, or <c>null</c> if an error occurred.</returns>
 		/// <seealso cref="GetVideoMode(Monitor)"/>
-		public static unsafe VideoMode[] GetVideoModes(Monitor monitor) {
+		public static unsafe VideoMode[] GetVideoModes(Monitor monitor)
+		{
 			int count;
 			var array = glfwGetVideoModes(monitor.Ptr, &count);
 
@@ -238,7 +247,8 @@
 		/// <param name="monitor">The monitor to query.</param>
 		/// <returns>The current mode of the monitor, or <c>null</c> if an error occurred.</returns>
 		/// <seealso cref="GetVideoModes(Monitor)"/>
-		public static VideoMode GetVideoMode(Monitor monitor) {
+		public static VideoMode GetVideoMode(Monitor monitor)
+		{
 			var ptr = glfwGetVideoMode(monitor.Ptr);
 			return (VideoMode)Marshal.PtrToStructure(ptr, typeof(VideoMode));
 		}
@@ -263,16 +273,19 @@
 		/// </summary>
 		/// <param name="monitor">The monitor to query.</param>
 		/// <returns>The current gamma ramp, or <c>null</c> if an error occurred.</returns>
-		public static unsafe GammaRamp GetGammaRamp(Monitor monitor) {
+		public static unsafe GammaRamp GetGammaRamp(Monitor monitor)
+		{
 			var internalRamp = glfwGetGammaRamp(monitor.Ptr);
 
-			var ramp = new GammaRamp {
+			var ramp = new GammaRamp
+			{
 				Red = new ushort[internalRamp->Size],
 				Green = new ushort[internalRamp->Size],
 				Blue = new ushort[internalRamp->Size]
 			};
 
-			for (uint i = 0; i < ramp.Size; i++) {
+			for (uint i = 0; i < ramp.Size; i++)
+			{
 				ramp.Red[i] = internalRamp->Red[i];
 				ramp.Green[i] = internalRamp->Green[i];
 				ramp.Blue[i] = internalRamp->Blue[i];
@@ -295,9 +308,12 @@
 		/// Gamma ramp sizes other than 256 are not supported by all platforms or graphics hardware
 		/// (<strong>Win32</strong> requires a 256 gamma ramp size).
 		/// </remarks>
-		public static unsafe void SetGammaRamp(Monitor monitor, GammaRamp ramp) {
-			fixed (ushort* rampRed = ramp.Red, rampBlue = ramp.Blue, rampGreen = ramp.Green) {
-				var internalRamp = new InternalGammaRamp {
+		public static unsafe void SetGammaRamp(Monitor monitor, GammaRamp ramp)
+		{
+			fixed (ushort* rampRed = ramp.Red, rampBlue = ramp.Blue, rampGreen = ramp.Green)
+			{
+				var internalRamp = new InternalGammaRamp
+				{
 					Red = rampRed,
 					Blue = rampBlue,
 					Green = rampGreen,
@@ -346,7 +362,8 @@
 		/// <param name="hint">The window hint to set.</param>
 		/// <param name="value">The new value of the window hint.</param>
 		/// <seealso cref="DefaultWindowHints"/>
-		public static void WindowHint(Hint hint, int value) {
+		public static void WindowHint(Hint hint, int value)
+		{
 			if (value < 0)
 				value = DontCare;
 
@@ -532,18 +549,22 @@
 		/// <a href="https://developer.apple.com/library/mac/documentation/CoreFoundation/Conceptual/CFBundles/">
 		/// Bundle Programming Guide</a> in the Mac Developer Library.
 		/// </remarks>
-		public static unsafe void SetWindowIcon(Window window, Image[] images) {
-			if (images == null) {
+		public static unsafe void SetWindowIcon(Window window, Image[] images)
+		{
+			if (images == null)
+			{
 				glfwSetWindowIcon(window.Ptr, 0, IntPtr.Zero);
 				return;
 			}
 
 			var imgs = new InternalImage[images.Length];
 
-			for (int i = 0; i < imgs.Length; i++) {
+			for (int i = 0; i < imgs.Length; i++)
+			{
 				int size = images[i].Width * images[i].Width * 4;
 
-				imgs[i] = new InternalImage {
+				imgs[i] = new InternalImage
+				{
 					Width = images[i].Width,
 					Height = images[i].Width,
 					Pixels = Marshal.AllocHGlobal(size)
@@ -575,10 +596,12 @@
 		/// <param name="ypos">Where to store the y-coordinate of the upper-left corner of the
 		/// client area.</param>
 		/// <seealso cref="SetWindowPos(Window, int, int)"/>
-		public static unsafe void GetWindowPos(Window window, out int xpos, out int ypos) {
+		public static unsafe void GetWindowPos(Window window, out int xpos, out int ypos)
+		{
 			int xx, yy;
 			glfwGetWindowPos(window.Ptr, &xx, &yy);
-			xpos = xx; ypos = yy;
+			xpos = xx;
+			ypos = yy;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -611,10 +634,12 @@
 		/// <param name="height">Where to store the height, in screen coordinates, of the client
 		/// area.</param>
 		/// <seealso cref="SetWindowSize(Window, int, int)"/>
-		public static unsafe void GetWindowSize(Window window, out int width, out int height) {
+		public static unsafe void GetWindowSize(Window window, out int width, out int height)
+		{
 			int w, h;
 			glfwGetWindowSize(window.Ptr, &w, &h);
-			width = w; height = h;
+			width = w;
+			height = h;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -700,10 +725,12 @@
 		/// <param name="width">Where to store the width, in pixels, of the framebuffer.</param>
 		/// <param name="height">Where to store the height, in pixels, of the framebuffer.</param>
 		/// <seealso cref="SetFramebufferSizeCallback(Window, FramebufferSizeFunc)"/>
-		public static unsafe void GetFramebufferSize(Window window, out int width, out int height) {
+		public static unsafe void GetFramebufferSize(Window window, out int width, out int height)
+		{
 			int w, h;
 			glfwGetFramebufferSize(window.Ptr, &w, &h);
-			width = w; height = h;
+			width = w;
+			height = h;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -727,10 +754,14 @@
 		/// the window frame.</param>
 		/// <param name="bottom">Where to store the size, in screen coordinates, of the bottom edge
 		/// of the window frame.</param>
-		public static unsafe void GetWindowFrameSize(Window window, out int left, out int top, out int right, out int bottom) {
+		public static unsafe void GetWindowFrameSize(Window window, out int left, out int top, out int right, out int bottom)
+		{
 			int l, t, r, b;
 			glfwGetWindowFrameSize(window.Ptr, &l, &t, &r, &b);
-			left = l; top = t; right = r; bottom = b;
+			left = l;
+			top = t;
+			right = r;
+			bottom = b;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -812,7 +843,8 @@
 		/// <returns>The monitor, or <see cref="Monitor.None"/> if the window is in windowed mode or
 		/// an error occurred.</returns>
 		/// <seealso cref="SetWindowMonitor(Window, Monitor, int, int, int, int, int)"/>
-		public static Monitor GetWindowMonitor(Window window) {
+		public static Monitor GetWindowMonitor(Window window)
+		{
 			var ptr = glfwGetWindowMonitor(window.Ptr);
 			return new Monitor(ptr);
 		}
@@ -1245,10 +1277,12 @@
 		/// <param name="ypos">Where to store the cursor y-coordinate, relative to the to top edge
 		/// of the client area.</param>
 		/// <seealso cref="SetCursorPos(Window, double, double)"/>
-		public static unsafe void GetCursorPos(Window window, out double xpos, out double ypos) {
+		public static unsafe void GetCursorPos(Window window, out double xpos, out double ypos)
+		{
 			double xx, yy;
 			glfwGetCursorPos(window.Ptr, &xx, &yy);
-			xpos = xx; ypos = yy;
+			xpos = xx;
+			ypos = yy;
 		}
 
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
@@ -1295,10 +1329,12 @@
 		/// <returns>The handle of the created cursor.</returns>
 		/// <seealso cref="DestroyCursor(Cursor)"/>
 		/// <seealso cref="CreateStandardCursor(CursorType)"/>
-		public static unsafe Cursor CreateCursor(Image image, int xhot, int yhot) {
+		public static unsafe Cursor CreateCursor(Image image, int xhot, int yhot)
+		{
 			int size = image.Width * image.Width * 4;
 
-			var img = new InternalImage {
+			var img = new InternalImage
+			{
 				Width = image.Width,
 				Height = image.Width,
 				Pixels = Marshal.AllocHGlobal(size)
@@ -1506,7 +1542,8 @@
 		/// <param name="joy">The joystick to query.</param>
 		/// <returns>An array of axis values, or <c>null</c> if the joystick is not
 		/// present.</returns>
-		public static unsafe float[] GetJoystickAxes(Joystick joy) {
+		public static unsafe float[] GetJoystickAxes(Joystick joy)
+		{
 			int n;
 			var array = glfwGetJoystickAxes((int)joy, &n);
 
@@ -1530,7 +1567,8 @@
 		/// <param name="joy">The joystick to query.</param>
 		/// <returns>An array of button states, or <c>null</c> if the joystick is not
 		/// present.</returns>
-		public static unsafe bool[] GetJoystickButtons(Joystick joy) {
+		public static unsafe bool[] GetJoystickButtons(Joystick joy)
+		{
 			int n;
 			var array = glfwGetJoystickButtons((int)joy, &n);
 

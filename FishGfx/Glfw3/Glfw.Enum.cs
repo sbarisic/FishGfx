@@ -1,9 +1,12 @@
-﻿namespace Glfw3 {
+namespace Glfw3
+{
 	using System;
 
-	public static partial class Glfw {
+	public static partial class Glfw
+	{
 		/// <seealso cref="Hint.ClientApi"/>
-		public enum ClientApi {
+		public enum ClientApi
+		{
 			None = 0,
 			OpenGL = 0x00030001,
 			OpenGLES = 0x00030002
@@ -14,26 +17,30 @@
 		/// </summary>
 		/// <seealso cref="SetJoystickCallback(JoystickFunc)"/>
 		/// <seealso cref="SetMonitorCallback(MonitorFunc)"/>
-		public enum ConnectionEvent {
+		public enum ConnectionEvent
+		{
 			Connected = 0x00040001,
 			Disconnected = 0x00040002
 		}
 
 		/// <seealso cref="Hint.ContextCreationApi"/>
-		public enum ContextApi {
+		public enum ContextApi
+		{
 			Native = 0x00036001,
 			EGL = 0x00036002
 		}
 
 		/// <seealso cref="Hint.ContextReleaseBehavior"/>
-		public enum ContextReleaseBehavior {
+		public enum ContextReleaseBehavior
+		{
 			Any = 0,
 			Flush = 0x00035001,
 			None = 0x00035002
 		}
 
 		/// <seealso cref="Hint.ContextRobustness"/>
-		public enum ContextRobustness {
+		public enum ContextRobustness
+		{
 			None = 0,
 			NoResetNotification = 0x00031001,
 			LoseContextOnReset = 0x00031002
@@ -43,7 +50,8 @@
 		/// Cursor modes.
 		/// </summary>
 		/// <seealso cref="SetInputMode"/>
-		public enum CursorMode {
+		public enum CursorMode
+		{
 			/// <summary>
 			/// Makes the cursor visible and behaving normally.
 			/// </summary>
@@ -66,7 +74,8 @@
 		/// Standard cursor shapes.
 		/// </summary>
 		/// <seealso cref="SetCursor"/>
-		public enum CursorType {
+		public enum CursorType
+		{
 			/// <summary>
 			/// The regular arrow cursor.
 			/// </summary>
@@ -102,7 +111,8 @@
 		/// Error codes.
 		/// </summary>
 		/// <seealso cref="SetErrorCallback"/>
-		public enum ErrorCode {
+		public enum ErrorCode
+		{
 			/// <summary>
 			/// <para>GLFW has not been initialized.</para>
 			/// <para>This occurs if a GLFW function was called that must not be called unless the
@@ -181,7 +191,8 @@
 		/// wish to have the specified attributes.</para>
 		/// </summary>
 		/// <seealso cref="WindowHint"/>
-		public enum Hint {
+		public enum Hint
+		{
 			/// <summary>
 			/// Specifies whether the windowed mode window will be given input focus when created.
 			/// This hint is ignored for full screen and initially hidden windows.
@@ -441,7 +452,8 @@
 		/// Input mode options.
 		/// </summary>
 		/// <seealso cref="SetInputMode"/>
-		public enum InputMode {
+		public enum InputMode
+		{
 			Cursor = 0x00033001,
 			StickyKeys = 0x00033002,
 			StickyMouseButton = 0x00033003
@@ -450,7 +462,8 @@
 		/// <summary>
 		/// Key and button actions.
 		/// </summary>
-		public enum InputState {
+		public enum InputState
+		{
 			/// <summary>
 			/// The key or mouse button was released.
 			/// </summary>
@@ -470,7 +483,8 @@
 		/// <summary>
 		/// Joysticks.
 		/// </summary>
-		public enum Joystick {
+		public enum Joystick
+		{
 			Joystick1 = 0,
 			Joystick2 = 1,
 			Joystick3 = 2,
@@ -497,7 +511,8 @@
 		/// re-arranged to map to 7-bit ASCII for printable keys(function keys are put in the 256+
 		/// range).</para>
 		/// </summary>
-		public enum KeyCode {
+		public enum KeyCode
+		{
 			Unknown = -1,
 
 			// Printable keys
@@ -629,7 +644,8 @@
 		/// Modifier key flags.
 		/// </summary>
 		[Flags]
-		public enum KeyMods {
+		public enum KeyMods
+		{
 			/// <summary>
 			/// If this bit is set one or more Shift keys were held down.
 			/// </summary>
@@ -654,7 +670,8 @@
 		/// <summary>
 		/// Mouse buttons.
 		/// </summary>
-		public enum MouseButton {
+		public enum MouseButton
+		{
 			Button1 = 0,
 			Button2 = 1,
 			Button3 = 2,
@@ -670,13 +687,15 @@
 		}
 
 		/// <seealso cref="Hint.OpenglProfile"/>
-		public enum OpenGLProfile {
+		public enum OpenGLProfile
+		{
 			Any = 0,
 			Core = 0x00032001,
 			Compat = 0x00032002
 		}
 
-		public enum WindowAttrib {
+		public enum WindowAttrib
+		{
 			/// <summary>
 			/// Indicates whether the specified window has input focus. Initial input focus is
 			/// controlled by the window hint with the same name.

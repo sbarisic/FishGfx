@@ -1,18 +1,21 @@
-﻿#version 410
+﻿#version 400
 
-layout (location = 0) in vec4 Clr;
-layout (location = 1) in vec2 UV;
+in vec4 vColor;
+in vec2 vUv;
 
-uniform sampler2D Texture;
-uniform float AlphaTest;
+uniform sampler2D uTexture;
+uniform float uAlphaCutoff;
 
-layout (location = 0) out vec4 OutClr;
+layout (location = 0) out vec4 outColor;
 
-void main() {
-	vec4 Fragment = texture(Texture, UV) * Clr;
+void main()
+{
+	vec4 fragmentColor = texture(uTexture, vUv) * vColor;
 
-	if (Fragment.a < AlphaTest)
+	if (fragmentColor.a < uAlphaCutoff)
+	{
 		discard;
+	}
 
-	OutClr = Fragment;
+	outColor = fragmentColor;
 }

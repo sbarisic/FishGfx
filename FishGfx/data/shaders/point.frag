@@ -1,24 +1,35 @@
-﻿#version 410
+﻿#version 400
 
-uniform vec2 Viewport;
-//uniform float Thickness;
+in vec4 gColor;
+in vec2 gCenterOffset;
+in float gScaledThickness;
 
-uniform sampler2D Texture;
+layout (location = 0) out vec4 outColor;
 
-layout (location = 0) in vec4 Clr;
-layout (location = 1) in vec2 CenterOffset;
-layout (location = 2) in float Thickness;
+void main()
+{
+	const float edgePixels = 4.0;
+	const float minimumSmoothedSize = 8.0;
+	const float minimumHardEdgeSize = 1.5;
 
-#define PixelsAlpha 4
-#define MinAlphaSize 8
-#define AlphaAbove 1.5
+	vec2 offsetSquared = gCenterOffset * gCenterOffset;
+	float distanceSquared = offsetSquared.x + offsetSquared.y;
+	float hardAlpha = 1.0 - step(1.0, distanceSquared);
+	float sizeAwareHardAlpha = mix(
+		1.0,
+		hardAlpha,
+		step(minimumHardEdgeSize, gScaledThickness)
+	);
+	float smoothAlpha = 1.0 - smoothstep(
+		1.0 - edgePixels / gScaledThickness,
+		1.0,
+		distanceSquared
+	);
+	float alpha = mix(
+		sizeAwareHardAlpha,
+		smoothAlpha,
+		step(minimumSmoothedSize, gScaledThickness)
+	);
 
-layout (location = 0) out vec4 OutColor;
-
-void main() {
-	vec2 CenterOffsetSq = CenterOffset * CenterOffset;
-	float Dist = CenterOffsetSq.x + CenterOffsetSq.y;
-	float Alpha = mix(mix(1.0, 1.0 - step(1.0, Dist), step(AlphaAbove, Thickness)), 1.0 - smoothstep(1.0 - ((1.0 / Thickness) * PixelsAlpha), 1.0, Dist), step(MinAlphaSize, Thickness));
-
-	OutColor = vec4(Clr.rgb, min(Clr.a, Alpha));
+	outColor = vec4(gColor.rgb, min(gColor.a, alpha));
 }

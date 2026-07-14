@@ -12,17 +12,17 @@ out vec3 frag_Normal;
 out vec3 frag_WorldPosition;
 out vec4 frag_Light;
 
-uniform mat4 Model;
-uniform mat4 View;
-uniform mat4 Project;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
 
 void main()
 {
-	vec4 worldPosition = Model * vec4(Pos, 1.0);
+	vec4 worldPosition = uModel * vec4(Pos, 1.0);
 	frag_Clr = Clr;
 	frag_UV = UV;
-	frag_Normal = normalize(mat3(Model) * Normal);
+	frag_Normal = normalize(mat3(uModel) * Normal);
 	frag_WorldPosition = worldPosition.xyz;
 	frag_Light = Light;
-	gl_Position = Project * View * worldPosition;
+	gl_Position = uProjection * uView * worldPosition;
 }

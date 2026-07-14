@@ -1,90 +1,156 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
-using FishGfx;
 using FishGfx.Graphics;
 
-namespace FishGfx.Game
+namespace FishGfx.Game;
+
+public sealed class InputManager : IDisposable
 {
-	public class InputManager
+	private readonly RenderWindow window;
+	private readonly HashSet<Key> keysDown = new();
+	private readonly HashSet<Key> keysPressed = new();
+	private readonly HashSet<Key> keysReleased = new();
+	private readonly HashSet<MouseButton> mouseButtonsDown = new();
+	private readonly HashSet<MouseButton> mouseButtonsPressed = new();
+	private readonly HashSet<MouseButton> mouseButtonsReleased = new();
+	private Vector2 nativeMousePosition;
+	private bool disposed;
+
+	public InputManager(RenderWindow window)
 	{
-		Key[] AllKeys;
+		this.window = window ?? throw new ArgumentNullException(nameof(window));
+		nativeMousePosition = window.MousePosition;
+		window.KeyChanged += HandleKeyChanged;
+		window.MouseButtonChanged += HandleMouseButtonChanged;
+		window.MouseMoved += HandleMouseMoved;
+	}
 
-		Dictionary<Key, bool> KeysPressed = new Dictionary<Key, bool>();
-		Dictionary<Key, bool> KeysReleased = new Dictionary<Key, bool>();
-		Dictionary<Key, bool> KeysDown = new Dictionary<Key, bool>();
+	public Vector2 MousePosition => new(nativeMousePosition.X, window.Height - nativeMousePosition.Y);
 
-		float MouseX;
-		float MouseY;
-
-		RenderWindow Window;
-
-		public InputManager(RenderWindow Window)
+	public Vector2 NormalizedMousePosition
+	{
+		get
 		{
-			AllKeys = (Key[])Enum.GetValues(typeof(Key));
-			this.Window = Window;
-
-			foreach (var K in AllKeys)
-				KeysDown[K] = false;
-
-			Window.OnKey += Window_OnKey;
-			Window.OnMouseMove += Window_OnMouseMove;
-		}
-
-		private void Window_OnMouseMove(RenderWindow Wnd, float X, float Y)
-		{
-			MouseX = X;
-			MouseY = Y;
-		}
-
-		private void Window_OnKey(RenderWindow Wnd, Key Key, int Scancode, bool Pressed, bool Repeat, KeyMods Mods)
-		{
-			if (Repeat)
-				return;
-
-			KeysDown[Key] = Pressed;
-
-			if (Pressed)
-				KeysPressed[Key] = true;
-			else
-				KeysReleased[Key] = true;
-		}
-
-		public Vector2 GetMousePos()
-		{
-			return new Vector2(MouseX, Window.WindowSize.Y - MouseY);
-		}
-
-		public Vector2 GetMousePosNormal()
-		{
-			return GetMousePos() / Window.WindowSize;
-		}
-
-		public void BeginNewFrame()
-		{
-			for (int i = 0; i < AllKeys.Length; i++)
+			if (window.Width == 0 || window.Height == 0)
 			{
-				KeysPressed[AllKeys[i]] = false;
-				KeysReleased[AllKeys[i]] = false;
+				return Vector2.Zero;
 			}
+
+			return MousePosition / window.Size;
+		}
+	}
+
+	public void BeginFrame()
+	{
+		ThrowIfDisposed();
+		keysPressed.Clear();
+		keysReleased.Clear();
+		mouseButtonsPressed.Clear();
+		mouseButtonsReleased.Clear();
+	}
+
+	public bool IsKeyDown(Key key)
+	{
+		ThrowIfDisposed();
+
+		return keysDown.Contains(key);
+	}
+
+	public bool WasKeyPressed(Key key)
+	{
+		ThrowIfDisposed();
+
+		return keysPressed.Contains(key);
+	}
+
+	public bool WasKeyReleased(Key key)
+	{
+		ThrowIfDisposed();
+
+		return keysReleased.Contains(key);
+	}
+
+	public bool IsMouseButtonDown(MouseButton button)
+	{
+		ThrowIfDisposed();
+
+		return mouseButtonsDown.Contains(button);
+	}
+
+	public bool WasMouseButtonPressed(MouseButton button)
+	{
+		ThrowIfDisposed();
+
+		return mouseButtonsPressed.Contains(button);
+	}
+
+	public bool WasMouseButtonReleased(MouseButton button)
+	{
+		ThrowIfDisposed();
+
+		return mouseButtonsReleased.Contains(button);
+	}
+
+	public void Dispose()
+	{
+		if (disposed)
+		{
+			return;
 		}
 
-		public bool GetKeyDown(Key K)
+		window.KeyChanged -= HandleKeyChanged;
+		window.MouseButtonChanged -= HandleMouseButtonChanged;
+		window.MouseMoved -= HandleMouseMoved;
+		disposed = true;
+	}
+
+	private void HandleKeyChanged(object sender, KeyEventArgs args)
+	{
+		if (args.IsRepeat)
 		{
-			return KeysDown[K];
+			return;
 		}
 
-		public bool GetKeyPressed(Key K)
+		if (args.IsPressed)
 		{
-			return KeysPressed[K];
+			keysDown.Add(args.Key);
+			keysPressed.Add(args.Key);
+			return;
 		}
 
-		public bool GetKeyReleased(Key K)
+		keysDown.Remove(args.Key);
+		keysReleased.Add(args.Key);
+	}
+
+	private void HandleMouseButtonChanged(object sender, MouseButtonEventArgs args)
+	{
+		if (args.IsRepeat)
 		{
-			return KeysReleased[K];
+			return;
+		}
+
+		if (args.IsPressed)
+		{
+			mouseButtonsDown.Add(args.Button);
+			mouseButtonsPressed.Add(args.Button);
+			return;
+		}
+
+		mouseButtonsDown.Remove(args.Button);
+		mouseButtonsReleased.Add(args.Button);
+	}
+
+	private void HandleMouseMoved(object sender, MouseMoveEventArgs args)
+	{
+		nativeMousePosition = args.Position;
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
+		{
+			throw new ObjectDisposedException(nameof(InputManager));
 		}
 	}
 }

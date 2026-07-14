@@ -1,204 +1,230 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics
+namespace FishGfx.Graphics;
+
+public enum CullMode
 {
-	public enum CullFace
+	None,
+	Front,
+	Back,
+	FrontAndBack,
+}
+
+public enum CompareFunction
+{
+	Never,
+	Less,
+	Equal,
+	LessOrEqual,
+	Greater,
+	NotEqual,
+	GreaterOrEqual,
+	Always,
+}
+
+public enum Winding
+{
+	Clockwise,
+	CounterClockwise,
+}
+
+public enum BlendFactor
+{
+	Zero,
+	One,
+	SourceColor,
+	OneMinusSourceColor,
+	SourceAlpha,
+	OneMinusSourceAlpha,
+	DestinationAlpha,
+	OneMinusDestinationAlpha,
+	DestinationColor,
+	OneMinusDestinationColor,
+	SourceAlphaSaturate,
+	ConstantColor,
+	OneMinusConstantColor,
+	ConstantAlpha,
+	OneMinusConstantAlpha,
+	Source1Alpha,
+	Source1Color,
+	OneMinusSource1Color,
+	OneMinusSource1Alpha,
+}
+
+[Flags]
+public enum ColorWriteMask
+{
+	None = 0,
+	Red = 1 << 0,
+	Green = 1 << 1,
+	Blue = 1 << 2,
+	Alpha = 1 << 3,
+	All = Red | Green | Blue | Alpha,
+}
+
+public enum StencilOperation
+{
+	Zero,
+	Invert,
+	Keep,
+	Replace,
+	Increment,
+	Decrement,
+	IncrementWrap,
+	DecrementWrap,
+}
+
+public readonly record struct StencilFaceState
+{
+	public CompareFunction Function { get; init; }
+
+	public int Reference { get; init; }
+
+	public uint CompareMask { get; init; }
+
+	public uint WriteMask { get; init; }
+
+	public StencilOperation StencilFail { get; init; }
+
+	public StencilOperation DepthFail { get; init; }
+
+	public StencilOperation Pass { get; init; }
+
+	public static StencilFaceState Default => new StencilFaceState
 	{
-		Front = TriangleFace.Front,
-		Back = TriangleFace.Back,
-		FrontAndBack = TriangleFace.FrontAndBack,
-	}
+		Function = CompareFunction.Always,
+		CompareMask = uint.MaxValue,
+		WriteMask = uint.MaxValue,
+		StencilFail = StencilOperation.Keep,
+		DepthFail = StencilOperation.Keep,
+		Pass = StencilOperation.Keep,
+	};
+}
 
-	public enum DepthFunc
+public readonly record struct StencilState
+{
+	public StencilFaceState Front { get; init; }
+
+	public StencilFaceState Back { get; init; }
+
+	public static StencilState Default => new StencilState
 	{
-		Never = DepthFunction.Never,
-		Less = DepthFunction.Less,
-		Equal = DepthFunction.Equal,
-		LessOrEqual = DepthFunction.Lequal,
-		Greater = DepthFunction.Greater,
-		NotEqual = DepthFunction.Notequal,
-		GreaterOrEqual = DepthFunction.Gequal,
-		Always = DepthFunction.Always,
-	}
+		Front = StencilFaceState.Default,
+		Back = StencilFaceState.Default,
+	};
+}
 
-	public enum FrontFace
+public readonly record struct RenderState
+{
+	public CullMode CullMode { get; init; }
+
+	public CompareFunction DepthCompare { get; init; }
+
+	public Winding Winding { get; init; }
+
+	public BlendFactor SourceBlend { get; init; }
+
+	public BlendFactor DestinationBlend { get; init; }
+
+	public bool DepthTestEnabled { get; init; }
+
+	public bool DepthWriteEnabled { get; init; }
+
+	public bool BlendEnabled { get; init; }
+
+	public bool DepthClampEnabled { get; init; }
+
+	public ColorWriteMask ColorWriteMask { get; init; }
+
+	public float PointSize { get; init; }
+
+	public AxisAlignedBoundingBox? ScissorRectangle { get; init; }
+
+	public StencilState? Stencil { get; init; }
+
+	public static RenderState Default => new RenderState
 	{
-		Clockwise = FrontFaceDirection.CW,
-		CounterClockwise = FrontFaceDirection.Ccw,
-	}
+		CullMode = CullMode.Back,
+		DepthCompare = CompareFunction.Less,
+		Winding = Winding.Clockwise,
+		SourceBlend = BlendFactor.SourceAlpha,
+		DestinationBlend = BlendFactor.OneMinusSourceAlpha,
+		DepthTestEnabled = true,
+		DepthWriteEnabled = true,
+		BlendEnabled = true,
+		DepthClampEnabled = true,
+		ColorWriteMask = ColorWriteMask.All,
+		PointSize = 1,
+	};
 
-	public enum BlendFactor
+	internal void Validate()
 	{
-		Zero = BlendingFactor.Zero,
-		One = BlendingFactor.One,
-		SrcColor = BlendingFactor.SrcColor,
-		OneMinusSrcColor = BlendingFactor.OneMinusSrcColor,
-		SrcAlpha = BlendingFactor.SrcAlpha,
-		OneMinusSrcAlpha = BlendingFactor.OneMinusSrcAlpha,
-		DstAlpha = BlendingFactor.DstAlpha,
-		OneMinusDstAlpha = BlendingFactor.OneMinusDstAlpha,
-		DstColor = BlendingFactor.DstColor,
-		OneMinusDstColor = BlendingFactor.OneMinusDstColor,
-		SrcAlphaSaturate = BlendingFactor.SrcAlphaSaturate,
-		ConstantColor = BlendingFactor.ConstantColor,
-		OneMinusConstantColor = BlendingFactor.OneMinusConstantColor,
-		ConstantAlpha = BlendingFactor.ConstantAlpha,
-		OneMinusConstantAlpha = BlendingFactor.OneMinusConstantAlpha,
-		Source1Alpha = BlendingFactor.Src1Alpha,
-		Src1Color = BlendingFactor.Src1Color,
-		OneMinusSrc1Color = BlendingFactor.OneMinusSrc1Color,
-		OneMinusSrc1Alpha = BlendingFactor.OneMinusSrc1Alpha,
-	}
-
-	public enum StencilFunction
-	{
-		Skip = -1,
-		Never = 512,
-		Less = 513,
-		Equal = 514,
-		Lequal = 515,
-		Greater = 516,
-		Notequal = 517,
-		Gequal = 518,
-		Always = 519,
-	}
-
-	public enum StencilOperation
-	{
-		Skip = -1,
-		Zero = 0,
-		Invert = 5386,
-		Keep = 7680,
-		Replace = 7681,
-		Incr = 7682,
-		Decr = 7683,
-		IncrWrap = 34055,
-		DecrWrap = 34056,
-	}
-
-	public enum StencilFace
-	{
-		Front,
-		Back,
-	}
-
-	public struct RenderState
-	{
-		public CullFace CullFace;
-		public DepthFunc DepthFunc;
-		public FrontFace FrontFace;
-
-		public BlendFactor BlendFunc_Src;
-		public BlendFactor BlendFunc_Dst;
-		public uint StencilFrontWriteMask;
-		public uint StencilBackWriteMask;
-
-		public StencilFunction StencilFrontFunction;
-		public int StencilFrontReference;
-		public uint StencilFrontMask;
-
-		public StencilFunction StencilBackFunction;
-		public int StencilBackReference;
-		public uint StencilBackMask;
-
-		public StencilOperation StencilFrontSFail;
-		public StencilOperation StencilFrontDPFail;
-		public StencilOperation StencilFrontDPPass;
-
-		public StencilOperation StencilBackSFail;
-		public StencilOperation StencilBackDPFail;
-		public StencilOperation StencilBackDPPass;
-
-		public bool EnableCullFace;
-		public bool EnableDepthTest;
-		public bool EnableScissorTest;
-		public bool EnableBlend;
-		public bool EnableDepthClamp;
-		public bool EnableStencilTest;
-
-		/// <summary>
-		/// True to enable writing to the depth buffer
-		/// </summary>
-		public bool EnableDepthMask;
-		public bool EnableColorMaskR;
-		public bool EnableColorMaskG;
-		public bool EnableColorMaskB;
-		public bool EnableColorMaskA;
-
-		//public bool EnableTexture2D;
-
-		public float PointSize;
-
-		public AABB ScissorRegion;
-
-		public void SetColorMask(bool R, bool G, bool B, bool A)
+		if (!Enum.IsDefined(CullMode))
 		{
-			EnableColorMaskR = R;
-			EnableColorMaskG = G;
-			EnableColorMaskB = B;
-			EnableColorMaskA = A;
+			throw new ArgumentOutOfRangeException(nameof(CullMode));
 		}
 
-		public void SetColorMask(bool All)
+		if (!Enum.IsDefined(DepthCompare))
 		{
-			SetColorMask(All, All, All, All);
+			throw new ArgumentOutOfRangeException(nameof(DepthCompare));
 		}
 
-		public void StencilWriteMask(uint mask)
+		if (!Enum.IsDefined(Winding))
 		{
-			StencilFrontWriteMask = mask;
-			StencilBackWriteMask = mask;
+			throw new ArgumentOutOfRangeException(nameof(Winding));
 		}
 
-		public void StencilWriteMaskSeparate(StencilFace face, uint mask)
+		if (!Enum.IsDefined(SourceBlend) || !Enum.IsDefined(DestinationBlend))
 		{
-			if (face == StencilFace.Front) StencilFrontWriteMask = mask;
-			else StencilBackWriteMask = mask;
+			throw new ArgumentOutOfRangeException(nameof(SourceBlend));
 		}
 
-		public void StencilFunc(StencilFunction Func, int Ref, uint Mask)
+		if ((ColorWriteMask & ~ColorWriteMask.All) != 0)
 		{
-			StencilFrontFunction = StencilBackFunction = Func;
-			StencilFrontReference = StencilBackReference = Ref;
-			StencilFrontMask = StencilBackMask = Mask;
+			throw new ArgumentOutOfRangeException(nameof(ColorWriteMask));
 		}
 
-		public void StencilOpSeparate(
-			StencilFace F,
-			StencilOperation SFail,
-			StencilOperation DPFail,
-			StencilOperation DPPass
-		)
+		if (!float.IsFinite(PointSize) || PointSize <= 0)
 		{
-			if (F == StencilFace.Front)
-			{
-				StencilFrontSFail = SFail;
-				StencilFrontDPFail = DPFail;
-				StencilFrontDPPass = DPPass;
-			}
-			else
-			{
-				StencilBackSFail = SFail;
-				StencilBackDPFail = DPFail;
-				StencilBackDPPass = DPPass;
-			}
+			throw new ArgumentOutOfRangeException(nameof(PointSize));
 		}
 
-		public void StencilOp(StencilOperation SFail, StencilOperation DPFail, StencilOperation DPPass)
+		if (ScissorRectangle is AxisAlignedBoundingBox scissor)
 		{
-			StencilOpSeparate(StencilFace.Front, SFail, DPFail, DPPass);
-			StencilOpSeparate(StencilFace.Back, SFail, DPFail, DPPass);
+			ValidateScissor(scissor);
 		}
 
-		public void BlendFunc(BlendFactor Src, BlendFactor Dst)
+		if (Stencil is StencilState stencil)
 		{
-			BlendFunc_Src = Src;
-			BlendFunc_Dst = Dst;
+			ValidateStencilFace(stencil.Front);
+			ValidateStencilFace(stencil.Back);
+		}
+	}
+
+	private static void ValidateScissor(AxisAlignedBoundingBox scissor)
+	{
+		if (scissor.IsEmpty)
+		{
+			throw new ArgumentOutOfRangeException(nameof(ScissorRectangle), "The scissor rectangle cannot be empty.");
+		}
+
+		if (!float.IsFinite(scissor.Min.X)
+			|| !float.IsFinite(scissor.Min.Y)
+			|| !float.IsFinite(scissor.Max.X)
+			|| !float.IsFinite(scissor.Max.Y))
+		{
+			throw new ArgumentOutOfRangeException(nameof(ScissorRectangle), "Scissor coordinates must be finite.");
+		}
+	}
+
+	private static void ValidateStencilFace(StencilFaceState state)
+	{
+		if (!Enum.IsDefined(state.Function)
+			|| !Enum.IsDefined(state.StencilFail)
+			|| !Enum.IsDefined(state.DepthFail)
+			|| !Enum.IsDefined(state.Pass))
+		{
+			throw new ArgumentOutOfRangeException(nameof(Stencil));
 		}
 	}
 }

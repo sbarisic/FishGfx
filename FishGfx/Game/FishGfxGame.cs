@@ -1,115 +1,141 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using FishGfx;
+using System.Threading;
 using FishGfx.Graphics;
 
-namespace FishGfx.Game
+namespace FishGfx.Game;
+
+public abstract class FishGfxGame
 {
-	public abstract class FishGfxGame
+	private readonly int initialWidth;
+	private readonly int initialHeight;
+	private Stopwatch gameStopwatch;
+
+	protected FishGfxGame()
+		: this(1366, 768)
 	{
-		protected RenderWindow Window;
-		protected Camera Camera { get; private set; }
-		protected RenderPass RenderPass { get; private set; }
-		protected int Framerate = 60;
+	}
 
-		private int WindowWidth;
-		private int WindowHeight;
-
-		Stopwatch GameStopwatch;
-		public float GameTime
+	protected FishGfxGame(int width, int height)
+	{
+		if (width <= 0)
 		{
-			get { return GameStopwatch.ElapsedMilliseconds / 1000.0f; }
+			throw new ArgumentOutOfRangeException(nameof(width));
 		}
 
-		public InputManager Input { get; private set; }
-
-		public FishGfxGame()
-			: this(1366, 768) { }
-
-		public FishGfxGame(int Width, int Height)
+		if (height <= 0)
 		{
-			WindowWidth = Width;
-			WindowHeight = Height;
+			throw new ArgumentOutOfRangeException(nameof(height));
 		}
 
-		protected virtual RenderWindow CreateWindow()
+		initialWidth = width;
+		initialHeight = height;
+	}
+
+	protected RenderWindow Window { get; private set; }
+
+	protected Camera Camera { get; private set; }
+
+	protected InputManager Input { get; private set; }
+
+	protected ShaderProgram DefaultShader { get; private set; }
+
+	protected int Framerate { get; set; } = 60;
+
+	public float GameTime => (float)gameStopwatch.Elapsed.TotalSeconds;
+
+	protected virtual RenderWindow CreateWindow()
+	{
+		return new RenderWindow(initialWidth, initialHeight, GetType().Name);
+	}
+
+	protected virtual void CreateResources()
+	{
+		ShaderStage vertexShader = Window.Graphics.LoadShaderStage(
+			ShaderStageType.Vertex,
+			"data/shaders/default3d.vert"
+		);
+		ShaderStage fragmentShader = Window.Graphics.LoadShaderStage(
+			ShaderStageType.Fragment,
+			"data/shaders/default.frag"
+		);
+
+		DefaultShader = Window.Graphics.CreateShaderProgram(vertexShader, fragmentShader);
+	}
+
+	protected abstract void Initialize();
+
+	protected abstract void Update(float deltaTime);
+
+	protected abstract void Draw(RenderPass pass, float deltaTime);
+
+	public static void Run(FishGfxGame game)
+	{
+		ArgumentNullException.ThrowIfNull(game);
+
+		game.Run();
+	}
+
+	private void Run()
+	{
+		using RenderWindow window = CreateWindow();
+		using InputManager input = new(window);
+		Window = window;
+		Input = input;
+		Camera = new Camera();
+		Camera.SetOrthogonal(0, 0, window.Width, window.Height);
+		CreateResources();
+		Initialize();
+		gameStopwatch = Stopwatch.StartNew();
+		Stopwatch frameStopwatch = Stopwatch.StartNew();
+
+		while (!window.IsCloseRequested)
 		{
-			string CurTypeName = GetType().Name;
+			WaitForFrame(frameStopwatch);
 
-			return new RenderWindow(WindowWidth, WindowHeight, CurTypeName);
-		}
+			float deltaTime = (float)frameStopwatch.Elapsed.TotalSeconds;
+			frameStopwatch.Restart();
+			input.BeginFrame();
+			window.PollEvents();
 
-		public ShaderProgram DefaultShader;
-
-		protected virtual void CreateShaders()
-		{
-			DefaultShader = Window.Graphics.CreateShaderProgram(
-				Window.Graphics.CreateShaderStage(ShaderType.VertexShader, "data/shaders/default3d.vert"),
-				Window.Graphics.CreateShaderStage(ShaderType.FragmentShader, "data/shaders/default.frag")
-			);
-		}
-
-		protected virtual void CreateResources()
-		{
-			CreateShaders();
-		}
-
-		protected abstract void Init();
-
-		protected abstract void Update(float Dt);
-
-		protected abstract void Draw(float Dt);
-
-		public static void Run(FishGfxGame Game)
-		{
-			Stopwatch SWatch = Stopwatch.StartNew();
-			float Dt;
-
-			Game.Window = Game.CreateWindow();
-			Game.GameStopwatch = Stopwatch.StartNew();
-			Game.Input = new InputManager(Game.Window);
-
-			Game.Camera = new Camera();
-			Game.Camera.SetOrthogonal(0, 0, Game.Window.WindowWidth, Game.Window.WindowHeight);
-
-			Game.CreateResources();
-			Game.Init();
-			SWatch.Restart();
-
-			while (!Game.Window.ShouldClose)
+			if (window.IsCloseRequested)
 			{
-				if (Game.Framerate > 0)
-					while (SWatch.ElapsedMilliseconds / 1000.0f < (1.0f / Game.Framerate))
-						;
-
-				Dt = SWatch.ElapsedMilliseconds / 1000.0f;
-				SWatch.Restart();
-
-				Game.Input.BeginNewFrame();
-				Events.Poll();
-
-				// TODO: Decouple draw and update
-
-				using GraphicsFrame frame = Game.Window.Graphics.BeginFrame();
-				using (RenderPass pass = frame.BeginPass(Game.Window.Graphics.Backbuffer, new RenderPassDescriptor
-				{
-					View = new RenderView(Game.Camera),
-					State = Gfx.CreateDefaultRenderState(),
-				}))
-				{
-					Game.RenderPass = pass;
-					try { Game.Draw(Dt); }
-					finally { Game.RenderPass = null; }
-				}
-				frame.Present();
-
-				Game.Update(Dt);
+				break;
 			}
-			Game.Window.Dispose();
+
+			using RenderFrame frame = window.Graphics.BeginFrame();
+			using (RenderPass pass = frame.BeginPass(
+				window.Graphics.Backbuffer,
+				new RenderPassDescriptor
+				{
+					View = new RenderView(Camera),
+					State = RenderState.Default,
+				}
+			))
+			{
+				Draw(pass, deltaTime);
+			}
+
+			frame.Present();
+			Update(deltaTime);
+		}
+
+		DefaultShader?.Dispose();
+		window.Graphics.CollectGarbage();
+	}
+
+	private void WaitForFrame(Stopwatch frameStopwatch)
+	{
+		if (Framerate <= 0)
+		{
+			return;
+		}
+
+		double targetSeconds = 1d / Framerate;
+
+		while (frameStopwatch.Elapsed.TotalSeconds < targetSeconds)
+		{
+			Thread.Sleep(0);
 		}
 	}
 }

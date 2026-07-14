@@ -165,10 +165,24 @@ public class RoundedRectangleTests
 				Color.White
 			)
 		);
-		Assert.Throws<ArgumentNullException>(() => Gfx.TexturedCircle(Vector2.Zero, 10, null));
-		Assert.Throws<ArgumentNullException>(() => Gfx.TexturedEllipse(Vector2.Zero, Vector2.One, null));
 		Assert.Throws<ArgumentNullException>(() =>
-			Gfx.TexturedRoundedRectangle(0, 0, 10, 10, new CornerRadii(2), null)
+			new TexturedEllipseCommand(
+				Vector2.Zero,
+				Vector2.One,
+				null,
+				Vector2.Zero,
+				Vector2.One
+			)
+		);
+		Assert.Throws<ArgumentNullException>(() =>
+			new TexturedRoundedRectangleCommand(
+				Vector2.Zero,
+				new Vector2(10),
+				new CornerRadii(2),
+				null,
+				Vector2.Zero,
+				Vector2.One
+			)
 		);
 	}
 

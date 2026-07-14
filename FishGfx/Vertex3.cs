@@ -1,88 +1,102 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
-namespace FishGfx
+namespace FishGfx;
+
+public struct Vertex3
 {
-	public unsafe struct Vertex3
+	public Vertex3(Vertex3 source)
+		: this(source.Position, source.UV, source.Color)
 	{
-		public Vector3 Position;
-		public Vector2 UV;
-		public Color Color;
+	}
 
-		public Vertex3(Vertex3 Clone)
-			: this(Clone.Position, Clone.UV, Clone.Color) { }
+	public Vertex3(Vertex3 source, Color color)
+		: this(source.Position, source.UV, color)
+	{
+	}
 
-		public Vertex3(Vertex3 Clone, Color NewClr)
-			: this(Clone)
+	public Vertex3(Vector3 position, Vector2 uv, Color color)
+	{
+		Position = position;
+		UV = uv;
+		Color = color;
+	}
+
+	public Vertex3(float x, float y, float z)
+		: this(new Vector3(x, y, z))
+	{
+	}
+
+	public Vertex3(Vector3 position)
+		: this(position, Vector2.Zero, Color.White)
+	{
+	}
+
+	public Vertex3(Vector3 position, Color color)
+		: this(position, Vector2.Zero, color)
+	{
+	}
+
+	public Vertex3(Vector3 position, Vector2 uv)
+		: this(position, uv, Color.White)
+	{
+	}
+
+	public Vector3 Position;
+
+	public Vector2 UV;
+
+	public Color Color;
+
+	public byte[] ToByteArray()
+	{
+		ReadOnlySpan<Vertex3> source = MemoryMarshal.CreateReadOnlySpan(ref this, 1);
+
+		return MemoryMarshal.AsBytes(source).ToArray();
+	}
+
+	public static Vertex3 FromByteArray(ReadOnlySpan<byte> bytes)
+	{
+		int expectedLength = Marshal.SizeOf<Vertex3>();
+
+		if (bytes.Length != expectedLength)
 		{
-			Color = NewClr;
+			throw new ArgumentException(
+				$"A Vertex3 requires exactly {expectedLength} bytes.",
+				nameof(bytes)
+			);
 		}
 
-		public Vertex3(Vector3 Pos, Vector2 UV, Color Clr)
+		return MemoryMarshal.Read<Vertex3>(bytes);
+	}
+
+	public static Vertex3[] FromPositionArray(ReadOnlySpan<float> positions)
+	{
+		if (positions.Length % 3 != 0)
 		{
-			Position = Pos;
-			this.UV = UV;
-			Color = Clr;
+			throw new ArgumentException("Position data must contain complete xyz triples.", nameof(positions));
 		}
 
-		public Vertex3(float X, float Y, float Z)
-			: this(new Vector3(X, Y, Z)) { }
+		Vertex3[] result = new Vertex3[positions.Length / 3];
 
-		public Vertex3(Vector3 Pos)
-			: this(Pos, Vector2.Zero, Color.White) { }
-
-		public Vertex3(Vector3 Pos, Color Clr)
-			: this(Pos, Vector2.Zero, Clr) { }
-
-		public Vertex3(Vector3 Pos, Vector2 UV)
-			: this(Pos, UV, Color.White) { }
-
-		public byte[] ToByteArray()
+		for (int index = 0; index < result.Length; index++)
 		{
-			byte[] Bytes = new byte[sizeof(Vertex3)];
+			int offset = index * 3;
+			Vector3 position = new(
+				positions[offset],
+				positions[offset + 1],
+				positions[offset + 2]
+			);
 
-			fixed (Vertex3* ThisPtr = &this)
-			{
-				byte* ThisBytes = (byte*)ThisPtr;
-
-				for (int i = 0; i < Bytes.Length; i++)
-					Bytes[i] = ThisBytes[i];
-			}
-
-			return Bytes;
+			result[index] = new Vertex3(position);
 		}
 
-		public static implicit operator Vertex3(Vector3 Pos)
-		{
-			return new Vertex3(Pos);
-		}
+		return result;
+	}
 
-		public static Vertex3[] FromFloatArray(float[] Positions)
-		{
-			Vertex3[] Result = new Vertex3[Positions.Length / 3];
-
-			for (int i = 0; i < Result.Length; i++)
-			{
-				int idx = i * 3;
-				Result[i] = new Vertex3(new Vector3(Positions[idx], Positions[idx + 1], Positions[idx + 2]));
-			}
-
-			return Result;
-		}
-
-		public static Vertex3 FromByteArray(byte[] Bytes)
-		{
-			Vertex3 Vtx = new Vertex3();
-			byte* VtxPtr = (byte*)&Vtx;
-
-			for (int i = 0; i < Bytes.Length; i++)
-				VtxPtr[i] = Bytes[i];
-
-			return Vtx;
-		}
+	public static implicit operator Vertex3(Vector3 position)
+	{
+		return new Vertex3(position);
 	}
 }

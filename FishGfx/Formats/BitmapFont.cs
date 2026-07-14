@@ -1,258 +1,337 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading.Tasks;
 using FishGfx.Graphics;
 
-namespace FishGfx.Formats
+namespace FishGfx.Formats;
+
+public sealed class BitmapFont : GraphicsFont
 {
-	public unsafe class BMFont : GfxFont, IGfxAtlasFont
+	private readonly Dictionary<char, CharacterRecord> characters = new();
+	private readonly Dictionary<ulong, short> kerningPairs = new();
+	private readonly Dictionary<GraphicsContext, FontAtlas> atlases = new();
+	private readonly string textureDirectory;
+	private string fontName;
+	private string pageName;
+	private short sourceFontSize;
+	private ushort sourceLineHeight;
+	private bool disposed;
+
+	public BitmapFont(string descriptorPath)
 	{
-		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct InfoBlock
+		ArgumentException.ThrowIfNullOrWhiteSpace(descriptorPath);
+
+		string fullPath = Path.GetFullPath(descriptorPath);
+		textureDirectory = Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory();
+
+		using FileStream stream = File.OpenRead(fullPath);
+		Read(stream);
+
+		if (string.IsNullOrWhiteSpace(fontName))
 		{
-			public short FontSize;
-			public byte BitField;
-			public byte CharSet;
-			public ushort StretchH;
-			public byte AA;
-			public byte PaddingUp;
-			public byte PaddingRight;
-			public byte PaddingDown;
-			public byte PaddingLeft;
-			public byte SpacingHoriz;
-			public byte SpacingVert;
-			public byte Outline;
+			fontName = Path.GetFileNameWithoutExtension(fullPath);
 		}
+	}
 
-		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct CommonBlock
+	public override string Name => fontName;
+
+	public override float BaseSize => Math.Abs((int)sourceFontSize);
+
+	public override float LineHeight => sourceLineHeight;
+
+	public override float TabWidth => LineHeight;
+
+	public override FontRenderMode RenderMode => FontRenderMode.Bitmap;
+
+	public override float SdfPixelRange => 0;
+
+	public override GlyphMetrics? GetGlyph(char character)
+	{
+		ThrowIfDisposed();
+
+		if (!characters.TryGetValue(character, out CharacterRecord record))
 		{
-			public ushort LineHeight;
-			public ushort Base;
-			public ushort ScaleW;
-			public ushort ScaleH;
-			public ushort Pages;
-			public byte BitField;
-			public byte AlphaC;
-			public byte RedC;
-			public byte GreenC;
-			public byte BlueC;
-		}
-
-		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct CharBlock
-		{
-			public uint ID;
-			public ushort X;
-			public ushort Y;
-			public ushort Width;
-			public ushort Height;
-			public short XOffset;
-			public short YOffset;
-			public short XAdvance;
-			public byte Page;
-			public byte Channel;
-		}
-
-		[StructLayout(LayoutKind.Sequential, Pack = 1)]
-		public struct KerningBlock
-		{
-			public uint First;
-			public uint Second;
-			public short Amount;
-		}
-
-		public InfoBlock Info;
-		public string FntName;
-		public CommonBlock Common;
-		public Dictionary<string, Texture> PageNames;
-		Dictionary<char, CharBlock> Chars;
-		Dictionary<ulong, short> KerningPairs = new Dictionary<ulong, short>();
-
-		public BMFont(string FntFile = null, float FontSize = -1, bool DoLoadTextures = true)
-		{
-			if (FntFile != null)
-			{
-				using (MemoryStream MS = new MemoryStream())
-				{
-					using (FileStream FS = File.OpenRead(FntFile))
-					{
-						FS.CopyTo(MS);
-					}
-
-					MS.Position = 0;
-					Read(MS);
-
-					if (DoLoadTextures)
-						LoadTextures(Path.GetDirectoryName(FntFile));
-				}
-			}
-
-			if (FontSize <= 0)
-				this.ScaledFontSize = this.FontSize;
-			else
-				this.ScaledFontSize = FontSize;
-		}
-
-		public void LoadTextures(string TextureDirectory, TextureFilter Filter = TextureFilter.Nearest)
-		{
-			string[] TextureNames = PageNames.Select(KV => KV.Key).ToArray();
-
-			foreach (var TexName in TextureNames)
-			{
-				TextureFilter mag = Filter == TextureFilter.Nearest ? TextureFilter.Nearest : TextureFilter.Linear;
-				Texture T = GraphicsContext.Current.LoadTexture2D(
-					Path.Combine(TextureDirectory, TexName),
-					new TextureLoadOptions { Sampling = new TextureSamplingState(Filter, mag) }
-				);
-				PageNames[TexName] = T;
-			}
-		}
-
-		public void Read(MemoryStream S)
-		{
-			using (BinaryReader BR = new BinaryReader(S))
-			{
-				string Magic = Encoding.ASCII.GetString(BR.ReadBytes(3));
-
-				if (Magic != "BMF")
-					throw new Exception("Invalid BMF font file");
-
-				byte Ver = BR.ReadByte();
-
-				if (Ver != 3)
-					throw new Exception("Only BMF v3 is supported");
-
-				while (S.Position < S.Length - 1)
-				{
-					byte BlockType = BR.ReadByte();
-					int Len = BR.ReadInt32();
-
-					switch (BlockType)
-					{
-						case 1:
-							{
-								Info = BR.ReadStruct<InfoBlock>();
-								FntName = Encoding.UTF8.GetString(BR.ReadBytes(Len - sizeof(InfoBlock) - 1));
-								BR.ReadByte();
-								break;
-							}
-
-						case 2:
-							{
-								Common = BR.ReadStruct<CommonBlock>();
-								break;
-							}
-
-						case 3:
-							{
-								int Pages = Common.Pages;
-								PageNames = new Dictionary<string, Texture>();
-
-								int PageNameLen = Len / Pages;
-
-								for (int i = 0; i < Pages; i++)
-									PageNames.Add(
-										Encoding.UTF8.GetString(BR.ReadBytes(PageNameLen)).TrimEnd(new[] { '\0' }),
-										null
-									);
-
-								break;
-							}
-
-						case 4:
-							{
-								int CharCount = Len / sizeof(CharBlock);
-								Chars = new Dictionary<char, CharBlock>();
-
-								for (int i = 0; i < CharCount; i++)
-								{
-									CharBlock CharInfo = BR.ReadStruct<CharBlock>();
-									Chars.Add((char)CharInfo.ID, CharInfo);
-								}
-
-								break;
-							}
-
-						case 5:
-							{
-								int pairCount = Len / sizeof(KerningBlock);
-
-								for (int i = 0; i < pairCount; i++)
-								{
-									KerningBlock pair = BR.ReadStruct<KerningBlock>();
-									KerningPairs[((ulong)pair.First << 32) | pair.Second] = pair.Amount;
-								}
-
-								break;
-							}
-
-						default:
-							throw new NotImplementedException("Invalid block type? " + BlockType);
-					}
-				}
-			}
-		}
-
-		public CharBlock GetChar(char C)
-		{
-			if (Chars.ContainsKey(C))
-				return Chars[C];
-
-			return default(CharBlock);
-		}
-
-		public override int GetKerning(char First, char Second) =>
-			KerningPairs.TryGetValue(((ulong)First << 32) | Second, out short amount) ? amount : 0;
-
-		public Texture AtlasTexture => PageNames?.Values.FirstOrDefault();
-		public GfxFontRenderMode RenderMode => GfxFontRenderMode.Bitmap;
-		public float SdfPixelRange => 0;
-
-		public void PrepareText(string text) { }
-
-		public override string FontName => FntName;
-
-		public override int LineHeight => Common.LineHeight;
-
-		public override int FontSize
-		{
-			get
-			{
-				if (Info.FontSize < 0)
-					return -Info.FontSize;
-
-				return Info.FontSize;
-			}
-		}
-
-		public override int TabSize => LineHeight;
-
-		public override CharOrigin? GetCharInfo(char C)
-		{
-			if (Chars.ContainsKey(C))
-			{
-				CharBlock CBlock = Chars[C];
-
-				CharOrigin CInfo = new CharOrigin();
-				CInfo.Char = C;
-				CInfo.Owner = this;
-				CInfo.W = CBlock.Width;
-				CInfo.H = CBlock.Height;
-				CInfo.XOffset = CBlock.XOffset;
-				CInfo.YOffset = CBlock.YOffset;
-				CInfo.XAdvance = CBlock.XAdvance;
-				CInfo.X = CBlock.X;
-				CInfo.Y = CBlock.Y;
-
-				return CInfo;
-			}
-
 			return null;
 		}
+
+		return new GlyphMetrics(
+			character,
+			new Vector2(record.X, record.Y),
+			new Vector2(record.Width, record.Height),
+			new Vector2(record.XOffset, record.YOffset),
+			record.XAdvance
+		);
+	}
+
+	public override float GetKerning(char first, char second)
+	{
+		ThrowIfDisposed();
+		ulong key = ((ulong)first << 32) | second;
+
+		return kerningPairs.TryGetValue(key, out short amount) ? amount : 0;
+	}
+
+	public override FontAtlas PrepareAtlas(GraphicsContext graphics, string text)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(graphics);
+		ArgumentNullException.ThrowIfNull(text);
+		graphics.EnsureCurrent();
+
+		if (atlases.TryGetValue(graphics, out FontAtlas cached) && !cached.IsDisposed)
+		{
+			return cached;
+		}
+
+		string texturePath = Path.Combine(textureDirectory, pageName);
+		Texture texture = graphics.LoadTexture(
+			texturePath,
+			new TextureLoadOptions
+			{
+				Sampling = new TextureSamplingState(
+					TextureFilter.Nearest,
+					TextureFilter.Nearest
+				),
+			}
+		);
+		FontAtlas atlas = new(graphics, texture, RenderMode, SdfPixelRange);
+		atlases[graphics] = atlas;
+
+		return atlas;
+	}
+
+	public override void Dispose()
+	{
+		if (disposed)
+		{
+			return;
+		}
+
+		disposed = true;
+
+		foreach (FontAtlas atlas in atlases.Values)
+		{
+			atlas.Dispose();
+		}
+
+		atlases.Clear();
+	}
+
+	private void Read(Stream stream)
+	{
+		using BinaryReader reader = new(stream, Encoding.UTF8, leaveOpen: true);
+		string magic = Encoding.ASCII.GetString(reader.ReadBytes(3));
+
+		if (magic != "BMF")
+		{
+			throw new InvalidDataException("The file is not a binary BMFont descriptor.");
+		}
+
+		byte version = reader.ReadByte();
+
+		if (version != 3)
+		{
+			throw new InvalidDataException($"BMFont version {version} is unsupported; expected version 3.");
+		}
+
+		while (stream.Position < stream.Length)
+		{
+			byte blockType = reader.ReadByte();
+			int blockLength = reader.ReadInt32();
+
+			if (blockLength < 0 || blockLength > stream.Length - stream.Position)
+			{
+				throw new InvalidDataException("The BMFont descriptor contains an invalid block length.");
+			}
+
+			long blockEnd = stream.Position + blockLength;
+			ReadBlock(reader, blockType, blockLength);
+
+			if (stream.Position != blockEnd)
+			{
+				throw new InvalidDataException($"BMFont block {blockType} has an invalid payload length.");
+			}
+		}
+
+		if (sourceFontSize == 0 || sourceLineHeight == 0)
+		{
+			throw new InvalidDataException("The BMFont descriptor is missing required metrics.");
+		}
+
+		if (string.IsNullOrWhiteSpace(pageName))
+		{
+			throw new InvalidDataException("The BMFont descriptor does not define an atlas page.");
+		}
+	}
+
+	private void ReadBlock(BinaryReader reader, byte blockType, int blockLength)
+	{
+		switch (blockType)
+		{
+			case 1:
+				ReadInfoBlock(reader, blockLength);
+				break;
+
+			case 2:
+				ReadCommonBlock(reader, blockLength);
+				break;
+
+			case 3:
+				ReadPageBlock(reader, blockLength);
+				break;
+
+			case 4:
+				ReadCharacterBlock(reader, blockLength);
+				break;
+
+			case 5:
+				ReadKerningBlock(reader, blockLength);
+				break;
+
+			default:
+				reader.BaseStream.Seek(blockLength, SeekOrigin.Current);
+				break;
+		}
+	}
+
+	private void ReadInfoBlock(BinaryReader reader, int blockLength)
+	{
+		int fixedSize = Marshal.SizeOf<InfoRecord>();
+
+		if (blockLength < fixedSize + 1)
+		{
+			throw new InvalidDataException("The BMFont info block is truncated.");
+		}
+
+		InfoRecord info = reader.ReadStruct<InfoRecord>();
+		sourceFontSize = info.FontSize;
+		byte[] nameBytes = reader.ReadBytes(blockLength - fixedSize);
+		fontName = Encoding.UTF8.GetString(nameBytes).TrimEnd('\0');
+	}
+
+	private void ReadCommonBlock(BinaryReader reader, int blockLength)
+	{
+		if (blockLength != Marshal.SizeOf<CommonRecord>())
+		{
+			throw new InvalidDataException("The BMFont common block has an unexpected size.");
+		}
+
+		CommonRecord common = reader.ReadStruct<CommonRecord>();
+		sourceLineHeight = common.LineHeight;
+
+		if (common.Pages != 1)
+		{
+			throw new NotSupportedException("BitmapFont currently supports exactly one atlas page.");
+		}
+	}
+
+	private void ReadPageBlock(BinaryReader reader, int blockLength)
+	{
+		pageName = Encoding.UTF8.GetString(reader.ReadBytes(blockLength)).TrimEnd('\0');
+	}
+
+	private void ReadCharacterBlock(BinaryReader reader, int blockLength)
+	{
+		int recordSize = Marshal.SizeOf<CharacterRecord>();
+
+		if (blockLength % recordSize != 0)
+		{
+			throw new InvalidDataException("The BMFont character block is misaligned.");
+		}
+
+		for (int index = 0; index < blockLength / recordSize; index++)
+		{
+			CharacterRecord character = reader.ReadStruct<CharacterRecord>();
+
+			if (character.Id > char.MaxValue || character.Page != 0)
+			{
+				continue;
+			}
+
+			characters[(char)character.Id] = character;
+		}
+	}
+
+	private void ReadKerningBlock(BinaryReader reader, int blockLength)
+	{
+		int recordSize = Marshal.SizeOf<KerningRecord>();
+
+		if (blockLength % recordSize != 0)
+		{
+			throw new InvalidDataException("The BMFont kerning block is misaligned.");
+		}
+
+		for (int index = 0; index < blockLength / recordSize; index++)
+		{
+			KerningRecord pair = reader.ReadStruct<KerningRecord>();
+			ulong key = ((ulong)pair.First << 32) | pair.Second;
+			kerningPairs[key] = pair.Amount;
+		}
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
+		{
+			throw new ObjectDisposedException(nameof(BitmapFont));
+		}
+	}
+
+	[StructLayout(LayoutKind.Sequential, Pack = 1)]
+	private struct InfoRecord
+	{
+		internal short FontSize;
+		internal byte BitField;
+		internal byte CharacterSet;
+		internal ushort StretchHeight;
+		internal byte Supersampling;
+		internal byte PaddingUp;
+		internal byte PaddingRight;
+		internal byte PaddingDown;
+		internal byte PaddingLeft;
+		internal byte HorizontalSpacing;
+		internal byte VerticalSpacing;
+		internal byte Outline;
+	}
+
+	[StructLayout(LayoutKind.Sequential, Pack = 1)]
+	private struct CommonRecord
+	{
+		internal ushort LineHeight;
+		internal ushort Baseline;
+		internal ushort TextureWidth;
+		internal ushort TextureHeight;
+		internal ushort Pages;
+		internal byte BitField;
+		internal byte AlphaChannel;
+		internal byte RedChannel;
+		internal byte GreenChannel;
+		internal byte BlueChannel;
+	}
+
+	[StructLayout(LayoutKind.Sequential, Pack = 1)]
+	private struct CharacterRecord
+	{
+		internal uint Id;
+		internal ushort X;
+		internal ushort Y;
+		internal ushort Width;
+		internal ushort Height;
+		internal short XOffset;
+		internal short YOffset;
+		internal short XAdvance;
+		internal byte Page;
+		internal byte Channel;
+	}
+
+	[StructLayout(LayoutKind.Sequential, Pack = 1)]
+	private struct KerningRecord
+	{
+		internal uint First;
+		internal uint Second;
+		internal short Amount;
 	}
 }

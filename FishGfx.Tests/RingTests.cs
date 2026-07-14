@@ -18,7 +18,9 @@ public class RingTests
 		AssertVector(center + new Vector2(0, 20), vertices[^1]);
 
 		for (int i = 0; i < vertices.Length; i += 3)
+		{
 			AssertPositiveWinding(vertices[i], vertices[i + 1], vertices[i + 2]);
+		}
 	}
 
 	[Fact]

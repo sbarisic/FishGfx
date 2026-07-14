@@ -2,31 +2,35 @@ using System.Numerics;
 using FishGfx;
 using FishGfx.Graphics;
 
-namespace FishGfx.SmokeTest
+namespace FishGfx.SmokeTest;
+
+internal static class SceneMenu
 {
-	internal static class SceneMenu
+	internal static void Draw(
+		RenderPass pass,
+		GraphicsFont font,
+		GalleryScene[] scenes,
+		int selectedIndex
+	)
 	{
-		internal static void Draw(RenderPass pass, GfxFont font, GalleryScene[] scenes, int selectedIndex)
+		const float x = 30;
+		const float firstItemY = 55;
+		const float itemSpacing = 36;
+
+		pass.DrawText(font, new Vector2(x, firstItemY), "SCENES", new Color(120, 190, 255), 30);
+
+		for (int i = 0; i < scenes.Length; i++)
 		{
-			const float x = 30;
-			const float firstItemY = 55;
-			const float itemSpacing = 36;
-
-			pass.DrawText(font, new Vector2(x, firstItemY), "SCENES", new Color(120, 190, 255), 30);
-
-			for (int i = 0; i < scenes.Length; i++)
-			{
-				bool selected = i == selectedIndex;
-				string prefix = selected ? "> " : "  ";
-				Color color = selected ? new Color(255, 220, 110) : new Color(190, 200, 220);
-				string label = $"{prefix}{i + 1,2}. {scenes[i].Title}";
-				pass.DrawText(font, new Vector2(x, firstItemY + 46 + i * itemSpacing), label, color, 26);
-			}
-
-			float controlsY = firstItemY + 66 + scenes.Length * itemSpacing;
-			pass.DrawText(font, new Vector2(x, controlsY), "SPACE       next", Color.White, 23);
-			pass.DrawText(font, new Vector2(x, controlsY + 31), "BACKSPACE   previous", Color.White, 23);
-			pass.DrawText(font, new Vector2(x, controlsY + 62), "ESC         quit", Color.White, 23);
+			bool selected = i == selectedIndex;
+			string prefix = selected ? "> " : "  ";
+			Color color = selected ? new Color(255, 220, 110) : new Color(190, 200, 220);
+			string label = $"{prefix}{i + 1,2}. {scenes[i].Title}";
+			pass.DrawText(font, new Vector2(x, firstItemY + 46 + i * itemSpacing), label, color, 26);
 		}
+
+		float controlsY = firstItemY + 66 + scenes.Length * itemSpacing;
+		pass.DrawText(font, new Vector2(x, controlsY), "SPACE       next", Color.White, 23);
+		pass.DrawText(font, new Vector2(x, controlsY + 31), "BACKSPACE   previous", Color.White, 23);
+		pass.DrawText(font, new Vector2(x, controlsY + 62), "ESC         quit", Color.White, 23);
 	}
 }

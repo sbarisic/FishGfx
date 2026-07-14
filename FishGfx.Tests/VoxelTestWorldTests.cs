@@ -1,13 +1,14 @@
 using System;
 using System.Linq;
 using System.Numerics;
-using FishGfx.VoxelTest;
+using FishGfx.Graphics;
 using FishGfx.Voxels;
+using FishGfx.VoxelTest;
 using Xunit;
 
 namespace FishGfx.Tests;
 
-public class VoxelTestWorldTests
+public partial class VoxelTestWorldTests
 {
 	private static readonly Lazy<GeneratedWorld> Generated = new Lazy<GeneratedWorld>(CreateGeneratedWorld);
 
@@ -26,12 +27,14 @@ public class VoxelTestWorldTests
 		Assert.Equal(39, VoxelTestWorldGenerator.MaximumChunkCoordinate);
 
 		for (int z = VoxelTestWorldGenerator.WorldMinimum; z < VoxelTestWorldGenerator.WorldMaximum; z++)
+		{
 			for (int x = VoxelTestWorldGenerator.WorldMinimum; x < VoxelTestWorldGenerator.WorldMaximum; x++)
 			{
 				int height = data.GetSurfaceHeight(x, z);
 				minimumHeight = Math.Min(minimumHeight, height);
 				maximumHeight = Math.Max(maximumHeight, height);
 			}
+		}
 
 		Assert.InRange(minimumHeight, VoxelTestWorldGenerator.MinimumSurfaceHeight, 10);
 		Assert.InRange(maximumHeight, 140, VoxelTestWorldGenerator.MaximumSurfaceHeight);
@@ -97,7 +100,9 @@ public class VoxelTestWorldTests
 		Assert.Equal(generated.Materials.Stone, data.GetTerrainMaterial(x, surface - 4, z, generated.Materials));
 
 		for (int y = surface + 1; y <= waterSurface; y++)
+		{
 			Assert.Equal(generated.Materials.Water, data.GetTerrainMaterial(x, y, z, generated.Materials));
+		}
 
 		Assert.Equal((ushort)0, data.GetTerrainMaterial(x, waterSurface + 1, z, generated.Materials));
 	}
@@ -107,21 +112,35 @@ public class VoxelTestWorldTests
 	{
 		VoxelTestWorldData data = Generated.Value.Data;
 
-		for (int chunkZ = VoxelTestWorldGenerator.MinimumChunkCoordinate; chunkZ <= VoxelTestWorldGenerator.MaximumChunkCoordinate; chunkZ++)
-			for (int chunkX = VoxelTestWorldGenerator.MinimumChunkCoordinate; chunkX <= VoxelTestWorldGenerator.MaximumChunkCoordinate; chunkX++)
+		for (
+			int chunkZ = VoxelTestWorldGenerator.MinimumChunkCoordinate;
+			chunkZ <= VoxelTestWorldGenerator.MaximumChunkCoordinate;
+			chunkZ++
+		)
+		{
+			for (
+				int chunkX = VoxelTestWorldGenerator.MinimumChunkCoordinate;
+				chunkX <= VoxelTestWorldGenerator.MaximumChunkCoordinate;
+				chunkX++
+			)
 			{
 				(int minimumChunkY, int maximumChunkY) = data.GetVerticalChunkRange(chunkX, chunkZ);
 				int originX = chunkX * VoxelWorld.ChunkSize;
 				int originZ = chunkZ * VoxelWorld.ChunkSize;
 
 				for (int z = originZ; z < originZ + VoxelWorld.ChunkSize; z++)
+				{
 					for (int x = originX; x < originX + VoxelWorld.ChunkSize; x++)
+					{
 						if (data.GetWaterSurface(x, z) is int waterSurface)
 						{
 							ChunkCoordinate waterChunk = ChunkCoordinate.FromWorld(x, waterSurface, z, out _, out _, out _);
 							Assert.InRange(waterChunk.Y, minimumChunkY, maximumChunkY);
 						}
+					}
+				}
 			}
+		}
 	}
 
 	[Fact]
@@ -142,7 +161,9 @@ public class VoxelTestWorldTests
 		Assert.Equal(7, streamer.PendingHorizontalCount);
 
 		while (!streamer.IsSettled)
+		{
 			streamer.Update(new Vector3(0.5f, 100, 0.5f));
+		}
 
 		Assert.Equal(9, streamer.LoadedHorizontalCount);
 
@@ -214,13 +235,21 @@ public class VoxelTestWorldTests
 		int targetZ = root.Z;
 
 		if (PositiveModulo(root.X, VoxelWorld.ChunkSize) <= 1)
+		{
 			targetX -= 2;
+		}
 		else if (PositiveModulo(root.X, VoxelWorld.ChunkSize) >= 14)
+		{
 			targetX += 2;
+		}
 		else if (PositiveModulo(root.Z, VoxelWorld.ChunkSize) <= 1)
+		{
 			targetZ -= 2;
+		}
 		else
+		{
 			targetZ += 2;
+		}
 
 		ChunkCoordinate rootChunk = ChunkCoordinate.FromWorld(root.X, root.Y, root.Z, out _, out _, out _);
 		ChunkCoordinate targetChunk = ChunkCoordinate.FromWorld(targetX, root.Y + 4, targetZ, out _, out _, out _);
@@ -251,7 +280,9 @@ public class VoxelTestWorldTests
 		RollingFrameRateCounter counter = new RollingFrameRateCounter(0.5);
 
 		for (int i = 1; i <= 30; i++)
+		{
 			counter.Update(i / 60.0, 1 / 60.0);
+		}
 
 		Assert.InRange(counter.FramesPerSecond, 59.9, 60.1);
 		Assert.InRange(counter.FrameMilliseconds, 16.6, 16.7);
@@ -276,6 +307,183 @@ public class VoxelTestWorldTests
 		Assert.InRange(clamped.Z, 639.9f, 640);
 	}
 
+	[Fact]
+	public void CameraAwareStreamingLoadsTheVisibleHaloBeforeBackgroundColumns()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestChunkStreamer streamer = new VoxelTestChunkStreamer(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 4,
+			unloadRadius: 4,
+			generationBudget: 1
+		);
+		Camera camera = new Camera();
+		camera.Position = new Vector3(8, 8, 8);
+		camera.SetPerspective(1920, 1080, MathF.PI / 2, 0.1f, 500);
+		ChunkCoordinate center = ChunkCoordinate.FromWorld(
+			(int)MathF.Floor(camera.Position.X),
+			0,
+			(int)MathF.Floor(camera.Position.Z),
+			out _,
+			out _,
+			out _
+		);
+		List<(int X, int Z)> order = new List<(int, int)>();
+
+		do
+		{
+			streamer.Update(camera, 108);
+			order.AddRange(streamer.GeneratedThisFrame);
+		}
+		while (!streamer.IsSettled);
+
+		int visibleIndex = order.IndexOf((center.X, center.Z - 3));
+		int backgroundIndex = order.IndexOf((center.X, center.Z + 3));
+
+		Assert.InRange(visibleIndex, 0, order.Count - 1);
+		Assert.InRange(backgroundIndex, 0, order.Count - 1);
+		Assert.True(
+			visibleIndex < backgroundIndex,
+			$"Visible index {visibleIndex}, background index {backgroundIndex}."
+		);
+	}
+
+	[Fact]
+	public void CameraAwareStreamingLightsOnlyVisibleAndHaloColumnsOnDemand()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestChunkStreamer streamer = new(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 4,
+			unloadRadius: 4,
+			generationBudget: 128
+		);
+		using VoxelLighting lighting = new(streamer.World, generated.Palette);
+		streamer.AttachLighting(lighting);
+		Camera camera = CreateStreamingCamera(Vector3.Zero, -Vector3.UnitZ);
+
+		streamer.Update(camera, 108);
+		Assert.Equal(new[] { (0, 0) }, streamer.PromotedLightingThisFrame);
+		DrainFocusedLighting(lighting);
+		SettleFocusedStreaming(streamer, lighting, camera);
+
+		Assert.Equal(81, streamer.LoadedHorizontalCount);
+		Assert.InRange(streamer.LitHorizontalCount, 1, 80);
+		VoxelChunk[] background = streamer.World.LoadedChunks.Where(chunk =>
+			chunk.Coordinate.X == 0 && chunk.Coordinate.Z == 3).ToArray();
+		Assert.NotEmpty(background);
+		Assert.All(
+			background,
+			chunk => Assert.False(lighting.IsResident(chunk.Coordinate))
+		);
+		Assert.True(lighting.IsIdle);
+	}
+
+	[Fact]
+	public void FocusedLightingPromotesEditedColumnsAndCachesThemUntilWorldUnload()
+	{
+		GeneratedWorld generated = Generated.Value;
+		VoxelTestChunkStreamer streamer = new(
+			generated.Data,
+			generated.Materials,
+			loadRadius: 4,
+			unloadRadius: 4,
+			generationBudget: 128
+		);
+		using VoxelLighting lighting = new(streamer.World, generated.Palette);
+		streamer.AttachLighting(lighting);
+		Camera camera = CreateStreamingCamera(Vector3.Zero, -Vector3.UnitZ);
+		SettleFocusedStreaming(streamer, lighting, camera);
+		ChunkCoordinate cached = streamer.World.LoadedChunks
+			.Select(chunk => chunk.Coordinate)
+			.First(coordinate => coordinate.X == 0 && coordinate.Z == -3);
+		int editedX = 1;
+		int editedY = 185;
+		int editedZ = 3 * VoxelWorld.ChunkSize + 1;
+		ChunkCoordinate edited = ChunkCoordinate.FromWorld(
+			editedX,
+			editedY,
+			editedZ,
+			out _,
+			out _,
+			out _
+		);
+
+		Assert.True(streamer.SetVoxel(
+			editedX,
+			editedY,
+			editedZ,
+			new VoxelCell(generated.Materials.Stone)
+		));
+		Assert.False(lighting.IsResident(edited));
+
+		camera.LookAt(camera.Position + Vector3.UnitZ);
+		SettleFocusedStreaming(streamer, lighting, camera);
+
+		Assert.True(lighting.IsResident(edited));
+		Assert.True(lighting.IsResident(cached));
+		Assert.Equal(
+			generated.Materials.Stone,
+			streamer.World.GetVoxel(editedX, editedY, editedZ).MaterialId
+		);
+
+		camera.Position = new Vector3(10 * VoxelWorld.ChunkSize + 8, 96, 8);
+		camera.LookAt(camera.Position - Vector3.UnitZ);
+		streamer.Update(camera, 108);
+
+		Assert.False(lighting.IsResident(cached));
+		Assert.DoesNotContain(
+			streamer.World.LoadedChunks,
+			chunk => chunk.Coordinate.X == cached.X && chunk.Coordinate.Z == cached.Z
+		);
+	}
+
+	private static Camera CreateStreamingCamera(Vector3 position, Vector3 direction)
+	{
+		Camera camera = new();
+		camera.Position = position + new Vector3(8, 96, 8);
+		camera.SetPerspective(1920, 1080, MathF.PI / 2, 0.1f, 500);
+		camera.LookAt(camera.Position + direction);
+		return camera;
+	}
+
+	private static void SettleFocusedStreaming(
+		VoxelTestChunkStreamer streamer,
+		VoxelLighting lighting,
+		Camera camera
+	)
+	{
+		int frames = 0;
+
+		do
+		{
+			streamer.Update(camera, 108);
+			Assert.InRange(streamer.PromotedLightingThisFrame.Count, 0, 4);
+			DrainFocusedLighting(lighting);
+			frames++;
+		}
+		while ((!streamer.IsSettled
+		|| streamer.PendingLightingHorizontalCount > 0) && frames < 200);
+
+		Assert.True(streamer.IsSettled);
+		Assert.Equal(0, streamer.PendingLightingHorizontalCount);
+	}
+
+	private static void DrainFocusedLighting(VoxelLighting lighting)
+	{
+		int updates = 0;
+
+		while (!lighting.IsIdle && updates < 20_000)
+		{
+			lighting.Update(65_536);
+			updates++;
+		}
+
+		Assert.True(lighting.IsIdle);
+	}
+
 	private static GeneratedWorld CreateGeneratedWorld()
 	{
 		VoxelPalette palette = VoxelTestWorldGenerator.CreatePalette(
@@ -288,9 +496,15 @@ public class VoxelTestWorldTests
 	private static (int X, int Z) FindColumn(VoxelTestWorldData data, bool requireWater)
 	{
 		for (int z = VoxelTestWorldGenerator.WorldMinimum + 1; z < VoxelTestWorldGenerator.WorldMaximum - 1; z++)
+		{
 			for (int x = VoxelTestWorldGenerator.WorldMinimum + 1; x < VoxelTestWorldGenerator.WorldMaximum - 1; x++)
+			{
 				if (data.GetWaterSurface(x, z).HasValue == requireWater)
+				{
 					return (x, z);
+				}
+			}
+		}
 
 		throw new InvalidOperationException("No matching terrain column was generated.");
 	}

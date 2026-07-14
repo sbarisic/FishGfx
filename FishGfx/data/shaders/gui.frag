@@ -1,14 +1,13 @@
-﻿#version 410
+﻿#version 400
 
-layout (location = 0) in vec4 Clr;
-layout (location = 1) in vec2 UV;
+in vec4 vColor;
+in vec2 vUv;
 
-uniform sampler2D Texture;
+uniform sampler2D uTexture;
 
-layout (location = 0) out vec4 OutClr;
+layout (location = 0) out vec4 outColor;
 
-void main() {
-	OutClr = texture(Texture, UV) * Clr;
-
-	//OutClr = Clr;
+void main()
+{
+	outColor = texture(uTexture, vUv) * vColor;
 }

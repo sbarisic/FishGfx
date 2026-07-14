@@ -1,55 +1,83 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace FishGfx
+namespace FishGfx;
+
+public struct Vertex2
 {
-	public struct Vertex2
+	public Vertex2(Vector2 position, Vector2 uv, Color color)
 	{
-		public Vector2 Position;
-		public Vector2 UV;
-		public Color Color;
+		Position = position;
+		UV = uv;
+		Color = color;
+	}
 
-		public Vertex2(Vector2 Pos, Vector2 UV, Color Clr)
+	public Vertex2(Vector2 position, Vector2 uv)
+		: this(position, uv, Color.White)
+	{
+	}
+
+	public Vertex2(Vector2 position, Color color)
+		: this(position, Vector2.Zero, color)
+	{
+	}
+
+	public Vertex2(Vector2 position)
+		: this(position, Vector2.Zero)
+	{
+	}
+
+	public Vertex2(float x, float y)
+		: this(new Vector2(x, y))
+	{
+	}
+
+	public Vector2 Position;
+
+	public Vector2 UV;
+
+	public Color Color;
+
+	public static IReadOnlyList<Vertex2> CreateQuad(
+		Vector2 position,
+		Vector2 size,
+		Vector2 uv,
+		Vector2 uvSize,
+		Color color
+	)
+	{
+		Vector2 bottomLeft = position;
+		Vector2 topLeft = position + new Vector2(0, size.Y);
+		Vector2 topRight = position + size;
+		Vector2 bottomRight = position + new Vector2(size.X, 0);
+		Vector2 uvBottomLeft = uv;
+		Vector2 uvTopLeft = uv + new Vector2(0, uvSize.Y);
+		Vector2 uvTopRight = uv + uvSize;
+		Vector2 uvBottomRight = uv + new Vector2(uvSize.X, 0);
+
+		return new[]
 		{
-			Position = Pos;
-			this.UV = UV;
-			Color = Clr;
-		}
+			new Vertex2(bottomLeft, uvBottomLeft, color),
+			new Vertex2(topLeft, uvTopLeft, color),
+			new Vertex2(topRight, uvTopRight, color),
+			new Vertex2(bottomLeft, uvBottomLeft, color),
+			new Vertex2(topRight, uvTopRight, color),
+			new Vertex2(bottomRight, uvBottomRight, color),
+		};
+	}
 
-		public Vertex2(Vector2 Pos, Vector2 UV)
-			: this(Pos, UV, Color.White) { }
+	public static IReadOnlyList<Vertex2> CreateQuad(
+		Vector2 position,
+		Vector2 size,
+		Vector2 uv,
+		Vector2 uvSize
+	)
+	{
+		return CreateQuad(position, size, uv, uvSize, Color.White);
+	}
 
-		public Vertex2(Vector2 Pos, Color Clr)
-			: this(Pos, Vector2.Zero, Clr) { }
-
-		public Vertex2(Vector2 Pos)
-			: this(Pos, new Vector2(0, 0)) { }
-
-		public Vertex2(float X, float Y)
-			: this(new Vector2(X, Y)) { }
-
-		public static implicit operator Vertex2(Vector2 Pos)
-		{
-			return new Vertex2(Pos);
-		}
-
-		public static IEnumerable<Vertex2> CreateQuad(Vector2 Pos, Vector2 Size, Vector2 UV, Vector2 UVSize, Color Clr)
-		{
-			yield return new Vertex2(Pos, UV, Clr);
-			yield return new Vertex2(Pos + Size.GetHeight(), UV + UVSize.GetHeight(), Clr);
-			yield return new Vertex2(Pos + Size, UV + UVSize, Clr);
-			yield return new Vertex2(Pos, UV, Clr);
-			yield return new Vertex2(Pos + Size, UV + UVSize, Clr);
-			yield return new Vertex2(Pos + Size.GetWidth(), UV + UVSize.GetWidth(), Clr);
-		}
-
-		public static IEnumerable<Vertex2> CreateQuad(Vector2 Pos, Vector2 Size, Vector2 UV, Vector2 UVSize)
-		{
-			return CreateQuad(Pos, Size, UV, UVSize, Color.White);
-		}
+	public static implicit operator Vertex2(Vector2 position)
+	{
+		return new Vertex2(position);
 	}
 }

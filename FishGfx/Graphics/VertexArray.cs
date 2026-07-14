@@ -1,252 +1,255 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 using Silk.NET.OpenGL;
 
-namespace FishGfx.Graphics
+namespace FishGfx.Graphics;
+
+internal unsafe sealed partial class VertexArray : GraphicsResource
 {
-	public enum PrimitiveType
+	private readonly Dictionary<uint, GraphicsBuffer> vertexBuffers = new();
+	private GraphicsBuffer elementBuffer;
+	private int nextBindingIndex;
+
+	internal VertexArray(GraphicsContext owner)
+		: base(owner)
 	{
-		Points = 0,
-		Lines = 1,
-		LineLoop = 2,
-		LineStrip = 3,
-		Triangles = 4,
-		TriangleStrip = 5,
-		TriangleFan = 6,
-		Quads = 7,
-		QuadStrip = 8,
-		Polygon = 9,
-		LinesAdjacency = 10,
-		LineStripAdjacency = 11,
-		TrianglesAdjacency = 12,
-		TriangleStripAdjacency = 13,
-		Patches = 14,
+		Handle = Internal_OpenGL.Is45OrAbove
+			? Internal_OpenGL.GL.CreateVertexArray()
+			: Internal_OpenGL.GL.GenVertexArray();
+		PrimitiveType = PrimitiveType.Triangles;
+		RegisterResource();
 	}
 
-	public unsafe class VertexArray : GraphicsObject
+	internal PrimitiveType PrimitiveType { get; set; }
+
+	internal bool HasElementBuffer => elementBuffer != null;
+
+	internal void Draw(int first, int count)
 	{
-		public PrimitiveType PrimitiveType;
+		EnsureCurrentOwner();
 
-		GraphicsBuffer ElementBuffer;
-		Dictionary<uint, GraphicsBuffer> BufferObjects;
-		int FreeBindingIndex = 0;
-
-		public bool HasElementBuffer
+		if (first < 0)
 		{
-			get { return ElementBuffer != null; }
+			throw new ArgumentOutOfRangeException(nameof(first));
 		}
 
-		public VertexArray()
+		if (count < 0)
 		{
-			if (Internal_OpenGL.Is45OrAbove)
-				ID = Internal_OpenGL.GL.CreateVertexArray();
-			else
-				ID = Internal_OpenGL.GL.GenVertexArray();
-
-			PrimitiveType = PrimitiveType.Triangles;
-			BufferObjects = new Dictionary<uint, GraphicsBuffer>();
+			throw new ArgumentOutOfRangeException(nameof(count));
 		}
 
-		public override void Bind()
+		if (count == 0)
 		{
-			EnsureCurrentOwner();
-			Internal_OpenGL.GL.BindVertexArray(ID);
+			return;
 		}
 
-		public override void Unbind()
+		ValidateBuffers();
+		WithBound(() => Internal_OpenGL.GL.DrawArrays(
+			ToOpenGl(PrimitiveType),
+			first,
+			(uint)count
+		));
+	}
+
+	internal void DrawElements(
+		int offset = 0,
+		int count = -1,
+		IndexElementType elementType = IndexElementType.UnsignedShort
+	)
+	{
+		EnsureCurrentOwner();
+
+		if (elementBuffer == null)
 		{
-			Internal_OpenGL.GL.BindVertexArray(0);
+			throw new InvalidOperationException(
+				"No element buffer is bound. Use Draw for non-indexed geometry."
+			);
 		}
 
-		public void Draw(int First, int Count)
+		if (offset < 0)
 		{
-			EnsureCurrentOwner();
-			if (First < 0) throw new ArgumentOutOfRangeException(nameof(First));
-			if (Count < 0) throw new ArgumentOutOfRangeException(nameof(Count));
-			if (Count == 0)
-				return;
-			ValidateBuffers();
-			WithBound(() => Internal_OpenGL.GL.DrawArrays((Silk.NET.OpenGL.PrimitiveType)PrimitiveType, First, (uint)Count));
+			throw new ArgumentOutOfRangeException(nameof(offset));
 		}
 
-		public void DrawElements(
-			int Offset = 0,
-			int Count = -1,
-			IndexElementType ElementType = IndexElementType.UnsignedShort
-		)
+		if (count < 0)
 		{
-			EnsureCurrentOwner();
-			if (ElementBuffer == null)
-				throw new InvalidOperationException("No element buffer is bound. Use Draw for non-indexed geometry.");
+			throw new ArgumentOutOfRangeException(
+				nameof(count),
+				"An explicit element count is required."
+			);
+		}
 
-			if (Offset < 0)
-				throw new ArgumentOutOfRangeException(nameof(Offset));
-			if (Count < 0)
-				throw new ArgumentOutOfRangeException(nameof(Count), "An explicit element count is required.");
-			if (Count == 0)
-				return;
+		if (count == 0)
+		{
+			return;
+		}
 
-			int ElementSize = 1;
+		int elementSize = GetElementSize(elementType);
+		long byteEnd = checked(((long)offset + count) * elementSize);
 
-			switch (ElementType)
-			{
-				case IndexElementType.UnsignedByte:
-					ElementSize = sizeof(byte);
-					break;
-				case IndexElementType.UnsignedShort:
-					ElementSize = sizeof(ushort);
-					break;
-				case IndexElementType.UnsignedInt:
-					ElementSize = sizeof(uint);
-					break;
-				default:
-					throw new ArgumentOutOfRangeException(nameof(ElementType));
-			}
-			if (checked(((long)Offset + Count) * ElementSize) > ElementBuffer.SizeInBytes)
-				throw new ArgumentOutOfRangeException(nameof(Count), "The indexed draw exceeds the element buffer bounds.");
-			ValidateBuffers();
+		if (byteEnd > elementBuffer.SizeInBytes)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(count),
+				"The indexed draw exceeds the element buffer bounds."
+			);
+		}
 
-			WithBound(() => Internal_OpenGL.GL.DrawElements(
-				(Silk.NET.OpenGL.PrimitiveType)PrimitiveType,
-				(uint)Count,
-				(Silk.NET.OpenGL.DrawElementsType)ElementType,
-				(void*)(Offset * ElementSize)
+		ValidateBuffers();
+		WithBound(() => Internal_OpenGL.GL.DrawElements(
+			ToOpenGl(PrimitiveType),
+			(uint)count,
+			ToOpenGl(elementType),
+			(void*)(offset * elementSize)
+		));
+	}
+
+	internal void BindElementBuffer(GraphicsBuffer buffer)
+	{
+		EnsureCurrentOwner();
+		buffer?.EnsureOwner(Owner);
+
+		if (buffer != null && (buffer.BindFlags & BufferBindFlags.Index) == 0)
+		{
+			throw new InvalidOperationException(
+				"The buffer was not created with the Index binding flag."
+			);
+		}
+
+		elementBuffer = buffer;
+		uint handle = buffer?.Handle ?? 0;
+
+		if (Internal_OpenGL.Is45OrAbove)
+		{
+			Internal_OpenGL.GL.VertexArrayElementBuffer(Handle, handle);
+		}
+		else
+		{
+			WithBound(() => Internal_OpenGL.GL.BindBuffer(
+				BufferTargetARB.ElementArrayBuffer,
+				handle
 			));
 		}
+	}
 
-		public uint BindVertexBuffer(
-			GraphicsBuffer Obj,
-			int BindingIndex = -1,
-			int Offset = 0,
-			int Stride = 3 * sizeof(float)
-		)
+	internal static void VertexAttrib(uint attribute, Vector4 value)
+	{
+		Internal_OpenGL.GL.VertexAttrib4(
+			attribute,
+			value.X,
+			value.Y,
+			value.Z,
+			value.W
+		);
+	}
+
+	internal static void VertexAttrib(uint attribute, Color color)
+	{
+		Vector4 value = new(color.R, color.G, color.B, color.A);
+		VertexAttrib(attribute, value / byte.MaxValue);
+	}
+
+	internal override void DeleteResource()
+	{
+		Internal_OpenGL.GL.DeleteVertexArray(Handle);
+	}
+
+	private void WithBound(Action action)
+	{
+		Internal_OpenGL.GL.GetInteger(
+			GetPName.VertexArrayBinding,
+			out int previous
+		);
+		Internal_OpenGL.GL.BindVertexArray(Handle);
+
+		try
 		{
-			EnsureCurrentOwner();
-			Obj?.EnsureOwner(GraphicsContext.Current);
-			if (BindingIndex < -1) throw new ArgumentOutOfRangeException(nameof(BindingIndex));
-			if (Offset < 0) throw new ArgumentOutOfRangeException(nameof(Offset));
-			if (Stride <= 0) throw new ArgumentOutOfRangeException(nameof(Stride));
-			if (Obj != null && (Obj.BindFlags & BufferBindFlags.Vertex) == 0)
-				throw new InvalidOperationException("The buffer was not created with the Vertex binding flag.");
+			action();
+		}
+		finally
+		{
+			Internal_OpenGL.GL.BindVertexArray((uint)previous);
+		}
+	}
 
-			if (BindingIndex == -1)
-				BindingIndex = FreeBindingIndex++;
-			else
-				FreeBindingIndex = Math.Max(FreeBindingIndex, checked(BindingIndex + 1));
-			uint binding = (uint)BindingIndex;
-			if (Obj == null) BufferObjects.Remove(binding);
-			else BufferObjects[binding] = Obj;
-
-			uint objectId = Obj?.ID ?? 0;
-			if (Internal_OpenGL.Is45OrAbove)
-				Internal_OpenGL.GL.VertexArrayVertexBuffer(ID, binding, objectId, Offset, (uint)Stride);
-			else
-			{
-				WithBound(() => Internal_OpenGL.GL.BindVertexBuffer(binding, objectId, Offset, (uint)Stride));
-			}
-
-			return binding;
+	private void ValidateBuffers()
+	{
+		if (elementBuffer?.IsDisposed == true)
+		{
+			throw new ObjectDisposedException(nameof(elementBuffer));
 		}
 
-		public void BindElementBuffer(GraphicsBuffer Obj)
+		foreach (GraphicsBuffer buffer in vertexBuffers.Values)
 		{
-			EnsureCurrentOwner();
-			Obj?.EnsureOwner(GraphicsContext.Current);
-			if (Obj != null && (Obj.BindFlags & BufferBindFlags.Index) == 0)
-				throw new InvalidOperationException("The buffer was not created with the Index binding flag.");
-			ElementBuffer = Obj;
-
-			uint ObjID = Obj != null ? Obj.ID : 0;
-
-			if (Internal_OpenGL.Is45OrAbove)
-				Internal_OpenGL.GL.VertexArrayElementBuffer(ID, ObjID);
-			else
-				WithBound(() => Internal_OpenGL.GL.BindBuffer(BufferTargetARB.ElementArrayBuffer, ObjID));
-		}
-
-		public void AttribEnable(uint AttribIdx, bool Enable = true)
-		{
-			EnsureCurrentOwner();
-			if (Enable)
+			if (buffer.IsDisposed)
 			{
-				if (Internal_OpenGL.Is45OrAbove)
-					Internal_OpenGL.GL.EnableVertexArrayAttrib(ID, AttribIdx);
-				else WithBound(() => Internal_OpenGL.GL.EnableVertexAttribArray(AttribIdx));
-			}
-			else
-			{
-				if (Internal_OpenGL.Is45OrAbove)
-					Internal_OpenGL.GL.DisableVertexArrayAttrib(ID, AttribIdx);
-				else WithBound(() => Internal_OpenGL.GL.DisableVertexAttribArray(AttribIdx));
+				throw new ObjectDisposedException(nameof(GraphicsBuffer));
 			}
 		}
+	}
 
-		public void AttribFormat(
-			uint AttribIdx,
-			int Size = 3,
-			VertexElementType AttribType = VertexElementType.Float,
-			bool Normalized = false,
-			uint RelativeOffset = 0
-		)
+	private static int GetElementSize(IndexElementType elementType)
+	{
+		return elementType switch
 		{
-			EnsureCurrentOwner();
-			if (Size < 1 || Size > 4) throw new ArgumentOutOfRangeException(nameof(Size));
-			if (!Enum.IsDefined(AttribType)) throw new ArgumentOutOfRangeException(nameof(AttribType));
-			if (Internal_OpenGL.Is45OrAbove)
-				Internal_OpenGL.GL.VertexArrayAttribFormat(
-					ID,
-					AttribIdx,
-					Size,
-					(Silk.NET.OpenGL.VertexAttribType)AttribType,
-					Normalized,
-					RelativeOffset
-				);
-			else WithBound(() => Internal_OpenGL.GL.VertexAttribFormat(AttribIdx, Size, (GLEnum)AttribType, Normalized, RelativeOffset));
-		}
+			IndexElementType.UnsignedByte => sizeof(byte),
+			IndexElementType.UnsignedShort => sizeof(ushort),
+			IndexElementType.UnsignedInt => sizeof(uint),
+			_ => throw new ArgumentOutOfRangeException(nameof(elementType)),
+		};
+	}
 
-		public void AttribBinding(uint AttribIdx, uint BindingIdx)
+	private static DrawElementsType ToOpenGl(IndexElementType elementType)
+	{
+		return elementType switch
 		{
-			AttribEnable(AttribIdx);
+			IndexElementType.UnsignedByte => DrawElementsType.UnsignedByte,
+			IndexElementType.UnsignedShort => DrawElementsType.UnsignedShort,
+			IndexElementType.UnsignedInt => DrawElementsType.UnsignedInt,
+			_ => throw new ArgumentOutOfRangeException(nameof(elementType)),
+		};
+	}
 
-			if (Internal_OpenGL.Is45OrAbove)
-				Internal_OpenGL.GL.VertexArrayAttribBinding(ID, AttribIdx, BindingIdx);
-			else WithBound(() => Internal_OpenGL.GL.VertexAttribBinding(AttribIdx, BindingIdx));
-		}
-
-		private void WithBound(Action action)
+	private static VertexAttribType ToOpenGl(VertexElementType elementType)
+	{
+		return elementType switch
 		{
-			Internal_OpenGL.GL.GetInteger(GetPName.VertexArrayBinding, out int previous);
-			Internal_OpenGL.GL.BindVertexArray(ID);
-			try { action(); }
-			finally { Internal_OpenGL.GL.BindVertexArray((uint)previous); }
-		}
+			VertexElementType.Byte => VertexAttribType.Byte,
+			VertexElementType.UnsignedByte => VertexAttribType.UnsignedByte,
+			VertexElementType.Short => VertexAttribType.Short,
+			VertexElementType.UnsignedShort => VertexAttribType.UnsignedShort,
+			VertexElementType.Int => VertexAttribType.Int,
+			VertexElementType.UnsignedInt => VertexAttribType.UnsignedInt,
+			VertexElementType.Float => VertexAttribType.Float,
+			VertexElementType.Double => VertexAttribType.Double,
+			VertexElementType.HalfFloat => VertexAttribType.HalfFloat,
+			_ => throw new ArgumentOutOfRangeException(nameof(elementType)),
+		};
+	}
 
-		private void ValidateBuffers()
+	private static Silk.NET.OpenGL.PrimitiveType ToOpenGl(
+		PrimitiveType primitiveType
+	)
+	{
+		return primitiveType switch
 		{
-			if (ElementBuffer?.IsDisposed == true)
-				throw new ObjectDisposedException(nameof(ElementBuffer));
-			foreach (GraphicsBuffer buffer in BufferObjects.Values)
-				if (buffer.IsDisposed)
-					throw new ObjectDisposedException(nameof(GraphicsBuffer));
-		}
-
-		public override void GraphicsDispose()
-		{
-			Internal_OpenGL.GL.DeleteVertexArrays(new uint[] { ID });
-		}
-
-		public static void VertexAttrib(uint Attrib, Vector4 Vec)
-		{
-			Internal_OpenGL.GL.VertexAttrib4(Attrib, Vec.X, Vec.Y, Vec.Z, Vec.W);
-		}
-
-		public static void VertexAttrib(uint Attrib, Color Clr)
-		{
-			VertexAttrib(Attrib, new Vector4(Clr.R, Clr.G, Clr.B, Clr.A) / 255);
-		}
+			PrimitiveType.Points => Silk.NET.OpenGL.PrimitiveType.Points,
+			PrimitiveType.Lines => Silk.NET.OpenGL.PrimitiveType.Lines,
+			PrimitiveType.LineLoop => Silk.NET.OpenGL.PrimitiveType.LineLoop,
+			PrimitiveType.LineStrip => Silk.NET.OpenGL.PrimitiveType.LineStrip,
+			PrimitiveType.Triangles => Silk.NET.OpenGL.PrimitiveType.Triangles,
+			PrimitiveType.TriangleStrip => Silk.NET.OpenGL.PrimitiveType.TriangleStrip,
+			PrimitiveType.TriangleFan => Silk.NET.OpenGL.PrimitiveType.TriangleFan,
+			PrimitiveType.LinesAdjacency => Silk.NET.OpenGL.PrimitiveType.LinesAdjacency,
+			PrimitiveType.LineStripAdjacency =>
+				Silk.NET.OpenGL.PrimitiveType.LineStripAdjacency,
+			PrimitiveType.TrianglesAdjacency =>
+				Silk.NET.OpenGL.PrimitiveType.TrianglesAdjacency,
+			PrimitiveType.TriangleStripAdjacency =>
+				Silk.NET.OpenGL.PrimitiveType.TriangleStripAdjacency,
+			PrimitiveType.Patches => Silk.NET.OpenGL.PrimitiveType.Patches,
+			_ => throw new ArgumentOutOfRangeException(nameof(primitiveType)),
+		};
 	}
 }

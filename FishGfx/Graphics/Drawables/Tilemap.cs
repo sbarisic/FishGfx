@@ -1,267 +1,275 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace FishGfx.Graphics.Drawables
+namespace FishGfx.Graphics.Drawables;
+
+public sealed class Tilemap : IRenderable, IDisposable
 {
-	public class Tilemap : IDrawable, IDisposable
+	private readonly GraphicsContext graphics;
+	private readonly Mesh3D mesh;
+	private readonly int[] tiles;
+	private readonly Color[] tileColors;
+	private Texture tileAtlas;
+	private Vector2 tileUvSize;
+	private int atlasColumns;
+	private int drawableTileCount;
+	private bool isDirty = true;
+	private bool disposed;
+
+	public Tilemap(
+		GraphicsContext graphics,
+		ShaderProgram shader,
+		Texture tileAtlas,
+		int tileSize,
+		int width,
+		int height
+	)
 	{
-		List<Vertex3> VertList = new List<Vertex3>();
+		this.graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
+		Shader = shader ?? throw new ArgumentNullException(nameof(shader));
+		Shader.EnsureOwner(graphics);
 
-		Mesh3D Mesh;
-
-		public ShaderProgram Shader;
-		public Vector2 Position;
-		public Vector2 Scale;
-
-		bool Dirty;
-		int DrawableTileCount;
-
-		Texture TileAtlas;
-		int TileAtlasWidth;
-		int TileAtlasHeight;
-		int TextureWidth;
-		int TextureHeight;
-
-		public int Width { get; private set; }
-
-		public int Height { get; private set; }
-
-		public int TileSize { get; private set; }
-
-		public int[] Tiles;
-		Color[] TileColors;
-
-		Vector2 TileUVSize;
-
-		public Tilemap(int TileSize, int Width, int Height, Texture TileAtlasTexture)
+		if (tileSize <= 0)
 		{
-			if (TileSize <= 0) throw new ArgumentOutOfRangeException(nameof(TileSize));
-			if (Width <= 0) throw new ArgumentOutOfRangeException(nameof(Width));
-			if (Height <= 0) throw new ArgumentOutOfRangeException(nameof(Height));
-			if (TileAtlasTexture == null) throw new ArgumentNullException(nameof(TileAtlasTexture));
-			this.TileSize = TileSize;
-			this.Width = Width;
-			this.Height = Height;
+			throw new ArgumentOutOfRangeException(nameof(tileSize));
+		}
 
-			Tiles = new int[Width * Height];
-			TileColors = new Color[Width * Height];
+		if (width <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(width));
+		}
 
-			Mesh = new Mesh3D(BufferUsage.Dynamic);
-			Mesh.PrimitiveType = PrimitiveType.Triangles;
+		if (height <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(height));
+		}
 
-			Mesh.SetVertices(
-				new Vertex3[]
-				{
-					new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
-					new Vertex3(new Vector3(0, 1, 0), new Vector2(0, 1)),
-					new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
-					new Vertex3(new Vector3(1, 1, 0), new Vector2(1, 1)),
-					new Vertex3(new Vector3(1, 0, 0), new Vector2(1, 0)),
-					new Vertex3(new Vector3(0, 0, 0), new Vector2(0, 0)),
-				}
+		TileSize = tileSize;
+		Width = width;
+		Height = height;
+		tiles = new int[checked(width * height)];
+		tileColors = new Color[tiles.Length];
+		Scale = Vector2.One;
+
+		mesh = graphics.CreateMesh3D(BufferUsage.Dynamic);
+		mesh.PrimitiveType = PrimitiveType.Triangles;
+
+		SetTileAtlas(tileAtlas);
+		Clear();
+	}
+
+	public int Width { get; }
+
+	public int Height { get; }
+
+	public int TileSize { get; }
+
+	public ShaderProgram Shader { get; }
+
+	public Texture TileAtlas => tileAtlas;
+
+	public Vector2 Position { get; set; }
+
+	public Vector2 Scale { get; set; }
+
+	public void Clear(int tile = -1, Color? color = null)
+	{
+		ThrowIfDisposed();
+		Color tileColor = color ?? Color.White;
+
+		for (int index = 0; index < tiles.Length; index++)
+		{
+			tiles[index] = tile;
+			tileColors[index] = tileColor;
+		}
+
+		isDirty = true;
+	}
+
+	public void SetTileAtlas(Texture texture)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(texture);
+		texture.EnsureOwner(graphics);
+
+		if (texture.Width < TileSize || texture.Height < TileSize)
+		{
+			throw new ArgumentException(
+				"The tile atlas must contain at least one complete tile.",
+				nameof(texture)
 			);
-
-			Position = new Vector2(0, 0);
-			Scale = new Vector2(1, 1);
-
-			SetTileAtlas(TileAtlasTexture);
-			ClearTiles();
 		}
 
-		public void ClearTiles(int Tile = -1)
+		tileAtlas = texture;
+		atlasColumns = texture.Width / TileSize;
+		tileUvSize = new Vector2(
+			TileSize / (float)texture.Width,
+			TileSize / (float)texture.Height
+		);
+		isDirty = true;
+	}
+
+	public void SetTile(int x, int y, int tile, Color? color = null)
+	{
+		ThrowIfDisposed();
+		int index = GetIndex(x, y);
+		tiles[index] = tile;
+		tileColors[index] = color ?? Color.White;
+		isDirty = true;
+	}
+
+	public int GetTile(int x, int y)
+	{
+		ThrowIfDisposed();
+
+		return tiles[GetIndex(x, y)];
+	}
+
+	public Color GetTileColor(int x, int y)
+	{
+		ThrowIfDisposed();
+
+		return tileColors[GetIndex(x, y)];
+	}
+
+	public bool TryWorldPositionToTile(Vector2 worldPosition, out int x, out int y)
+	{
+		ThrowIfDisposed();
+		x = 0;
+		y = 0;
+
+		if (Scale.X == 0 || Scale.Y == 0)
 		{
-			for (int i = 0; i < Tiles.Length; i++)
+			return false;
+		}
+
+		Vector2 localPosition = (worldPosition - Position) / Scale;
+
+		if (localPosition.X < 0 || localPosition.Y < 0)
+		{
+			return false;
+		}
+
+		x = (int)(localPosition.X / TileSize);
+		y = (int)(localPosition.Y / TileSize);
+
+		return x < Width && y < Height;
+	}
+
+	public void Render(RenderPass pass)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(pass);
+
+		if (isDirty)
+		{
+			RebuildMesh();
+		}
+
+		if (drawableTileCount == 0)
+		{
+			return;
+		}
+
+		Matrix4x4 transform = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1)
+			* Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
+
+		using IDisposable modelScope = pass.PushModel(transform);
+		pass.DrawMesh(mesh, tileAtlas, Shader);
+	}
+
+	public void Dispose()
+	{
+		if (disposed)
+		{
+			return;
+		}
+
+		disposed = true;
+		mesh.Dispose();
+	}
+
+	private void RebuildMesh()
+	{
+		List<Vertex3> vertices = new(tiles.Length * 6);
+		drawableTileCount = 0;
+
+		for (int index = 0; index < tiles.Length; index++)
+		{
+			int tile = tiles[index];
+
+			if (tile < 0)
 			{
-				Tiles[i] = Tile;
-				TileColors[i] = Color.White;
+				continue;
 			}
 
-			Dirty = true;
+			int x = index % Width;
+			int y = index / Width;
+			AppendTile(vertices, x, y, tile, tileColors[index]);
+			drawableTileCount++;
 		}
 
-		public void SetTileAtlas(Texture Tex)
+		mesh.SetVertices(vertices.ToArray());
+		isDirty = false;
+	}
+
+	private void AppendTile(
+		List<Vertex3> vertices,
+		int x,
+		int y,
+		int tile,
+		Color color
+	)
+	{
+		int atlasX = tile % atlasColumns;
+		int atlasY = tile / atlasColumns;
+		Vector2 uvMinimum = new Vector2(atlasX, atlasY) * tileUvSize;
+		uvMinimum.Y = 1 - uvMinimum.Y - tileUvSize.Y;
+		Vector2 uvMaximum = uvMinimum + tileUvSize;
+		Vector3 minimum = new(x * TileSize, y * TileSize, 0);
+		Vector3 maximum = minimum + new Vector3(TileSize, TileSize, 0);
+
+		vertices.Add(new Vertex3(minimum, uvMinimum, color));
+		vertices.Add(
+			new Vertex3(
+				new Vector3(minimum.X, maximum.Y, 0),
+				new Vector2(uvMinimum.X, uvMaximum.Y),
+				color
+			)
+		);
+		vertices.Add(new Vertex3(maximum, uvMaximum, color));
+		vertices.Add(new Vertex3(maximum, uvMaximum, color));
+		vertices.Add(
+			new Vertex3(
+				new Vector3(maximum.X, minimum.Y, 0),
+				new Vector2(uvMaximum.X, uvMinimum.Y),
+				color
+			)
+		);
+		vertices.Add(new Vertex3(minimum, uvMinimum, color));
+	}
+
+	private int GetIndex(int x, int y)
+	{
+		if ((uint)x >= (uint)Width)
 		{
-			if (Tex == null) throw new ArgumentNullException(nameof(Tex));
-			if (Tex.Width < TileSize || Tex.Height < TileSize)
-				throw new ArgumentException("The tile atlas must contain at least one complete tile.", nameof(Tex));
-			TileAtlas = Tex;
-
-			TextureWidth = Tex.Width;
-			TextureHeight = Tex.Height;
-
-			TileAtlasWidth = TextureWidth / TileSize;
-			TileAtlasHeight = TextureHeight / TileSize;
-
-			TileUVSize = new Vector2(TileSize, TileSize) / new Vector2(TextureWidth, TextureHeight);
-
-			Dirty = true;
+			throw new ArgumentOutOfRangeException(nameof(x));
 		}
 
-		public Texture GetTileAtlas()
+		if ((uint)y >= (uint)Height)
 		{
-			return TileAtlas;
+			throw new ArgumentOutOfRangeException(nameof(y));
 		}
 
-		void IdxToXY(int Idx, out int X, out int Y)
+		return y * Width + x;
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (disposed)
 		{
-			X = Idx % Width;
-			Y = (Idx - X) / Width;
+			throw new ObjectDisposedException(nameof(Tilemap));
 		}
-
-		void TileToTileXY(int Tile, out int X, out int Y)
-		{
-			X = Tile % TileAtlasWidth;
-			Y = (Tile - X) / TileAtlasWidth;
-		}
-
-		public void SetTile(int X, int Y, int Tile, Color Clr)
-		{
-			if (X < 0 || X >= Width)
-				throw new Exception("X out of bounds");
-
-			if (Y < 0 || Y >= Height)
-				throw new Exception("Y out of bounds");
-
-			Tiles[Y * Width + X] = Tile;
-			TileColors[Y * Width + X] = Clr;
-			Dirty = true;
-		}
-
-		public void SetTile(int X, int Y, int Tile)
-		{
-			SetTile(X, Y, Tile, Color.White);
-		}
-
-		public int GetTile(int X, int Y)
-		{
-			if (X < 0 || X >= Width)
-				throw new Exception("X out of bounds");
-
-			if (Y < 0 || Y >= Height)
-				throw new Exception("Y out of bounds");
-
-			return Tiles[Y * Width + X];
-		}
-
-		public Color GetTileColor(int X, int Y)
-		{
-			if (X < 0 || X >= Width)
-				throw new Exception("X out of bounds");
-
-			if (Y < 0 || Y >= Height)
-				throw new Exception("Y out of bounds");
-
-			return TileColors[Y * Width + X];
-		}
-
-		public bool TryWorldPosToTile(Vector2 WorldPos, out int X, out int Y)
-		{
-			X = Y = 0;
-
-			// TODO: Clean that shit up, what the fuck
-			Vector2 LocalPos = WorldPos - Position;
-
-			if (LocalPos.X < 0 || LocalPos.Y < 0)
-				return false;
-
-			LocalPos = (LocalPos / Scale) / TileSize;
-			X = (int)LocalPos.X;
-			Y = (int)LocalPos.Y;
-
-			if (X >= Width || Y >= Height)
-				return false;
-
-			return true;
-		}
-
-		void Update()
-		{
-			VertList.Clear();
-			DrawableTileCount = 0;
-
-			/*Color A = Color.Red;
-			Color B = Color.Red;
-			Color C = Color.Green;
-			Color D = Color.Green;*/
-
-			for (int i = 0; i < Tiles.Length; i++)
-			{
-				int Tile = Tiles[i];
-				Color TileColor = TileColors[i];
-
-				if (Tile < 0)
-					continue;
-
-				IdxToXY(i, out int X, out int Y);
-				TileToTileXY(Tile, out int TX, out int TY);
-
-				Vector2 UVPos = new Vector2(TX, TY) * TileUVSize;
-				UVPos.Y = 1.0f - UVPos.Y - TileUVSize.Y;
-
-				Vector3 Pos = new Vector3(X, Y, 0) * TileSize;
-				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, TileColor));
-				VertList.Add(
-					new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileUVSize.Y), TileColor)
-				);
-				VertList.Add(
-					new Vertex3(
-						Pos + new Vector3(TileSize, TileSize, 0),
-						UVPos + new Vector2(TileUVSize.X, TileUVSize.Y),
-						TileColor
-					)
-				);
-				VertList.Add(
-					new Vertex3(
-						Pos + new Vector3(TileSize, TileSize, 0),
-						UVPos + new Vector2(TileUVSize.X, TileUVSize.Y),
-						TileColor
-					)
-				);
-				VertList.Add(
-					new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileUVSize.X, 0), TileColor)
-				);
-				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, TileColor));
-
-				/*VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, A));
-				VertList.Add(new Vertex3(Pos + new Vector3(0, TileSize, 0), UVPos + new Vector2(0, TileUVSize.Y), D));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileUVSize.X, TileUVSize.Y), C));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, TileSize, 0), UVPos + new Vector2(TileUVSize.X, TileUVSize.Y), C));
-				VertList.Add(new Vertex3(Pos + new Vector3(TileSize, 0, 0), UVPos + new Vector2(TileUVSize.X, 0), B));
-				VertList.Add(new Vertex3(Pos + new Vector3(0, 0, 0), UVPos, A));*/
-
-				DrawableTileCount++;
-			}
-
-			Mesh.SetVertices(VertList.ToArray());
-		}
-
-		public void Draw()
-		{
-			if (Dirty) { Dirty = false; Update(); }
-			if (DrawableTileCount <= 0) return;
-			ShaderUniforms uniforms = ShaderUniforms.Current;
-			Matrix4x4 oldModel = uniforms.Model;
-			bool shaderBound = false;
-			bool textureBound = false;
-			try
-			{
-				uniforms.Model = Matrix4x4.CreateScale(Scale.X, Scale.Y, 1) * Matrix4x4.CreateTranslation(Position.X, Position.Y, 0);
-				if (Shader != null) { Shader.Bind(uniforms); shaderBound = true; }
-				if (TileAtlas != null) { TileAtlas.BindTextureUnit(); textureBound = true; }
-				Mesh.Draw();
-			}
-			finally
-			{
-				if (textureBound) TileAtlas.UnbindTextureUnit();
-				if (shaderBound) Shader.Unbind();
-				uniforms.Model = oldModel;
-			}
-		}
-
-		public void Dispose() => Mesh.Dispose();
 	}
 }

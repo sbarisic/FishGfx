@@ -1,21 +1,39 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using FishGfx.Graphics;
 using FishGfx.Voxels;
 using Xunit;
 
 namespace FishGfx.Tests;
 
-public class VoxelRenderingLightingTests
+public partial class VoxelRenderingLightingTests
 {
 	private static readonly VoxelAtlasLayout Atlas = new(1, 1, 16, 16);
 
 	[Fact]
-	public void PackedLightUsesTheNormalizedRgba8VertexSlot()
+	public void VoxelVertexPreservesThePackedGpuLayout()
 	{
 		Assert.Equal(56, Marshal.SizeOf<VoxelVertex>());
-		Assert.Equal(new IntPtr(52), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.PackedLight)));
+		Assert.Equal(new IntPtr(0), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Position)));
+		Assert.Equal(new IntPtr(12), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Color)));
+		Assert.Equal(
+			new IntPtr(16),
+			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.TextureCoordinates))
+		);
+		Assert.Equal(new IntPtr(24), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Normal)));
+		Assert.Equal(
+			new IntPtr(36),
+			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.WaveParameters))
+		);
+		Assert.Equal(
+			new IntPtr(52),
+			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.PackedLightChannels))
+		);
+
 		VoxelVertex vertex = new(Vector3.Zero, Color.White, Vector2.Zero, Vector3.UnitY);
-		Assert.Equal(new Color(0, 0, 0, byte.MaxValue), vertex.PackedLight);
+
+		Assert.Equal(Vector4.Zero, vertex.WaveParameters);
+		Assert.Equal(new Color(0, 0, 0, byte.MaxValue), vertex.PackedLightChannels);
 
 		string shaderDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
 		string standard = File.ReadAllText(Path.Combine(shaderDirectory, "voxel.vert"));
@@ -23,6 +41,28 @@ public class VoxelRenderingLightingTests
 
 		Assert.Contains("layout (location = 5) in vec4 Light;", standard);
 		Assert.Contains("layout (location = 5) in vec4 Light;", waving);
+	}
+
+	[Fact]
+	public void VoxelShadersConsumeTheRenderPassUniformContract()
+	{
+		string shaderDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
+		string standard = File.ReadAllText(Path.Combine(shaderDirectory, "voxel.vert"));
+		string waving = File.ReadAllText(Path.Combine(shaderDirectory, "voxel_wave.vert"));
+		string fragment = File.ReadAllText(Path.Combine(shaderDirectory, "voxel.frag"));
+
+		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ModelUniformName);
+		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ViewUniformName);
+		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ProjectionUniformName);
+		AssertUniformDeclaration(waving, "mat4", RenderUniformState.ModelUniformName);
+		AssertUniformDeclaration(waving, "mat4", RenderUniformState.ViewUniformName);
+		AssertUniformDeclaration(waving, "mat4", RenderUniformState.ProjectionUniformName);
+		AssertUniformDeclaration(waving, "float", RenderUniformState.TimeUniformName);
+		AssertUniformDeclaration(
+			fragment,
+			"vec3",
+			RenderUniformState.ViewPositionUniformName
+		);
 	}
 
 	[Theory]
@@ -46,7 +86,10 @@ public class VoxelRenderingLightingTests
 			.ToArray();
 
 		Assert.NotEmpty(corner);
-		Assert.All(corner, vertex => Assert.Equal(new Color(102, 119, 136, 153), vertex.PackedLight));
+		Assert.All(
+			corner,
+			vertex => Assert.Equal(new Color(102, 119, 136, 153), vertex.PackedLightChannels)
+		);
 	}
 
 	[Fact]
@@ -66,7 +109,10 @@ public class VoxelRenderingLightingTests
 			.ToArray();
 
 		Assert.NotEmpty(corner);
-		Assert.All(corner, vertex => Assert.Equal(new Color(255, 153, 51, 204), vertex.PackedLight));
+		Assert.All(
+			corner,
+			vertex => Assert.Equal(new Color(255, 153, 51, 204), vertex.PackedLightChannels)
+		);
 	}
 
 	[Theory]
@@ -101,7 +147,9 @@ public class VoxelRenderingLightingTests
 		ushort[] padded = CreatePaddedLights();
 
 		for (int dz = 0; dz <= 1; dz++)
+		{
 			for (int dy = 0; dy <= 1; dy++)
+			{
 				for (int dx = 0; dx <= 1; dx++)
 				{
 					byte red = (byte)(2 * (dx + 2 * dy + 4 * dz));
@@ -113,6 +161,8 @@ public class VoxelRenderingLightingTests
 						new VoxelLight(new VoxelBlockLight(red, 1, 0), 4)
 					);
 				}
+			}
+		}
 
 		VoxelMeshData mesh = BuildLit(world, palette, default, padded);
 		VoxelVertex vertex = Assert.Single(
@@ -120,7 +170,7 @@ public class VoxelRenderingLightingTests
 			candidate => candidate.Position == new Vector3(4, 4, 4)
 		);
 
-		Assert.Equal(new Color(119, 17, 85, 68), vertex.PackedLight);
+		Assert.Equal(new Color(119, 17, 85, 68), vertex.PackedLightChannels);
 	}
 
 	[Fact]
@@ -138,13 +188,17 @@ public class VoxelRenderingLightingTests
 		ushort[] padded = CreatePaddedLights();
 
 		for (int z = -1; z <= VoxelWorld.ChunkSize; z++)
+		{
 			for (int y = -1; y <= VoxelWorld.ChunkSize; y++)
+			{
 				for (int x = -1; x <= VoxelWorld.ChunkSize; x++)
 				{
 					byte red = (byte)((x + 2 * y + 3 * z + 90) % 16);
 					byte green = (byte)((3 * x + y + z + 90) % 16);
 					SetLight(padded, x, y, z, new VoxelLight(new VoxelBlockLight(red, green, 4), 11));
 				}
+			}
+		}
 
 		VoxelMeshData mesh = BuildLit(world, palette, default, padded);
 		Assert.Equal(6, mesh.TransparentFaces.Length);
@@ -155,12 +209,14 @@ public class VoxelRenderingLightingTests
 			VoxelVertex[] front = face.Vertices.Take(6).ToArray();
 
 			foreach (VoxelVertex back in face.Vertices.Skip(6))
+			{
 				Assert.Contains(
 					front,
 					candidate => candidate.Position == back.Position
-						&& candidate.PackedLight == back.PackedLight
-						&& candidate.Wave == back.Wave
+						&& candidate.PackedLightChannels == back.PackedLightChannels
+						&& candidate.WaveParameters == back.WaveParameters
 				);
+			}
 		}
 
 		Vector3 origin = new(32, -16, 48);
@@ -182,13 +238,18 @@ public class VoxelRenderingLightingTests
 		int destination = 0;
 
 		foreach (VoxelTransparentFaceInstance instance in instances)
+		{
 			foreach (VoxelVertex source in instance.Face.Vertices)
 			{
 				Assert.Equal(source.Position + origin, stream[destination].Position);
-				Assert.Equal(source.PackedLight, stream[destination].PackedLight);
-				Assert.Equal(source.Wave, stream[destination].Wave);
+				Assert.Equal(
+					source.PackedLightChannels,
+					stream[destination].PackedLightChannels
+				);
+				Assert.Equal(source.WaveParameters, stream[destination].WaveParameters);
 				destination++;
 			}
+		}
 	}
 
 	[Theory]
@@ -203,206 +264,9 @@ public class VoxelRenderingLightingTests
 
 		Assert.All(
 			Vertices(mesh, renderMode),
-			vertex => Assert.Equal(new Color(0, 0, 0, byte.MaxValue), vertex.PackedLight)
-		);
-	}
-
-	[Fact]
-	public void NewlyResidentChunksWaitForTheirFirstPublishedLightSnapshot()
-	{
-		(VoxelWorld world, VoxelPalette palette, _) = CreateCube(VoxelRenderMode.Opaque, 1, 1, 1);
-		using VoxelLighting lighting = new(world, palette);
-		lighting.LoadChunk(default);
-		using VoxelMeshingScheduler scheduler = new(
-			world,
-			palette,
-			Atlas,
-			maxWorkers: 1,
-			lighting: lighting
-		);
-
-		Assert.Equal(0, scheduler.SchedulePending());
-		Drain(lighting);
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData result = WaitForResult(scheduler);
-
-		Assert.True(lighting.TryGetChunkRevision(default, out long lightRevision));
-		Assert.Equal(lightRevision, result.LightRevision);
-	}
-
-	[Fact]
-	public void SchedulerPublishesCurrentGeometryBeforeCompletedRelightingThenRemeshes()
-	{
-		VoxelPaletteBuilder builder = new();
-		ushort dark = builder.Add(new VoxelMaterial("Dark", VoxelRenderMode.Opaque, new VoxelFaceTiles(0)));
-		ushort emitting = builder.Add(
-			new VoxelMaterial(
-				"Emitter",
-				VoxelRenderMode.Opaque,
-				new VoxelFaceTiles(0),
-				light: new VoxelMaterialLightSettings(15, new VoxelBlockLight(15, 8, 2))
-			)
-		);
-		VoxelPalette palette = builder.Build();
-		VoxelWorld world = new();
-		world.SetVoxel(1, 1, 1, new VoxelCell(dark));
-		using VoxelLighting lighting = new(world, palette);
-		lighting.LoadChunk(default);
-		Drain(lighting);
-		using VoxelMeshingScheduler scheduler = new(
-			world,
-			palette,
-			Atlas,
-			maxWorkers: 1,
-			lighting: lighting
-		);
-
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData baseline = WaitForResult(scheduler);
-		WaitForWorker(scheduler);
-		world.SetVoxel(1, 1, 1, new VoxelCell(emitting));
-
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData immediate = WaitForResult(scheduler);
-		WaitForWorker(scheduler);
-		Assert.True(immediate.Revision > baseline.Revision);
-		Assert.Equal(baseline.LightRevision, immediate.LightRevision);
-
-		Drain(lighting);
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData relit = WaitForResult(scheduler);
-
-		Assert.Equal(immediate.Revision, relit.Revision);
-		Assert.True(relit.LightRevision > immediate.LightRevision);
-	}
-
-	[Fact]
-	public void WorldGenerationRejectsAnOldMeshAfterSameRevisionChunkReload()
-	{
-		(VoxelWorld world, VoxelPalette palette, ushort material) = CreateCube(
-			VoxelRenderMode.Opaque,
-			1,
-			1,
-			1
-		);
-		ChunkCoordinate coordinate = default;
-		using VoxelMeshingScheduler scheduler = new(
-			world,
-			palette,
-			Atlas,
-			maxWorkers: 1
-		);
-
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData oldMesh = WaitForResult(scheduler);
-		WaitForWorker(scheduler);
-		Assert.True(world.TryGetChunk(coordinate, out VoxelChunk oldChunk));
-		Assert.True(VoxelRenderer.IsMeshCurrent(oldMesh, oldChunk, lighting: null));
-
-		Assert.True(world.RemoveChunk(coordinate));
-		Assert.True(world.SetVoxel(1, 1, 1, new VoxelCell(material)));
-		Assert.True(world.TryGetChunk(coordinate, out VoxelChunk reloadedChunk));
-
-		Assert.Equal(oldMesh.Revision, reloadedChunk.Revision);
-		Assert.NotEqual(oldMesh.WorldGeneration, reloadedChunk.Generation);
-		Assert.False(VoxelRenderer.IsMeshCurrent(oldMesh, reloadedChunk, lighting: null));
-
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData reloadedMesh = WaitForResult(scheduler);
-		Assert.Equal(oldMesh.Revision, reloadedMesh.Revision);
-		Assert.NotEqual(oldMesh.WorldGeneration, reloadedMesh.WorldGeneration);
-		Assert.True(VoxelRenderer.IsMeshCurrent(reloadedMesh, reloadedChunk, lighting: null));
-	}
-
-	[Fact]
-	public void WorldAndLightGenerationsRejectAnOldMeshAfterSameRevisionResidentReload()
-	{
-		VoxelPaletteBuilder builder = new();
-		ushort emitter = builder.Add(
-			new VoxelMaterial(
-				"Emitter",
-				VoxelRenderMode.Opaque,
-				new VoxelFaceTiles(0),
-				light: new VoxelMaterialLightSettings(15, new VoxelBlockLight(15, 8, 2))
-			)
-		);
-		VoxelPalette palette = builder.Build();
-		VoxelWorld world = new();
-		ChunkCoordinate coordinate = default;
-		world.SetVoxel(1, 1, 1, new VoxelCell(emitter));
-		using VoxelLighting lighting = new(world, palette);
-		lighting.LoadChunk(coordinate);
-		Drain(lighting);
-		using VoxelMeshingScheduler scheduler = new(
-			world,
-			palette,
-			Atlas,
-			maxWorkers: 1,
-			lighting: lighting
-		);
-
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData oldMesh = WaitForResult(scheduler);
-		WaitForWorker(scheduler);
-		Assert.True(world.TryGetChunk(coordinate, out VoxelChunk oldChunk));
-		Assert.True(VoxelRenderer.IsMeshCurrent(oldMesh, oldChunk, lighting));
-
-		Assert.True(lighting.UnloadChunk(coordinate));
-		Assert.True(world.RemoveChunk(coordinate));
-		Assert.True(world.SetVoxel(1, 1, 1, new VoxelCell(emitter)));
-		lighting.LoadChunk(coordinate);
-		Drain(lighting);
-		Assert.True(world.TryGetChunk(coordinate, out VoxelChunk reloadedChunk));
-		Assert.True(
-			lighting.TryGetChunkState(
-				coordinate,
-				out long reloadedLightGeneration,
-				out long reloadedLightRevision
-			)
-		);
-
-		Assert.Equal(oldMesh.Revision, reloadedChunk.Revision);
-		Assert.Equal(oldMesh.LightRevision, reloadedLightRevision);
-		Assert.NotEqual(oldMesh.WorldGeneration, reloadedChunk.Generation);
-		Assert.NotEqual(oldMesh.LightGeneration, reloadedLightGeneration);
-		Assert.False(VoxelRenderer.IsMeshCurrent(oldMesh, reloadedChunk, lighting));
-
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData reloadedMesh = WaitForResult(scheduler);
-		Assert.Equal(oldMesh.Revision, reloadedMesh.Revision);
-		Assert.Equal(oldMesh.LightRevision, reloadedMesh.LightRevision);
-		Assert.NotEqual(oldMesh.WorldGeneration, reloadedMesh.WorldGeneration);
-		Assert.NotEqual(oldMesh.LightGeneration, reloadedMesh.LightGeneration);
-		Assert.True(VoxelRenderer.IsMeshCurrent(reloadedMesh, reloadedChunk, lighting));
-	}
-
-	[Fact]
-	public void SchedulerRejectsLightingFromAnotherWorldOrPalette()
-	{
-		VoxelPaletteBuilder firstBuilder = new();
-		firstBuilder.Add(new VoxelMaterial("First", VoxelRenderMode.Opaque, new VoxelFaceTiles(0)));
-		VoxelPalette firstPalette = firstBuilder.Build();
-		VoxelPaletteBuilder secondBuilder = new();
-		secondBuilder.Add(new VoxelMaterial("Second", VoxelRenderMode.Opaque, new VoxelFaceTiles(0)));
-		VoxelPalette secondPalette = secondBuilder.Build();
-		VoxelWorld firstWorld = new();
-		VoxelWorld secondWorld = new();
-		using VoxelLighting lighting = new(firstWorld, firstPalette);
-
-		Assert.Throws<ArgumentException>(
-			() => new VoxelMeshingScheduler(
-				secondWorld,
-				firstPalette,
-				Atlas,
-				lighting: lighting
-			)
-		);
-		Assert.Throws<ArgumentException>(
-			() => new VoxelMeshingScheduler(
-				firstWorld,
-				secondPalette,
-				Atlas,
-				lighting: lighting
+			vertex => Assert.Equal(
+				new Color(0, 0, 0, byte.MaxValue),
+				vertex.PackedLightChannels
 			)
 		);
 	}
@@ -472,6 +336,11 @@ public class VoxelRenderingLightingTests
 		return (world, palette, material);
 	}
 
+	private static void AssertUniformDeclaration(string source, string type, string name)
+	{
+		Assert.Contains($"uniform {type} {name};", source, StringComparison.Ordinal);
+	}
+
 	private static VoxelMeshData BuildLit(
 		VoxelWorld world,
 		VoxelPalette palette,
@@ -523,7 +392,9 @@ public class VoxelRenderingLightingTests
 	private static void Drain(VoxelLighting lighting)
 	{
 		for (int update = 0; update < 1_000 && !lighting.IsIdle; update++)
+		{
 			lighting.Update(1_000_000);
+		}
 
 		Assert.True(lighting.IsIdle, "Voxel lighting did not converge.");
 	}

@@ -20,8 +20,9 @@ public class NodeGraphTests
 		Assert.All(pair.Outputs, o => Assert.Equal(typeof(int), o.Type));
 		Assert.Equal("Pretty", Find(registry, nameof(Functions.Named)).Title);
 		Assert.All(registry.Functions.Where(f => f.Title == "Convert"), f => Assert.Contains("(", f.MenuLabel));
-		Assert.Equal("Math", Find(registry, nameof(Functions.Add)).Group);
-		Assert.Equal(nameof(Functions), Find(registry, nameof(Functions.Identity)).Group);
+		Assert.Equal("Math", Find(registry, nameof(Functions.Add)).Category);
+		Assert.Equal(nameof(Functions), Find(registry, nameof(Functions.Identity)).Category);
+		Assert.Same(Find(registry, nameof(Functions.Add)), registry.Get("test.add"));
 	}
 
 	[Fact]
@@ -32,6 +33,8 @@ public class NodeGraphTests
 		Assert.Throws<NotSupportedException>(() => new NodeFunctionRegistry().Register(typeof(InvalidFunctions)));
 		Assert.Throws<NotSupportedException>(() => new NodeFunctionRegistry().Register(typeof(InvalidBodyFunctions)));
 		Assert.Throws<NotSupportedException>(() => new NodeFunctionRegistry().Register(typeof(RefFunctions)));
+		Assert.Throws<InvalidOperationException>(() => registry.Register(typeof(DuplicateIdFunctions)));
+		Assert.Throws<ArgumentException>(() => new NodeFunctionRegistry().Register(typeof(MissingIdFunctions)));
 		Assert.Throws<ArgumentException>(() => new NodeFunctionRegistry().Register(typeof(NotStatic)));
 	}
 
@@ -39,51 +42,53 @@ public class NodeGraphTests
 	public void NodesUseExactTypesReplaceInputsAndFanOut()
 	{
 		NodeFunctionRegistry registry = Registry();
-		FunctionNodeGraph graph = new FunctionNodeGraph();
-		FunctionNode a = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
-		FunctionNode b = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
-		FunctionNode add = graph.CreateNode(Find(registry, nameof(Functions.Add)), Vector2.Zero);
-		FunctionNode floatSink = graph.CreateNode(Find(registry, nameof(Functions.FloatIdentity)), Vector2.Zero);
+		FunctionGraph graph = new FunctionGraph();
+		FunctionNode a = graph.AddNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		FunctionNode b = graph.AddNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		FunctionNode add = graph.AddNode(Find(registry, nameof(Functions.Add)), Vector2.Zero);
+		FunctionNode floatSink = graph.AddNode(Find(registry, nameof(Functions.FloatIdentity)), Vector2.Zero);
 		Guid[] portIds = graph.Nodes.SelectMany(node => node.Inputs.Concat(node.Outputs)).Select(port => port.Id).ToArray();
 		Assert.DoesNotContain(Guid.Empty, portIds);
 		Assert.Equal(portIds.Length, portIds.Distinct().Count());
-		Assert.Null(graph.Connect(a.Outputs[0], floatSink.Inputs[0]));
-		graph.Connect(a.Outputs[0], add.Inputs[0]);
-		NodeConnection replacement = graph.Connect(b.Outputs[0], add.Inputs[0]);
-		graph.Connect(b.Outputs[0], add.Inputs[1]);
+		Assert.False(graph.TryConnect(a.Outputs[0], floatSink.Inputs[0], out _));
+		Assert.True(graph.TryConnect(a.Outputs[0], add.Inputs[0], out _));
+		Assert.True(graph.TryConnect(b.Outputs[0], add.Inputs[0], out NodeConnection replacement));
+		Assert.True(graph.TryConnect(b.Outputs[0], add.Inputs[1], out _));
 		Assert.Equal(2, graph.Connections.Count);
-		Assert.Same(replacement, graph.ConnectionAtInput(add.Inputs[0]));
+		Assert.True(graph.TryGetInputConnection(add.Inputs[0], out NodeConnection connected));
+		Assert.Same(replacement, connected);
 	}
 
 	[Fact]
 	public void ConnectionsRejectForeignPortsWithoutReplacingExistingInput()
 	{
 		NodeFunctionRegistry registry = Registry();
-		FunctionNodeGraph graph = new FunctionNodeGraph();
-		FunctionNode source = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
-		FunctionNode sink = graph.CreateNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
-		NodeConnection existing = graph.Connect(source.Outputs[0], sink.Inputs[0]);
+		FunctionGraph graph = new FunctionGraph();
+		FunctionNode source = graph.AddNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		FunctionNode sink = graph.AddNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
+		Assert.True(graph.TryConnect(source.Outputs[0], sink.Inputs[0], out NodeConnection existing));
 
-		FunctionNodeGraph foreignGraph = new FunctionNodeGraph();
-		FunctionNode foreign = foreignGraph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		FunctionGraph foreignGraph = new FunctionGraph();
+		FunctionNode foreign = foreignGraph.AddNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
 
-		Assert.Null(graph.Connect(foreign.Outputs[0], sink.Inputs[0]));
+		Assert.False(graph.TryConnect(foreign.Outputs[0], sink.Inputs[0], out _));
 		Assert.Single(graph.Connections);
-		Assert.Same(existing, graph.ConnectionAtInput(sink.Inputs[0]));
+		Assert.True(graph.TryGetInputConnection(sink.Inputs[0], out NodeConnection connected));
+		Assert.Same(existing, connected);
 	}
 
 	[Fact]
 	public void EvaluatorUsesDefaultsPropagatesAndExpandsTuples()
 	{
 		NodeFunctionRegistry registry = Registry();
-		FunctionNodeGraph graph = new FunctionNodeGraph();
-		FunctionNode constant = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
-		constant.BodyValues[0].Text = "6";
-		FunctionNode add = graph.CreateNode(Find(registry, nameof(Functions.Add)), Vector2.Zero);
-		FunctionNode pair = graph.CreateNode(Find(registry, nameof(Functions.Pair)), Vector2.Zero);
-		graph.Connect(constant.Outputs[0], add.Inputs[0]);
-		graph.Connect(add.Outputs[0], pair.Inputs[0]);
-		NodeEvaluationResult result = new FunctionNodeEvaluator().Evaluate(graph);
+		FunctionGraph graph = new FunctionGraph();
+		FunctionNode constant = graph.AddNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		constant.InlineValues[0].Text = "6";
+		FunctionNode add = graph.AddNode(Find(registry, nameof(Functions.Add)), Vector2.Zero);
+		FunctionNode pair = graph.AddNode(Find(registry, nameof(Functions.Pair)), Vector2.Zero);
+		graph.TryConnect(constant.Outputs[0], add.Inputs[0], out _);
+		graph.TryConnect(add.Outputs[0], pair.Inputs[0], out _);
+		NodeEvaluationResult result = new FunctionGraphEvaluator().Evaluate(graph);
 		Assert.True(result.Success);
 		Assert.Equal(6, add.Outputs[0].Value);
 		Assert.Equal(12, pair.Outputs[0].Value);
@@ -94,14 +99,14 @@ public class NodeGraphTests
 	public void EvaluatorReportsCyclesExceptionsAndContinuesIndependentNodes()
 	{
 		NodeFunctionRegistry registry = Registry();
-		FunctionNodeGraph graph = new FunctionNodeGraph();
-		FunctionNode one = graph.CreateNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
-		FunctionNode two = graph.CreateNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
-		FunctionNode fail = graph.CreateNode(Find(registry, nameof(Functions.Throw)), Vector2.Zero);
-		FunctionNode good = graph.CreateNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
-		graph.Connect(one.Outputs[0], two.Inputs[0]);
-		graph.Connect(two.Outputs[0], one.Inputs[0]);
-		NodeEvaluationResult result = new FunctionNodeEvaluator().Evaluate(graph);
+		FunctionGraph graph = new FunctionGraph();
+		FunctionNode one = graph.AddNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
+		FunctionNode two = graph.AddNode(Find(registry, nameof(Functions.Identity)), Vector2.Zero);
+		FunctionNode fail = graph.AddNode(Find(registry, nameof(Functions.Throw)), Vector2.Zero);
+		FunctionNode good = graph.AddNode(Find(registry, nameof(Functions.Constant)), Vector2.Zero);
+		graph.TryConnect(one.Outputs[0], two.Inputs[0], out _);
+		graph.TryConnect(two.Outputs[0], one.Inputs[0], out _);
+		NodeEvaluationResult result = new FunctionGraphEvaluator().Evaluate(graph);
 		Assert.False(result.Success);
 		Assert.Equal(NodeEvaluationState.Error, one.EvaluationState);
 		Assert.Equal(NodeEvaluationState.Error, two.EvaluationState);
@@ -131,11 +136,11 @@ public class NodeGraphTests
 		NodeCanvas canvas = new NodeCanvas();
 		Vector2 world = new Vector2(123, 456);
 		AssertVector(world, canvas.ScreenToWorld(canvas.WorldToScreen(world)));
-		Vector2 cursor = new Vector2(800, 450),
-			before = canvas.ScreenToWorld(cursor);
+		Vector2 cursor = new Vector2(800, 450);
+		Vector2 before = canvas.ScreenToWorld(cursor);
 		canvas.ZoomAt(cursor, 3);
 		AssertVector(before, canvas.ScreenToWorld(cursor));
-		FunctionNode node = new FunctionNodeGraph().CreateNode(
+		FunctionNode node = new FunctionGraph().AddNode(
 			Find(Registry(), nameof(Functions.Constant)),
 			new Vector2(100, 200)
 		);
@@ -200,53 +205,69 @@ public class NodeGraphTests
 
 	public static class Functions
 	{
-		[NodeFunction(Category = "Values")]
-		public static int Constant([NodeBody] int value = 1) => value;
+		[NodeFunction("test.constant", Category = "Values")]
+		public static int Constant([NodeInline] int value = 1) => value;
 
-		[NodeFunction(Category = "Math")]
+		[NodeFunction("test.add", Category = "Math")]
 		public static int Add(int a, int b) => a + b;
 
-		[NodeFunction]
+		[NodeFunction("test.identity")]
 		public static int Identity(int value) => value;
 
-		[NodeFunction]
+		[NodeFunction("test.float-identity")]
 		public static float FloatIdentity(float value) => value;
 
-		[NodeFunction(Category = "Math")]
+		[NodeFunction("test.pair", Category = "Math")]
 		public static (int sum, int product) Pair(int value) => (value * 2, value * value);
 
-		[NodeFunction("Pretty")]
-		public static bool Named([NodeBody] bool value = true) => value;
+		[NodeFunction("test.named", Title = "Pretty")]
+		public static bool Named([NodeInline] bool value = true) => value;
 
-		[NodeFunction]
+		[NodeFunction("test.throw")]
 		public static int Throw() => throw new InvalidOperationException("boom");
 
-		[NodeFunction("Convert")]
+		[NodeFunction("test.convert-int", Title = "Convert")]
 		public static int ConvertInt(int value) => value;
 
-		[NodeFunction("Convert")]
+		[NodeFunction("test.convert-float", Title = "Convert")]
 		public static float ConvertFloat(float value) => value;
 
-		public static void Hidden() { }
+		public static void Hidden()
+		{
+		}
 	}
 
 	public static class InvalidFunctions
 	{
-		[NodeFunction]
+		[NodeFunction("invalid.async")]
 		public static Task Async() => Task.CompletedTask;
 	}
 
 	public static class InvalidBodyFunctions
 	{
-		[NodeFunction]
-		public static DateTime Unsupported([NodeBody] DateTime value) => value;
+		[NodeFunction("invalid.inline")]
+		public static DateTime Unsupported([NodeInline] DateTime value) => value;
 	}
 
 	public static class RefFunctions
 	{
-		[NodeFunction]
+		[NodeFunction("invalid.ref")]
 		public static int Ref(ref int value) => value;
 	}
 
-	public class NotStatic { }
+	public static class DuplicateIdFunctions
+	{
+		[NodeFunction("test.add")]
+		public static int Duplicate(int value) => value;
+	}
+
+	public static class MissingIdFunctions
+	{
+		[NodeFunction("")]
+		public static int Missing(int value) => value;
+	}
+
+	public class NotStatic
+	{
+	}
 }

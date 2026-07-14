@@ -1,87 +1,51 @@
 using System;
 using FishGfx.Graphics.Drawables;
 
-namespace FishGfx.Graphics
+namespace FishGfx.Graphics;
+
+/// <summary>
+/// Draws a retained 3D mesh using optional caller-owned texture and shader resources.
+/// </summary>
+public sealed class DrawMeshCommand : RenderCommand
 {
-	/// <summary>
-	/// Draws a retained 3D mesh using optional caller-owned texture and shader resources.
-	/// </summary>
-	public sealed class DrawMesh3DCommand : GraphicsCommand
+	public DrawMeshCommand(Mesh3D mesh, Texture texture = null, ShaderProgram shader = null)
 	{
-		public DrawMesh3DCommand(Mesh3D mesh, Texture texture = null, ShaderProgram shader = null)
-		{
-			Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
-			Texture = texture;
-			Shader = shader;
-		}
-
-		public Mesh3D Mesh { get; }
-		public Texture Texture { get; }
-		public ShaderProgram Shader { get; }
-
-		public override void Execute()
-		{
-			bool shaderBound = false;
-			bool textureBound = false;
-
-			try
-			{
-				if (Shader != null)
-				{
-					Shader.Bind(ShaderUniforms.Current);
-					shaderBound = true;
-				}
-
-				if (Texture != null)
-				{
-					Texture.BindTextureUnit();
-					textureBound = true;
-				}
-
-				Mesh.Draw();
-			}
-			finally
-			{
-				if (textureBound)
-					Texture.UnbindTextureUnit();
-				if (shaderBound)
-					Shader.Unbind();
-			}
-		}
+		Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
+		Texture = texture;
+		Shader = shader;
 	}
 
-	/// <summary>
-	/// Draws a retained model and its material textures using an optional caller-owned shader.
-	/// </summary>
-	public sealed class DrawRenderModelCommand : GraphicsCommand
+	public Mesh3D Mesh { get; }
+
+	public Texture Texture { get; }
+
+	public ShaderProgram Shader { get; }
+
+	public override void Execute(RenderPass pass)
 	{
-		public DrawRenderModelCommand(RenderModel model, ShaderProgram shader = null)
-		{
-			Model = model ?? throw new ArgumentNullException(nameof(model));
-			Shader = shader;
-		}
+		ArgumentNullException.ThrowIfNull(pass);
+		pass.DrawMesh(Mesh, Texture, Shader);
+	}
+}
 
-		public RenderModel Model { get; }
-		public ShaderProgram Shader { get; }
+/// <summary>
+/// Draws a retained model and its material textures using an optional caller-owned shader.
+/// </summary>
+public sealed class DrawModelCommand : RenderCommand
+{
+	public DrawModelCommand(RenderModel model, ShaderProgram shader = null)
+	{
+		Model = model ?? throw new ArgumentNullException(nameof(model));
+		Shader = shader;
+	}
 
-		public override void Execute()
-		{
-			if (Shader == null)
-			{
-				Model.Draw();
-				return;
-			}
+	public RenderModel Model { get; }
 
-			Shader.Bind(ShaderUniforms.Current);
+	public ShaderProgram Shader { get; }
 
-			try
-			{
-				Model.Draw();
-			}
-			finally
-			{
-				Shader.Unbind();
-			}
-		}
+	public override void Execute(RenderPass pass)
+	{
+		ArgumentNullException.ThrowIfNull(pass);
+		pass.DrawModel(Model, Shader);
 	}
 }

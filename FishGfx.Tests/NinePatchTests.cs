@@ -138,7 +138,14 @@ public class NinePatchTests
 		Assert.Throws<ArgumentOutOfRangeException>(() =>
 			NinePatchTessellator.Create(Vector2.Zero, Vector2.One, new Vector2(100), Insets, Color.White)
 		);
-		Assert.Throws<ArgumentNullException>(() => Gfx.NinePatch(0, 0, 100, 100, null, Insets));
+		Assert.Throws<ArgumentNullException>(
+			() => new NinePatchCommand(
+				Vector2.Zero,
+				new Vector2(100),
+				null,
+				Insets
+			)
+		);
 	}
 
 	private static Vertex2[] Create(Vector2 size) =>

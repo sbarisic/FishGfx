@@ -1,167 +1,201 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace FishGfx
+namespace FishGfx;
+
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
+public struct Color : IEquatable<Color>
 {
-	[StructLayout(LayoutKind.Sequential, Pack = 1)]
-	public struct Color
+	public static Color Transparent { get; } = new(0, 0, 0, 0);
+
+	public static Color White { get; } = new(255, 255, 255, 255);
+
+	public static Color Black { get; } = new(0, 0, 0, 255);
+
+	public static Color Red { get; } = new(255, 0, 0);
+
+	public static Color Green { get; } = new(0, 255, 0);
+
+	public static Color Blue { get; } = new(0, 0, 255);
+
+	public static Color Yellow { get; } = new(255, 255, 0);
+
+	public static Color Cyan { get; } = new(0, 255, 255);
+
+	public static Color Magenta { get; } = new(255, 0, 255);
+
+	public static Color Orange { get; } = new(230, 140, 0);
+
+	public static Color Amber { get; } = new(137, 49, 1);
+
+	public static Color Apple { get; } = new(169, 27, 13);
+
+	public static Color Pine { get; } = new(35, 79, 30);
+
+	public static Color Coal { get; } = new(11, 10, 8);
+
+	public static Color Sky { get; } = new(98, 197, 218);
+
+	public byte R;
+
+	public byte G;
+
+	public byte B;
+
+	public byte A;
+
+	public Color(byte red, byte green, byte blue, byte alpha)
 	{
-		public static readonly Color Transparent = new Color(0, 0, 0, 0);
-		public static readonly Color White = new Color(255, 255, 255, 255);
-		public static readonly Color Black = new Color(0, 0, 0, 255);
+		R = red;
+		G = green;
+		B = blue;
+		A = alpha;
+	}
 
-		public static readonly Color Red = new Color(255, 0, 0);
-		public static readonly Color Green = new Color(0, 255, 0);
-		public static readonly Color Blue = new Color(0, 0, 255);
+	public Color(byte red, byte green, byte blue)
+		: this(red, green, blue, byte.MaxValue)
+	{
+	}
 
-		public static readonly Color Yellow = new Color(255, 255, 0);
-		public static readonly Color Cyan = new Color(0, 255, 255);
-		public static readonly Color Magenta = new Color(255, 0, 255);
+	public Color(int packedValue)
+		: this(0, 0, 0, 0)
+	{
+		PackedValue = packedValue;
+	}
 
-		public static readonly Color Orange = new Color(230, 140, 0);
+	public Color(float red, float green, float blue)
+		: this(ToByte(red), ToByte(green), ToByte(blue))
+	{
+	}
 
-		// https://digitalsynopsis.com/design/color-thesaurus-correct-names-of-shades/
-		public static readonly Color Amber = new Color(137, 49, 1);
-		public static readonly Color Apple = new Color(169, 27, 13);
-		public static readonly Color Pine = new Color(35, 79, 30);
-		public static readonly Color Coal = new Color(11, 10, 8);
-		public static readonly Color Sky = new Color(98, 197, 218);
+	public Color(double red, double green, double blue)
+		: this((float)red, (float)green, (float)blue)
+	{
+	}
 
-		public byte R;
-		public byte G;
-		public byte B;
-		public byte A;
-
-		public int ColorInt
+	public int PackedValue
+	{
+		get
 		{
-			get { return ((int)A << 24) | ((int)B << 16) | ((int)G << 8) | (int)R; }
-			set
+			return A << 24 | B << 16 | G << 8 | R;
+		}
+		set
+		{
+			A = (byte)(value >> 24 & 0xFF);
+			B = (byte)(value >> 16 & 0xFF);
+			G = (byte)(value >> 8 & 0xFF);
+			R = (byte)(value & 0xFF);
+		}
+	}
+
+	public static Color ClampToPalette(Color color, IEnumerable<Color> palette)
+	{
+		ArgumentNullException.ThrowIfNull(palette);
+
+		bool found = false;
+		long bestDistance = long.MaxValue;
+		Color best = default;
+
+		foreach (Color candidate in palette)
+		{
+			long red = color.R - candidate.R;
+			long green = color.G - candidate.G;
+			long blue = color.B - candidate.B;
+			long alpha = color.A - candidate.A;
+			long distance = red * red + green * green + blue * blue + alpha * alpha;
+
+			if (!found || distance < bestDistance)
 			{
-				A = (byte)((value >> 24) & 0xFF);
-				B = (byte)((value >> 16) & 0xFF);
-				G = (byte)((value >> 8) & 0xFF);
-				R = (byte)((value >> 0) & 0xFF);
+				found = true;
+				bestDistance = distance;
+				best = candidate;
 			}
 		}
 
-		public Color(byte R, byte G, byte B, byte A)
+		if (!found)
 		{
-			this.R = R;
-			this.G = G;
-			this.B = B;
-			this.A = A;
+			throw new ArgumentException("The palette cannot be empty.", nameof(palette));
 		}
 
-		public Color(byte R, byte G, byte B)
-			: this(R, G, B, 255) { }
+		return best;
+	}
 
-		public Color(int ColorInt)
-			: this(0, 0, 0, 0)
-		{
-			this.ColorInt = ColorInt;
-		}
+	public bool Equals(Color other)
+	{
+		return R == other.R && G == other.G && B == other.B && A == other.A;
+	}
 
-		public Color(float R, float G, float B)
-			: this((byte)(R * 255), (byte)(G * 255), (byte)(B * 255)) { }
+	public override bool Equals(object obj)
+	{
+		return obj is Color other && Equals(other);
+	}
 
-		public Color(double R, double G, double B)
-			: this((float)R, (float)G, (float)B) { }
+	public override int GetHashCode()
+	{
+		return PackedValue;
+	}
 
-		public override string ToString()
-		{
-			return string.Format("({0} {1} {2} {3})", R, G, B, A);
-		}
+	public override string ToString()
+	{
+		return $"({R} {G} {B} {A})";
+	}
 
-		public override bool Equals(object Obj)
-		{
-			if (Obj is Color Clr)
-				return Clr == this;
+	public static bool operator ==(Color left, Color right)
+	{
+		return left.Equals(right);
+	}
 
-			return false;
-		}
+	public static bool operator !=(Color left, Color right)
+	{
+		return !left.Equals(right);
+	}
 
-		public override int GetHashCode()
-		{
-			return ColorInt.GetHashCode();
-		}
+	public static Color operator *(Color color, float scale)
+	{
+		return (Vector3)color * scale;
+	}
 
-		public static Color Clamp(Color C, IEnumerable<Color> Palette)
-		{
-			if (Palette == null)
-				throw new ArgumentNullException(nameof(Palette));
-			bool found = false;
-			long bestDistance = long.MaxValue;
-			Color best = default;
-			foreach (Color candidate in Palette)
-			{
-				long dr = C.R - candidate.R;
-				long dg = C.G - candidate.G;
-				long db = C.B - candidate.B;
-				long da = C.A - candidate.A;
-				long distance = dr * dr + dg * dg + db * db + da * da;
-				if (!found || distance < bestDistance)
-				{
-					found = true;
-					bestDistance = distance;
-					best = candidate;
-				}
-			}
-			if (!found)
-				throw new ArgumentException("The palette cannot be empty.", nameof(Palette));
-			return best;
-		}
+	public static Color operator *(Color left, Color right)
+	{
+		Vector3 leftVector = left;
+		Vector3 rightVector = right;
 
-		public static bool operator ==(Color A, Color B)
-		{
-			return A.R == B.R && A.G == B.G && A.B == B.B && A.A == B.A;
-		}
+		return new Color(
+			leftVector.X * rightVector.X,
+			leftVector.Y * rightVector.Y,
+			leftVector.Z * rightVector.Z
+		);
+	}
 
-		public static bool operator !=(Color A, Color B)
-		{
-			return !(A == B);
-		}
+	public static implicit operator System.Drawing.Color(Color color)
+	{
+		return System.Drawing.Color.FromArgb(color.A, color.R, color.G, color.B);
+	}
 
-		public static Color operator *(Color A, float Val)
-		{
-			return ((Vector3)A) * Val;
-		}
+	public static implicit operator Color(System.Drawing.Color color)
+	{
+		return new Color(color.R, color.G, color.B, color.A);
+	}
 
-		public static Color operator *(Color A, Color B)
-		{
-			Vector3 AVect = A;
-			Vector3 BVect = B;
+	public static implicit operator Vector3(Color color)
+	{
+		return new Vector3(color.R, color.G, color.B) / byte.MaxValue;
+	}
 
-			return new Color(AVect.X * BVect.X, AVect.Y * BVect.Y, AVect.Z * BVect.Z);
-		}
+	public static implicit operator Vector4(Color color)
+	{
+		return new Vector4(color.R, color.G, color.B, color.A) / byte.MaxValue;
+	}
 
-		public static implicit operator System.Drawing.Color(Color Clr)
-		{
-			return System.Drawing.Color.FromArgb(Clr.A, Clr.R, Clr.G, Clr.B);
-		}
+	public static implicit operator Color(Vector3 value)
+	{
+		return new Color(ToByte(value.X), ToByte(value.Y), ToByte(value.Z));
+	}
 
-		public static implicit operator Color(System.Drawing.Color Clr)
-		{
-			return new Color(Clr.R, Clr.G, Clr.B, Clr.A);
-		}
-
-		public static implicit operator Vector3(Color Clr)
-		{
-			return new Vector3(Clr.R, Clr.G, Clr.B) / 255.0f;
-		}
-
-		public static implicit operator Vector4(Color Clr)
-		{
-			return new Vector4(Clr.R, Clr.G, Clr.B, Clr.A) / 255.0f;
-		}
-
-		public static implicit operator Color(Vector3 V)
-		{
-			return new Color((byte)(V.X * 255), (byte)(V.Y * 255), (byte)(V.Z * 255));
-		}
+	private static byte ToByte(float value)
+	{
+		return (byte)(Math.Clamp(value, 0, 1) * byte.MaxValue);
 	}
 }

@@ -1,10 +1,9 @@
-namespace FishGfx.SmokeTest
+namespace FishGfx.SmokeTest;
+
+internal static class Program
 {
-	internal static class Program
+	private static void Main(string[] args)
 	{
-		private static void Main(string[] args)
-		{
-			new PrimitiveGallery(args).Run();
-		}
+		new PrimitiveGallery(args).Run();
 	}
 }

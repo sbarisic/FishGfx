@@ -1,61 +1,96 @@
-namespace FishGfx.Graphics
+using System;
+
+namespace FishGfx.Graphics;
+
+public sealed class ClearCommand : RenderCommand
 {
-	public sealed class ClearCommand : GraphicsCommand
+	public ClearCommand(
+		Color color,
+		bool clearColor = true,
+		bool clearDepth = true,
+		bool clearStencil = true,
+		float depth = 1,
+		int stencil = 0
+	)
 	{
-		public Color Color { get; }
-		public bool ClearColor { get; }
-		public bool ClearDepth { get; }
-		public bool ClearStencil { get; }
-
-		public ClearCommand(Color color, bool clearColor = true, bool clearDepth = true, bool clearStencil = true)
-		{
-			Color = color;
-			ClearColor = clearColor;
-			ClearDepth = clearDepth;
-			ClearStencil = clearStencil;
-		}
-
-		public override void Execute() => Gfx.Clear(Color, ClearColor, ClearDepth, ClearStencil);
+		Color = color;
+		ClearColor = clearColor;
+		ClearDepth = clearDepth;
+		ClearStencil = clearStencil;
+		Depth = depth;
+		Stencil = stencil;
 	}
 
-	public sealed class ClearDepthCommand : GraphicsCommand
+	public Color Color { get; }
+
+	public bool ClearColor { get; }
+
+	public bool ClearDepth { get; }
+
+	public bool ClearStencil { get; }
+
+	public float Depth { get; }
+
+	public int Stencil { get; }
+
+	public override void Execute(RenderPass pass)
 	{
-		public float Value { get; }
+		ArgumentNullException.ThrowIfNull(pass);
+		pass.Clear(Color, ClearColor, ClearDepth, ClearStencil, Depth, Stencil);
+	}
+}
 
-		public ClearDepthCommand(float value = 1)
-		{
-			Value = value;
-		}
-
-		public override void Execute() => Gfx.ClearDepth(Value);
+public sealed class ClearDepthCommand : RenderCommand
+{
+	public ClearDepthCommand(float value = 1)
+	{
+		Value = value;
 	}
 
-	public sealed class ClearStencilCommand : GraphicsCommand
+	public float Value { get; }
+
+	public override void Execute(RenderPass pass)
 	{
-		public int Value { get; }
+		ArgumentNullException.ThrowIfNull(pass);
+		pass.Clear(default, false, true, false, Value);
+	}
+}
 
-		public ClearStencilCommand(int value = 0)
-		{
-			Value = value;
-		}
-
-		public override void Execute() => Gfx.ClearStencil(Value);
+public sealed class ClearStencilCommand : RenderCommand
+{
+	public ClearStencilCommand(int value = 0)
+	{
+		Value = value;
 	}
 
-	public sealed class PushRenderStateCommand : GraphicsCommand
+	public int Value { get; }
+
+	public override void Execute(RenderPass pass)
 	{
-		public RenderState State { get; }
+		ArgumentNullException.ThrowIfNull(pass);
+		pass.Clear(default, false, false, true, stencil: Value);
+	}
+}
 
-		public PushRenderStateCommand(RenderState state)
-		{
-			State = state;
-		}
-
-		public override void Execute() => Gfx.PushRenderState(State);
+public sealed class RenderStateScopeCommand : RenderCommand
+{
+	public RenderStateScopeCommand(RenderState state, RenderCommandBatch commands)
+	{
+		state.Validate();
+		Commands = commands ?? throw new ArgumentNullException(nameof(commands));
+		State = state;
 	}
 
-	public sealed class PopRenderStateCommand : GraphicsCommand
+	public RenderState State { get; }
+
+	public RenderCommandBatch Commands { get; }
+
+	public override void Execute(RenderPass pass)
 	{
-		public override void Execute() => Gfx.PopRenderState();
+		ArgumentNullException.ThrowIfNull(pass);
+
+		using IDisposable scope = pass.PushState(State);
+
+		pass.Execute(Commands);
 	}
 }

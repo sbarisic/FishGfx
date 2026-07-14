@@ -1,129 +1,202 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 using FishGfx.Graphics;
 
-namespace FishGfx.Voxels
+namespace FishGfx.Voxels;
+
+internal readonly struct VoxelPassEntry
 {
-	internal readonly struct VoxelPassEntry
+	internal VoxelPassEntry(VoxelMesh mesh, Matrix4x4 model, ChunkCoordinate coordinate, float depth)
 	{
-		internal VoxelPassEntry(VoxelMesh mesh, Matrix4x4 model, ChunkCoordinate coordinate, float depth)
+		Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
+		Model = model;
+		Coordinate = coordinate;
+		Depth = depth;
+	}
+
+	internal VoxelMesh Mesh { get; }
+	internal Matrix4x4 Model { get; }
+	internal ChunkCoordinate Coordinate { get; }
+	internal float Depth { get; }
+}
+
+/// <summary>
+/// Draws one homogeneous voxel pass while binding its common resources only once.
+/// Each command owns an immutable entry snapshot until its render queue is cleared.
+/// </summary>
+internal sealed class DrawVoxelPassCommand : RenderCommand, IDisposable
+{
+	private readonly Texture atlas;
+	private readonly ShaderProgram shader;
+	private readonly RenderState state;
+	private readonly VoxelSunSettings sun;
+	private readonly VoxelFogSettings fog;
+	private readonly float alphaCutoff;
+	private readonly VoxelPassDrawEntry[] entries;
+	private int disposed;
+
+	internal DrawVoxelPassCommand(
+		Texture atlas,
+		ShaderProgram shader,
+		RenderState state,
+		VoxelSunSettings sunSettings,
+		float alphaCutoff,
+		VoxelFogSettings fogSettings,
+		IReadOnlyList<VoxelPassEntry> source
+	)
+	{
+		this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
+		this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
+		this.state = state;
+		sunSettings.Validate(nameof(sunSettings));
+		sun = sunSettings;
+		fog = fogSettings;
+		this.alphaCutoff = alphaCutoff;
+		ArgumentNullException.ThrowIfNull(source);
+		entries = new VoxelPassDrawEntry[source.Count];
+		int retained = 0;
+
+		try
+		{
+			for (int i = 0; i < source.Count; i++)
+			{
+				VoxelPassEntry entry = source[i];
+				entry.Mesh.RetainReference();
+				entries[i] = new VoxelPassDrawEntry(
+					entry.Mesh,
+					entry.Model,
+					entry.Coordinate
+				);
+				retained++;
+			}
+		}
+		catch
+		{
+			for (int i = 0; i < retained; i++)
+			{
+				entries[i].Mesh.ReleaseReference();
+			}
+
+			Volatile.Write(ref disposed, 1);
+			throw;
+		}
+	}
+
+	internal int Count => entries.Length;
+
+	~DrawVoxelPassCommand()
+	{
+		ReleaseReferences();
+	}
+
+	public override void Execute(RenderPass pass)
+	{
+		if (pass == null)
+		{
+			throw new ArgumentNullException(nameof(pass));
+		}
+
+		ThrowIfDisposed();
+
+		if (entries.Length == 0)
+		{
+			return;
+		}
+
+		bool shaderBound = false;
+		bool textureBound = false;
+
+		using IDisposable stateScope = pass.PushState(state);
+
+		try
+		{
+			shader.SetUniform("LightDirection", sun.Direction);
+			shader.SetUniform("AmbientLight", sun.AmbientLight);
+			shader.SetUniform("SunColor", (Vector3)sun.Color);
+			shader.SetUniform("SunIntensity", sun.Intensity);
+			shader.SetUniform("AlphaCutoff", alphaCutoff);
+			shader.SetUniform("FogEnabled", fog.Enabled ? 1 : 0);
+			shader.SetUniform("FogColor", (Vector3)fog.Color);
+			shader.SetUniform("FogDensity", fog.Density);
+			shader.SetUniform(
+				"LightMultiplier",
+				fog.Enabled ? fog.LightMultiplier : 1
+			);
+			shader.Bind(pass.Uniforms);
+			shaderBound = true;
+			atlas.BindTextureUnit();
+			textureBound = true;
+
+			for (int i = 0; i < entries.Length; i++)
+			{
+				using IDisposable modelScope = pass.PushModel(entries[i].Model);
+				shader.SetUniform(RenderUniformState.ModelUniformName, entries[i].Model);
+				entries[i].Mesh.DrawRetained();
+			}
+		}
+		finally
+		{
+			if (textureBound)
+			{
+				atlas.UnbindTextureUnit();
+			}
+
+			if (shaderBound)
+			{
+				shader.Unbind();
+			}
+		}
+	}
+
+	public void Dispose()
+	{
+		ReleaseReferences();
+		GC.SuppressFinalize(this);
+	}
+
+	private void ReleaseReferences()
+	{
+		if (Interlocked.Exchange(ref disposed, 1) != 0)
+		{
+			return;
+		}
+
+		if (entries == null)
+		{
+			return;
+		}
+
+		foreach (VoxelPassDrawEntry entry in entries)
+		{
+			entry.Mesh?.ReleaseReference();
+		}
+	}
+
+	private void ThrowIfDisposed()
+	{
+		if (Volatile.Read(ref disposed) != 0)
+		{
+			throw new ObjectDisposedException(nameof(DrawVoxelPassCommand));
+		}
+	}
+
+	private readonly struct VoxelPassDrawEntry
+	{
+		internal VoxelPassDrawEntry(
+			VoxelMesh mesh,
+			Matrix4x4 model,
+			ChunkCoordinate coordinate
+		)
 		{
 			Mesh = mesh ?? throw new ArgumentNullException(nameof(mesh));
 			Model = model;
 			Coordinate = coordinate;
-			Depth = depth;
 		}
 
 		internal VoxelMesh Mesh { get; }
 		internal Matrix4x4 Model { get; }
 		internal ChunkCoordinate Coordinate { get; }
-		internal float Depth { get; }
-	}
-
-	/// <summary>
-	/// Draws one homogeneous voxel pass while binding its common resources only once.
-	/// The renderer owns and updates the entry snapshot before queue submission.
-	/// </summary>
-	internal sealed class DrawVoxelPassCommand : GraphicsCommand
-	{
-		private readonly Texture atlas;
-		private readonly ShaderProgram shader;
-		private readonly RenderState state;
-		private VoxelSunSettings sun;
-		private readonly float alphaCutoff;
-		private VoxelPassEntry[] entries = Array.Empty<VoxelPassEntry>();
-		private int count;
-
-		internal DrawVoxelPassCommand(
-			Texture atlas,
-			ShaderProgram shader,
-			RenderState state,
-			Vector3 lightDirection,
-			float ambientLight,
-			float alphaCutoff
-		)
-		{
-			this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
-			this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
-			this.state = state;
-			sun = new VoxelSunSettings(lightDirection, Color.White, 1, ambientLight);
-			this.alphaCutoff = alphaCutoff;
-		}
-
-		internal int Count => count;
-		internal VoxelFogSettings Fog { get; set; }
-		internal VoxelSunSettings Sun
-		{
-			get => sun;
-			set
-			{
-				value.Validate(nameof(value));
-				sun = value;
-			}
-		}
-
-		internal void Update(IReadOnlyList<VoxelPassEntry> source)
-		{
-			if (source == null)
-				throw new ArgumentNullException(nameof(source));
-
-			if (entries.Length < source.Count)
-				Array.Resize(ref entries, VoxelMesh.CalculateCapacity(entries.Length, source.Count));
-
-			for (int i = 0; i < source.Count; i++)
-				entries[i] = source[i];
-
-			count = source.Count;
-		}
-
-		public override void Execute()
-		{
-			if (count == 0)
-				return;
-
-			ShaderUniforms uniforms = ShaderUniforms.Current;
-			Matrix4x4 previousModel = uniforms.Model;
-			bool statePushed = false;
-			bool shaderBound = false;
-			bool textureBound = false;
-
-			try
-			{
-				Gfx.PushRenderState(state);
-				statePushed = true;
-				shader.Uniform3f("LightDirection", sun.Direction);
-				shader.Uniform1f("AmbientLight", sun.AmbientLight);
-				shader.Uniform3f("SunColor", (Vector3)sun.Color);
-				shader.Uniform1f("SunIntensity", sun.Intensity);
-				shader.Uniform1f("AlphaCutoff", alphaCutoff);
-				shader.Uniform1("FogEnabled", Fog.Enabled ? 1 : 0);
-				shader.Uniform3f("FogColor", (Vector3)Fog.Color);
-				shader.Uniform1f("FogDensity", Fog.Density);
-				shader.Uniform1f("LightMultiplier", Fog.Enabled ? Fog.LightMultiplier : 1);
-				shader.Bind(uniforms);
-				shaderBound = true;
-				atlas.BindTextureUnit();
-				textureBound = true;
-
-				for (int i = 0; i < count; i++)
-				{
-					uniforms.Model = entries[i].Model;
-					shader.UniformMatrix4f("Model", entries[i].Model);
-					entries[i].Mesh.Draw();
-				}
-			}
-			finally
-			{
-				uniforms.Model = previousModel;
-
-				if (textureBound)
-					atlas.UnbindTextureUnit();
-				if (shaderBound)
-					shader.Unbind();
-				if (statePushed)
-					Gfx.PopRenderState();
-			}
-		}
 	}
 }

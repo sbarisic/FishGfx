@@ -1,50 +1,58 @@
-using System;
-using System.Globalization;
 using FishGfx.NodeGraph;
 
-namespace FishGfx.NodeEditor
+namespace FishGfx.NodeEditor;
+
+internal sealed class InlineValueEditor
 {
-	internal sealed class InlineValueEditor
+	internal NodeInlineValue Target { get; private set; }
+	internal string Text { get; private set; } = "";
+	internal bool IsActive => Target != null;
+
+	internal void Begin(NodeInlineValue value)
 	{
-		internal NodeBodyValue Target { get; private set; }
-		internal string Text { get; private set; } = "";
-		internal bool IsActive => Target != null;
+		Target = value;
+		Text = value.Text;
+	}
 
-		internal void Begin(NodeBodyValue value)
+	internal void Append(string value)
+	{
+		if (!IsActive)
 		{
-			Target = value;
-			Text = value.Text;
+			return;
 		}
 
-		internal void Append(string value)
+		Text += value;
+	}
+
+	internal void Backspace()
+	{
+		if (IsActive && Text.Length > 0)
 		{
-			if (!IsActive)
-				return;
-			Text += value;
+			Text = Text.Substring(0, Text.Length - 1);
+		}
+	}
+
+	internal bool Commit()
+	{
+		if (!IsActive)
+		{
+			return false;
 		}
 
-		internal void Backspace()
+		Target.Text = Text;
+
+		if (!Target.Parse())
 		{
-			if (IsActive && Text.Length > 0)
-				Text = Text.Substring(0, Text.Length - 1);
+			return false;
 		}
 
-		internal bool Commit()
-		{
-			if (!IsActive)
-				return false;
-			Target.Text = Text;
+		Cancel();
+		return true;
+	}
 
-			if (!Target.Parse())
-				return false;
-			Cancel();
-			return true;
-		}
-
-		internal void Cancel()
-		{
-			Target = null;
-			Text = "";
-		}
+	internal void Cancel()
+	{
+		Target = null;
+		Text = "";
 	}
 }

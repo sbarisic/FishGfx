@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  },
+  "nodes": [
+    {
+      "id": "1f2fbfb2-d3f6-426a-8d2d-0695dfb1f291",
+      "function": "value.integer",
+      "position": {
+        "x": 120,
+        "y": 100
+      },
+      "width": 240,
+      "inlineValues": {
+        "value": "7"
+      }
+    }
+  ],
+  "connections": []
+}

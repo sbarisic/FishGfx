@@ -5,16 +5,16 @@ using Xunit;
 
 namespace FishGfx.Tests;
 
-public class BitmapFontTests
+public sealed class BitmapFontTests
 {
 	[Fact]
 	public void OpenSansLoadsWithKerningBlock()
 	{
-		BMFont font = new BMFont(
-			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "opensans.fnt"),
-			DoLoadTextures: false
+		using BitmapFont font = new(
+			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "opensans.fnt")
 		);
-		Assert.Equal("Open Sans", font.FontName);
-		Assert.NotNull(font.GetCharInfo('A'));
+
+		Assert.Equal("Open Sans", font.Name);
+		Assert.NotNull(font.GetGlyph('A'));
 	}
 }
