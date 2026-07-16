@@ -17,7 +17,15 @@ internal sealed class NodeCanvas
 
 	internal NodeGraphViewState Capture() => new NodeGraphViewState(Pan, Zoom);
 
+	internal VisualProgramViewState CaptureVisual() => new VisualProgramViewState(Pan, Zoom);
+
 	internal void Apply(NodeGraphViewState state)
+	{
+		Pan = state.Pan;
+		Zoom = Math.Clamp(state.Zoom, .35f, 2.5f);
+	}
+
+	internal void Apply(VisualProgramViewState state)
 	{
 		Pan = state.Pan;
 		Zoom = Math.Clamp(state.Zoom, .35f, 2.5f);

@@ -41,7 +41,7 @@ dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj
 - `FishGfx`: core rendering, windowing, input, formats, fonts, and node-graph APIs.
 - `FishGfx.FishUI`: reusable FishUI graphics, input, and rooted-file-system adapters.
 - `FishGfx.SmokeTest`: interactive primitive gallery and automated screenshot validation.
-- `FishGfx.NodeEditor`: reflected C# function-node editor with evaluation and JSON persistence.
+- `FishGfx.NodeEditor`: visual C# editor with typed value wires, execution flow, code generation, and .NET execution.
 - `FishGfx.VoxelTest`: editable, multi-chunk voxel-rendering validation application.
 - `FishGfx.Tests`: context-free geometry, font, node-graph, persistence, and compatibility tests.
 
@@ -357,7 +357,43 @@ pass.DrawText(font, new Vector2(100, 100), "Smooth SDF text", Color.White, 64);
 
 The smoke gallery also integrates the tile/text-based developer console. Press F1 to toggle it and use `help` to list gallery commands.
 
-### Function node graphs
+### Visual C# programs
+
+`FishGfx.NodeEditor` now opens the visual-program workspace by default. It separates execution wires from typed value wires, uses paired merge/end nodes to keep free-form branches and loops convertible to readable C#, and shows validation, generated source, and program output in the editor.
+
+The core catalog includes values, arithmetic, logic, variables, conditions, loops, lists, functions, conversion, and console I/O. The visual document remains the source of truth; the C# view is a read-only preview with node-to-line source mapping. Generated programs target `net10.0`, build through the installed .NET SDK, and run in a child process rather than inside the editor.
+
+```csharp
+using System.Numerics;
+using System.Linq;
+using FishGfx.NodeGraph;
+
+VisualNodeCatalog catalog = VisualNodeCatalog.CreateCore();
+VisualProgram program = VisualProgram.CreateDefault(catalog, "HelloNodes");
+VisualGraph graph = program.Functions[0].Graph;
+VisualNode entry = graph.Nodes.Single();
+VisualNode text = graph.AddNode(CoreVisualNodes.TextLiteral, new Vector2(100, 200));
+VisualNode write = graph.AddNode(CoreVisualNodes.ConsoleWriteLine, new Vector2(500, 300));
+
+text.Properties["value"] = "Hello from nodes";
+graph.TryConnect(entry.GetOutput("next"), write.GetInput("in"), out _);
+graph.TryConnect(text.GetOutput("result"), write.GetInput("value"), out _);
+
+CSharpGenerationResult generated = new CSharpProgramGenerator().Generate(program);
+```
+
+Visual programs use the versioned `fishgfx.visual-program` schema and the `*.fishcode.json` extension. Unknown catalog nodes load as preserved disabled placeholders instead of being discarded. Use Ctrl+S/Ctrl+O to save and load, Ctrl+Z/Ctrl+Y for history, Ctrl+C/Ctrl+V for graph duplication, F5 to run, and F6 to toggle generated C#.
+
+Visual programs can also build or run headlessly:
+
+```powershell
+dotnet run --project FishGfx.NodeEditor/FishGfx.NodeEditor.csproj -- --build program.fishcode.json
+dotnet run --project FishGfx.NodeEditor/FishGfx.NodeEditor.csproj -- --run program.fishcode.json
+```
+
+The initial visual language deliberately exposes a curated console-oriented C# subset. Arbitrary assembly browsing, editable or bidirectional generated C#, async nodes, classes, exceptions, NuGet management, and breakpoint debugging are not part of this milestone.
+
+### Legacy function node graphs
 
 Public static methods marked with `[NodeFunction]` become placeable, strongly typed graph nodes. Ordinary parameters become input ports, return values become outputs, and `[NodeInline]` parameters become inline editable values.
 
@@ -379,7 +415,7 @@ registry.Register(typeof(MathNodes));
 
 Stable, caller-defined function IDs and named ports are part of the persisted schema. Connections require exact CLR type equality. Inputs accept one connection, outputs support fan-out, and evaluation runs in deterministic topological order while reporting cycles, invocation errors, and skipped dependents. Named `ValueTuple` returns are expanded into multiple outputs.
 
-Graph v2 layouts, inline values, stable function IDs, named ports, and viewport state can be saved and loaded through `NodeGraphJson`. The bundled editor uses Ctrl+S and Ctrl+O with `node-layout.json` beside the executable. A saved graph can also execute without creating an OpenGL window:
+Graph v2 layouts, inline values, stable function IDs, named ports, and viewport state remain supported through `NodeGraphJson`. Start the editor with `--legacy` to use the original reflected dataflow canvas. A saved graph can also execute without creating an OpenGL window:
 
 ```powershell
 dotnet run --project FishGfx.NodeEditor/FishGfx.NodeEditor.csproj -- --execute node-layout.json
@@ -411,7 +447,7 @@ Automatic mode uses a fixed animation time, captures each complete 1920×1080 sc
 
 - Add advanced text shaping, combining-mark handling, right-to-left layout, and supplementary Unicode support.
 - Add a general 2D path/stroke API with configurable joins, caps, arcs, and filled paths.
-- Add node-editor undo/redo, grouping, clipboard operations, and multi-selection.
+- Add reusable FishGfx and broader .NET node packs to the visual-program catalog.
 - Add greedy voxel meshing, general biome/world generation, collision, and world serialization.
 - Replace Windows-only bitmap dependencies as part of broader platform support.
 

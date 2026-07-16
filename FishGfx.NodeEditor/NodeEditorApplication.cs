@@ -24,7 +24,7 @@ internal sealed class NodeEditorApplication
 	private readonly InlineValueEditor editor = new InlineValueEditor();
 	private readonly List<string> typedCharacters = new List<string>();
 	private readonly bool autoMode;
-	private readonly string layoutPath = Path.Combine(AppContext.BaseDirectory, "node-layout.json");
+	private readonly string layoutPath;
 
 	private RenderWindow window;
 	private InputManager input;
@@ -42,6 +42,8 @@ internal sealed class NodeEditorApplication
 	internal NodeEditorApplication(string[] args)
 	{
 		autoMode = args.Any(a => string.Equals(a, "--auto", StringComparison.OrdinalIgnoreCase));
+		layoutPath = args.FirstOrDefault(argument => !argument.StartsWith("--", StringComparison.Ordinal))
+			?? Path.Combine(AppContext.BaseDirectory, "node-layout.json");
 		menu = new ContextMenu(session.Functions);
 	}
 
@@ -54,7 +56,7 @@ internal sealed class NodeEditorApplication
 			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf")
 		);
 		TrueTypeFont menuFont = new(
-			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Aaargh.ttf")
+			Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf")
 		);
 
 		renderer = new NodeRenderer(graphFont, menuFont);
@@ -424,7 +426,7 @@ internal sealed class NodeEditorApplication
 		try
 		{
 			session.Save(layoutPath, canvas.Capture());
-			fileStatus = "Saved node-layout.json";
+			fileStatus = "Saved " + Path.GetFileName(layoutPath);
 			fileStatusError = false;
 		}
 		catch (Exception ex)
@@ -447,7 +449,7 @@ internal sealed class NodeEditorApplication
 		selected = null;
 		draggedNode = null;
 		draggedPort = null;
-		fileStatus = "Loaded node-layout.json";
+		fileStatus = "Loaded " + Path.GetFileName(layoutPath);
 		fileStatusError = false;
 		return true;
 	}
