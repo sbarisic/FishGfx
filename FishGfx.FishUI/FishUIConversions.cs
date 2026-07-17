@@ -6,6 +6,35 @@ namespace FishGfx.FishUI;
 /// <summary>Coordinate, atlas, and color conversions shared by the FishUI backend.</summary>
 public static class FishUIConversions
 {
+	public static (Vector2 Position, Vector2 Size) ToFramebufferRectangle(
+		Vector2 position,
+		Vector2 size,
+		float logicalViewportHeight,
+		Vector2 contentScale
+	)
+	{
+		ValidateFinite(contentScale, nameof(contentScale));
+		if (contentScale.X <= 0 || contentScale.Y <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(contentScale));
+		}
+
+		Vector2 logicalPosition = ToFishGfxRectanglePosition(
+			position,
+			size,
+			logicalViewportHeight
+		);
+		Vector2 minimum = new(
+			MathF.Floor(logicalPosition.X * contentScale.X),
+			MathF.Floor(logicalPosition.Y * contentScale.Y)
+		);
+		Vector2 maximum = new(
+			MathF.Ceiling((logicalPosition.X + size.X) * contentScale.X),
+			MathF.Ceiling((logicalPosition.Y + size.Y) * contentScale.Y)
+		);
+		return (minimum, maximum - minimum);
+	}
+
 	public static Vector2 ToFishGfxPoint(Vector2 point, float viewportHeight)
 	{
 		ValidateViewportHeight(viewportHeight);

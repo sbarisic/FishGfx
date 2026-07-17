@@ -18,6 +18,20 @@ public sealed class FishUIIntegrationTests
 	}
 
 	[Fact]
+	public void ScissorRectangleUsesIndependentFramebufferScale()
+	{
+		(Vector2 position, Vector2 size) = FishUIConversions.ToFramebufferRectangle(
+			new Vector2(10.25f, 20.25f),
+			new Vector2(30.5f, 10.5f),
+			100,
+			new Vector2(1.5f, 2)
+		);
+
+		Assert.Equal(new Vector2(15, 138), position);
+		Assert.Equal(new Vector2(47, 22), size);
+	}
+
+	[Fact]
 	public void AtlasUvConversionAccountsForTopLeftSourceCoordinates()
 	{
 		(Vector2 minimum, Vector2 maximum) = FishUIConversions.ToAtlasUv(

@@ -145,14 +145,15 @@ public sealed partial class FishUIGraphicsBackend : global::FishUI.SimpleFishUIG
 	public override void BeginScissor(Vector2 position, Vector2 size)
 	{
 		RenderPass activePass = RequireDrawing();
-		Vector2 converted = FishUIConversions.ToFishGfxRectanglePosition(
+		(Vector2 converted, Vector2 framebufferSize) = FishUIConversions.ToFramebufferRectangle(
 			position,
 			size,
-			GetWindowHeight()
+			GetWindowHeight(),
+			window.ContentScale
 		);
 		AxisAlignedBoundingBox rectangle = AxisAlignedBoundingBox.FromPositionAndSize(
 			new Vector3(converted, 0),
-			new Vector3(size, 0)
+			new Vector3(framebufferSize, 0)
 		);
 		RenderState clipped = renderState with
 		{
