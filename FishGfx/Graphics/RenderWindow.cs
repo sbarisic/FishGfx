@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using System.Threading;
 using Glfw3;
 using Silk.NET.OpenGL;
 
@@ -7,10 +8,25 @@ namespace FishGfx.Graphics;
 
 public unsafe sealed partial class RenderWindow : IDisposable
 {
+	private readonly Thread ownerThread;
 	private Glfw.Window nativeWindow;
 	private Color[] pixelData = Array.Empty<Color>();
+	private Glfw.Monitor selectedMonitor;
+	private MonitorVideoMode? exclusiveVideoMode;
+	private Vector2 contentScale = Vector2.One;
+	private Vector2 windowedPosition;
+	private Vector2 windowedSize;
+	private IntPtr decoratedStyle;
+	private IntPtr decoratedExtendedStyle;
+	private WindowMode mode;
+	private int framebufferWidth;
+	private int framebufferHeight;
 	private bool captureCursor;
 	private bool showCursor = true;
+	private bool vSyncEnabled;
+	private bool hasWindowedBounds;
+	private bool decorationsRemoved;
+	private bool borderlessUsesAttachedMonitor;
 	private bool disposed;
 
 	public RenderWindow(
@@ -33,9 +49,23 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	public RenderWindow(RenderWindowOptions options)
 	{
+		ownerThread = Thread.CurrentThread;
 		ValidateOptions(options);
+		Internal_OpenGL.EnsureGlfwThread();
+		GlfwNativeExtensions.EnablePerMonitorDpiAwareness();
 		Internal_OpenGL.InitGLFW();
 		Glfw.WindowHint(Glfw.Hint.Resizable, options.Resizable);
+		selectedMonitor = ResolveInitialMonitor(options.MonitorIndex);
+		exclusiveVideoMode = options.ExclusiveVideoMode;
+
+		if (exclusiveVideoMode.HasValue
+			&& !GetMonitorInfo(selectedMonitor).Supports(exclusiveVideoMode.Value))
+		{
+			throw new ArgumentException(
+				"The selected monitor does not support the requested exclusive video mode.",
+				nameof(options)
+			);
+		}
 
 		OpenGlVersion selectedVersion = options.PreferredVersion;
 
@@ -73,25 +103,35 @@ public unsafe sealed partial class RenderWindow : IDisposable
 				actualVersion,
 				options.RequireExactVersion
 			);
+
+			RefreshWindowMetrics(false);
+			RegisterCallbacks();
+
+			if (options.CenterWindow)
+			{
+				Center();
+			}
+
+			CaptureWindowedBounds();
+			CaptureCursor = false;
+			Graphics = new GraphicsContext(this);
+			VSyncEnabled = options.VSync;
+
+			if (options.Mode != WindowMode.Windowed)
+			{
+				SetWindowMode(
+					options.Mode,
+					null,
+					options.ExclusiveVideoMode
+				);
+			}
 		}
 		catch
 		{
-			DestroyWindowAfterFailedInitialization();
+			CleanupAfterFailedInitialization();
 
 			throw;
 		}
-
-		Width = options.Width;
-		Height = options.Height;
-		RegisterCallbacks();
-
-		if (options.CenterWindow)
-		{
-			Center();
-		}
-
-		CaptureCursor = false;
-		Graphics = new GraphicsContext(this);
 	}
 
 	public event EventHandler<MouseMoveEventArgs> MouseMoved;
@@ -108,11 +148,27 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	public event EventHandler<WindowResizeEventArgs> Resized;
 
+	public event EventHandler<WindowResizeEventArgs> FramebufferResized;
+
+	public event EventHandler<ContentScaleChangedEventArgs> ContentScaleChanged;
+
+	public event EventHandler<WindowMoveEventArgs> Moved;
+
+	public event EventHandler<WindowModeChangedEventArgs> ModeChanged;
+
 	public int Width { get; private set; }
 
 	public int Height { get; private set; }
 
 	public Vector2 Size => new(Width, Height);
+
+	public int FramebufferWidth => framebufferWidth;
+
+	public int FramebufferHeight => framebufferHeight;
+
+	public Vector2 FramebufferSize => new(framebufferWidth, framebufferHeight);
+
+	public Vector2 ContentScale => contentScale;
 
 	public Vector2 MousePosition { get; private set; }
 
@@ -176,6 +232,7 @@ public unsafe sealed partial class RenderWindow : IDisposable
 	{
 		ThrowIfDisposed();
 		Glfw.PollEvents();
+		RefreshWindowMetrics(true);
 	}
 
 	public void MakeCurrent()
@@ -201,12 +258,15 @@ public unsafe sealed partial class RenderWindow : IDisposable
 	{
 		ThrowIfDisposed();
 
-		Vector2 desktopSize = GetDesktopResolution();
+		Glfw.Monitor targetMonitor = ResolveSelectedMonitor();
+		Glfw.GetMonitorPos(targetMonitor, out int monitorX, out int monitorY);
+		Glfw.VideoMode videoMode = Glfw.GetVideoMode(targetMonitor);
 		GetNativeWindowSize(out int width, out int height);
-		int x = (int)desktopSize.X / 2 - width / 2;
-		int y = (int)desktopSize.Y / 2 - height / 2;
+		int x = monitorX + videoMode.Width / 2 - width / 2;
+		int y = monitorY + videoMode.Height / 2 - height / 2;
 
 		Glfw.SetWindowPos(nativeWindow, x, y);
+		selectedMonitor = targetMonitor;
 	}
 
 	public void SetTitle(string title)
@@ -219,7 +279,7 @@ public unsafe sealed partial class RenderWindow : IDisposable
 	{
 		ThrowIfDisposed();
 		Graphics.MakeCurrent();
-		GetNativeWindowSize(out int width, out int height);
+		GetNativeFramebufferSize(out int width, out int height);
 
 		if (pixelData.Length != width * height)
 		{
@@ -242,7 +302,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	public Color GetPixel(int x, int y)
 	{
-		GetNativeWindowSize(out int width, out int height);
+		ThrowIfDisposed();
+		GetNativeFramebufferSize(out int width, out int height);
 
 		if (pixelData.Length == 0 || x < 0 || x >= width || y < 0 || y >= height)
 		{
@@ -261,6 +322,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 			return;
 		}
 
+		EnsureOwnerThread();
+
 		Glfw.SetWindowShouldClose(nativeWindow, true);
 		Graphics?.Dispose();
 		Glfw.DestroyWindow(nativeWindow);
@@ -275,6 +338,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	public static Vector2 GetDesktopResolution()
 	{
+		Internal_OpenGL.EnsureGlfwThread();
+		GlfwNativeExtensions.EnablePerMonitorDpiAwareness();
 		Internal_OpenGL.InitGLFW();
 
 		Glfw.VideoMode videoMode = Glfw.GetVideoMode(Glfw.GetPrimaryMonitor());
@@ -284,6 +349,7 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	internal void MakeNativeCurrent()
 	{
+		EnsureOwnerThread();
 		Glfw.MakeContextCurrent(nativeWindow);
 		Internal_OpenGL.InitOpenGL();
 		Internal_OpenGL.SetupOpenGL();
@@ -292,6 +358,7 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	internal void SwapNativeBuffers()
 	{
+		EnsureOwnerThread();
 		Glfw.SwapBuffers(nativeWindow);
 	}
 
@@ -355,6 +422,32 @@ public unsafe sealed partial class RenderWindow : IDisposable
 				"FishGfx requires OpenGL 4.0 or newer."
 			);
 		}
+
+		if (!Enum.IsDefined(options.Mode))
+		{
+			throw new ArgumentOutOfRangeException(nameof(options), "The window mode is invalid.");
+		}
+
+		if (options.MonitorIndex < -1)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(options),
+				"The monitor index must be -1 for the primary monitor or a non-negative index."
+			);
+		}
+
+		if (options.ExclusiveVideoMode is MonitorVideoMode videoMode)
+		{
+			if (options.Mode != WindowMode.ExclusiveFullscreen)
+			{
+				throw new ArgumentException(
+					"An exclusive video mode requires exclusive fullscreen startup mode.",
+					nameof(options)
+				);
+			}
+
+			ValidateVideoMode(videoMode, nameof(options));
+		}
 	}
 
 	internal static void ValidateCreatedContextVersion(
@@ -385,6 +478,11 @@ public unsafe sealed partial class RenderWindow : IDisposable
 		Glfw.GetWindowSize(nativeWindow, out width, out height);
 	}
 
+	private void GetNativeFramebufferSize(out int width, out int height)
+	{
+		Glfw.GetFramebufferSize(nativeWindow, out width, out height);
+	}
+
 	private void ApplyCursorMode()
 	{
 		Glfw.CursorMode mode = captureCursor
@@ -412,11 +510,41 @@ public unsafe sealed partial class RenderWindow : IDisposable
 		nativeWindow = Glfw.Window.None;
 	}
 
+	private void CleanupAfterFailedInitialization()
+	{
+		try
+		{
+			Graphics?.Dispose();
+		}
+		catch
+		{
+		}
+		finally
+		{
+			Graphics = null;
+			DestroyWindowAfterFailedInitialization();
+		}
+	}
+
 	private void ThrowIfDisposed()
 	{
 		if (disposed)
 		{
 			throw new ObjectDisposedException(nameof(RenderWindow));
 		}
+
+		EnsureOwnerThread();
+	}
+
+	private void EnsureOwnerThread()
+	{
+		if (!ReferenceEquals(Thread.CurrentThread, ownerThread))
+		{
+			throw new InvalidOperationException(
+				"RenderWindow operations may only run on the window's owning thread."
+			);
+		}
+
+		Internal_OpenGL.EnsureGlfwThread();
 	}
 }

@@ -22,7 +22,11 @@ public sealed partial class GraphicsContext : IDisposable
 
 		MakeCurrent();
 		Capabilities = ReadCapabilities();
-		Backbuffer = new RenderTarget(this, window.Width, window.Height);
+		Backbuffer = new RenderTarget(
+			this,
+			window.FramebufferWidth,
+			window.FramebufferHeight
+		);
 		Renderer = new ImmediateRenderer(this);
 	}
 

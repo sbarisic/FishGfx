@@ -12,6 +12,8 @@ public unsafe sealed partial class RenderWindow
 	private Glfw.CharFunc characterCallback;
 	private Glfw.ScrollFunc scrollCallback;
 	private Glfw.WindowSizeFunc windowSizeCallback;
+	private Glfw.FramebufferSizeFunc framebufferSizeCallback;
+	private Glfw.WindowPosFunc windowPositionCallback;
 
 	private void RegisterCallbacks()
 	{
@@ -103,12 +105,33 @@ public unsafe sealed partial class RenderWindow
 
 		Glfw.SetWindowSizeCallback(
 			nativeWindow,
-			windowSizeCallback = (_, width, height) =>
+			windowSizeCallback = (_, _, _) =>
 			{
-				Width = width;
-				Height = height;
-				Graphics?.ResizeBackbuffer(width, height);
-				Resized?.Invoke(this, new WindowResizeEventArgs(width, height));
+				RefreshWindowMetrics(true);
+
+				if (mode == WindowMode.Windowed)
+				{
+					CaptureWindowedBounds();
+				}
+			}
+		);
+
+		Glfw.SetFramebufferSizeCallback(
+			nativeWindow,
+			framebufferSizeCallback = (_, _, _) => RefreshWindowMetrics(true)
+		);
+
+		Glfw.SetWindowPosCallback(
+			nativeWindow,
+			windowPositionCallback = (_, x, y) =>
+			{
+				if (mode == WindowMode.Windowed)
+				{
+					CaptureWindowedBounds();
+				}
+
+				RefreshWindowMetrics(true);
+				Moved?.Invoke(this, new WindowMoveEventArgs(x, y));
 			}
 		);
 	}

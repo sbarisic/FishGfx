@@ -255,3 +255,41 @@ public sealed class WindowResizeEventArgs : EventArgs
 
 	public Vector2 Size => new(Width, Height);
 }
+
+public sealed class ContentScaleChangedEventArgs : EventArgs
+{
+	internal ContentScaleChangedEventArgs(Vector2 scale)
+	{
+		Scale = scale;
+	}
+
+	public Vector2 Scale { get; }
+}
+
+public sealed class WindowMoveEventArgs : EventArgs
+{
+	internal WindowMoveEventArgs(int x, int y)
+	{
+		X = x;
+		Y = y;
+	}
+
+	public int X { get; }
+
+	public int Y { get; }
+
+	public Vector2 Position => new(X, Y);
+}
+
+public sealed class WindowModeChangedEventArgs : EventArgs
+{
+	internal WindowModeChangedEventArgs(WindowMode previousMode, WindowMode mode)
+	{
+		PreviousMode = previousMode;
+		Mode = mode;
+	}
+
+	public WindowMode PreviousMode { get; }
+
+	public WindowMode Mode { get; }
+}

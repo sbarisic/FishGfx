@@ -12,6 +12,14 @@ public sealed class RenderWindowOptions
 
 	public bool CenterWindow { get; set; } = true;
 
+	public WindowMode Mode { get; set; }
+
+	public int MonitorIndex { get; set; } = -1;
+
+	public MonitorVideoMode? ExclusiveVideoMode { get; set; }
+
+	public bool VSync { get; set; }
+
 	public OpenGlVersion PreferredVersion { get; set; } = new(4, 6);
 
 	public OpenGlVersion MinimumVersion { get; set; } = new(4, 0);

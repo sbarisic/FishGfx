@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 using Glfw3;
 using Silk.NET.OpenGL;
 
@@ -15,6 +16,7 @@ internal static unsafe class Internal_OpenGL
 
 	private static bool glfwInitialized;
 	private static bool openGlInitialized;
+	private static Thread glfwOwnerThread;
 
 	internal static GL GL { get; private set; }
 
@@ -36,6 +38,8 @@ internal static unsafe class Internal_OpenGL
 
 	internal static void InitGLFW()
 	{
+		EnsureGlfwThread();
+
 		if (glfwInitialized)
 		{
 			return;
@@ -56,6 +60,33 @@ internal static unsafe class Internal_OpenGL
 			throw new InvalidOperationException($"GLFW ({error}): {message}");
 		});
 		glfwInitialized = true;
+	}
+
+	internal static void EnsureGlfwThread()
+	{
+		Thread currentThread = Thread.CurrentThread;
+		Thread ownerThread = Volatile.Read(ref glfwOwnerThread);
+
+		if (ownerThread == null)
+		{
+			ownerThread = Interlocked.CompareExchange(
+				ref glfwOwnerThread,
+				currentThread,
+				null
+			);
+
+			if (ownerThread == null)
+			{
+				ownerThread = currentThread;
+			}
+		}
+
+		if (!ReferenceEquals(ownerThread, currentThread))
+		{
+			throw new InvalidOperationException(
+				"GLFW operations must run on the thread that first initialized FishGfx windowing."
+			);
+		}
 	}
 
 	internal static void InitOpenGL()
