@@ -7,67 +7,6 @@ namespace FishGfx.Voxels;
 
 public sealed partial class VoxelRenderer : IDisposable
 {
-	private int BuildTransparentStream(Camera camera)
-	{
-		EnsureWritableTransparentMesh();
-		transparentFaces.Clear();
-		Vector3 cameraForward = camera.WorldForwardNormal;
-
-		for (int chunkIndex = 0; chunkIndex < visibleTransparentChunks.Count; chunkIndex++)
-		{
-			GpuChunk chunk = visibleTransparentChunks[chunkIndex];
-			Vector3 origin = chunk.Coordinate.WorldOrigin;
-
-			for (int faceIndex = 0; faceIndex < chunk.TransparentFaces.Length; faceIndex++)
-			{
-				VoxelTransparentFace face = chunk.TransparentFaces[faceIndex];
-				float depth = Vector3.Dot(face.Center + origin - camera.Position, cameraForward);
-				transparentFaces.Add(
-					new VoxelTransparentFaceInstance(
-						chunk.Coordinate,
-						faceIndex,
-						origin,
-						face,
-						depth
-					)
-				);
-			}
-		}
-
-		int required = VoxelTransparentStreamBuilder.CountVertices(transparentFaces);
-
-		if (transparentVertexBuffer.Length < required)
-		{
-			Array.Resize(
-				ref transparentVertexBuffer,
-				VoxelMesh.CalculateCapacity(transparentVertexBuffer.Length, required)
-			);
-		}
-
-		int vertexCount = VoxelTransparentStreamBuilder.BuildSorted(
-			transparentFaces,
-			transparentVertexBuffer
-		);
-		transparentMesh.Update(transparentVertexBuffer, vertexCount);
-		visibleTransparentFaces = transparentFaces.Count;
-		visibleTransparentVertices = vertexCount;
-
-		return checked(vertexCount * System.Runtime.InteropServices.Marshal.SizeOf<VoxelVertex>());
-	}
-
-	private void EnsureWritableTransparentMesh()
-	{
-		if (!transparentMesh.IsRetained)
-		{
-			return;
-		}
-
-		VoxelMesh previous = transparentMesh;
-		VoxelMesh replacement = new VoxelMesh(Graphics, BufferUsage.Stream);
-		transparentMesh = replacement;
-		previous.Dispose();
-	}
-
 	private void ProcessRemovedChunks()
 	{
 		while (removedChunks.TryDequeue(out ChunkCoordinate coordinate))
@@ -90,6 +29,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		activeGpuChunks.Remove(chunk);
 		activeSetDirty = true;
 		transparentGeometryRevision++;
+		transparentSourceDirty = true;
 		chunk.Dispose();
 	}
 
@@ -225,22 +165,6 @@ public sealed partial class VoxelRenderer : IDisposable
 		return result;
 	}
 
-	private static ulong AddSignature(ulong signature, ChunkCoordinate coordinate)
-	{
-		signature = AddSignature(signature, coordinate.X);
-		signature = AddSignature(signature, coordinate.Y);
-		return AddSignature(signature, coordinate.Z);
-	}
-
-	private static ulong AddSignature(ulong signature, long value)
-	{
-		unchecked
-		{
-			signature ^= (ulong)value;
-			return signature * 1099511628211UL;
-		}
-	}
-
 	private void ThrowIfDisposed()
 	{
 		if (disposed)
@@ -262,12 +186,13 @@ public sealed partial class VoxelRenderer : IDisposable
 		public AxisAlignedBoundingBox Bounds;
 		public VoxelGeometryAllocation Opaque;
 		public VoxelGeometryAllocation Cutout;
-		public VoxelTransparentFace[] TransparentFaces = Array.Empty<VoxelTransparentFace>();
+		public VoxelTransparentAllocation Transparent;
 
 		public void Dispose()
 		{
 			Opaque?.ReleaseOwner();
 			Cutout?.ReleaseOwner();
+			Transparent?.ReleaseOwner();
 		}
 	}
 

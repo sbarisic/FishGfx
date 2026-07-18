@@ -9,7 +9,7 @@ internal static class VoxelTransparentCachePolicy
 		bool hasCache,
 		VoxelTransparentCacheKey cached,
 		long geometryRevision,
-		ulong visibleSignature,
+		long activeSetGeneration,
 		Vector3 cameraPosition,
 		Vector3 cameraForward,
 		float distanceThreshold,
@@ -26,9 +26,9 @@ internal static class VoxelTransparentCachePolicy
 			return VoxelTransparentInvalidationReason.Geometry;
 		}
 
-		if (cached.VisibleSignature != visibleSignature)
+		if (cached.ActiveSetGeneration != activeSetGeneration)
 		{
-			return VoxelTransparentInvalidationReason.Visibility;
+			return VoxelTransparentInvalidationReason.ActiveSet;
 		}
 
 		float distanceSquared = Vector3.DistanceSquared(cached.CameraPosition, cameraPosition);

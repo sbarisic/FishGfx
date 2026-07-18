@@ -5,7 +5,7 @@ public enum VoxelTransparentInvalidationReason
 	None,
 	FirstFrame,
 	Geometry,
-	Visibility,
+	ActiveSet,
 	Translation,
 	Rotation,
 }
@@ -38,7 +38,26 @@ public readonly struct VoxelRendererFrameDiagnostics
 		int cullingAndCommandAllocatedBytes,
 		int submissionAllocatedBytes,
 		bool transparentCacheHit,
-		VoxelTransparentInvalidationReason transparentInvalidationReason
+		VoxelTransparentInvalidationReason transparentInvalidationReason,
+		int transparentFaceCount,
+		int transparentIndexCount,
+		double transparentSourceBuildMilliseconds,
+		double transparentWorkerSortMilliseconds,
+		double transparentResultApplyMilliseconds,
+		double transparentIndexUploadMilliseconds,
+		double transparentGpuMilliseconds,
+		int transparentMainThreadAllocatedBytes,
+		int transparentWorkerAllocatedBytes,
+		bool transparentOrderingPending,
+		bool transparentOrderingRunning,
+		int transparentCoalescedRequests,
+		int transparentStaleResults,
+		int transparentDroppedResults,
+		long transparentOrderingGeometryRevision,
+		double transparentOrderingAgeSeconds,
+		float transparentOrderingCameraDistanceDelta,
+		float transparentOrderingCameraAngleDeltaDegrees,
+		VoxelTransparentInvalidationReason transparentOrderingReason
 	)
 	{
 		CullingMilliseconds = cullingMilliseconds;
@@ -67,6 +86,25 @@ public readonly struct VoxelRendererFrameDiagnostics
 		SubmissionAllocatedBytes = submissionAllocatedBytes;
 		TransparentCacheHit = transparentCacheHit;
 		TransparentInvalidationReason = transparentInvalidationReason;
+		TransparentFaceCount = transparentFaceCount;
+		TransparentIndexCount = transparentIndexCount;
+		TransparentSourceBuildMilliseconds = transparentSourceBuildMilliseconds;
+		TransparentWorkerSortMilliseconds = transparentWorkerSortMilliseconds;
+		TransparentResultApplyMilliseconds = transparentResultApplyMilliseconds;
+		TransparentIndexUploadMilliseconds = transparentIndexUploadMilliseconds;
+		TransparentGpuMilliseconds = transparentGpuMilliseconds;
+		TransparentMainThreadAllocatedBytes = transparentMainThreadAllocatedBytes;
+		TransparentWorkerAllocatedBytes = transparentWorkerAllocatedBytes;
+		TransparentOrderingPending = transparentOrderingPending;
+		TransparentOrderingRunning = transparentOrderingRunning;
+		TransparentCoalescedRequests = transparentCoalescedRequests;
+		TransparentStaleResults = transparentStaleResults;
+		TransparentDroppedResults = transparentDroppedResults;
+		TransparentOrderingGeometryRevision = transparentOrderingGeometryRevision;
+		TransparentOrderingAgeSeconds = transparentOrderingAgeSeconds;
+		TransparentOrderingCameraDistanceDelta = transparentOrderingCameraDistanceDelta;
+		TransparentOrderingCameraAngleDeltaDegrees = transparentOrderingCameraAngleDeltaDegrees;
+		TransparentOrderingReason = transparentOrderingReason;
 	}
 
 	public double CullingMilliseconds { get; }
@@ -99,7 +137,28 @@ public readonly struct VoxelRendererFrameDiagnostics
 	public int TransparentUploadBytes { get; }
 	public int CullingAndCommandAllocatedBytes { get; }
 	public int SubmissionAllocatedBytes { get; }
-	public int ManagedAllocatedBytes => CullingAndCommandAllocatedBytes + SubmissionAllocatedBytes;
+	public int ManagedAllocatedBytes => CullingAndCommandAllocatedBytes
+		+ SubmissionAllocatedBytes
+		+ TransparentMainThreadAllocatedBytes;
 	public bool TransparentCacheHit { get; }
 	public VoxelTransparentInvalidationReason TransparentInvalidationReason { get; }
+	public int TransparentFaceCount { get; }
+	public int TransparentIndexCount { get; }
+	public double TransparentSourceBuildMilliseconds { get; }
+	public double TransparentWorkerSortMilliseconds { get; }
+	public double TransparentResultApplyMilliseconds { get; }
+	public double TransparentIndexUploadMilliseconds { get; }
+	public double TransparentGpuMilliseconds { get; }
+	public int TransparentMainThreadAllocatedBytes { get; }
+	public int TransparentWorkerAllocatedBytes { get; }
+	public bool TransparentOrderingPending { get; }
+	public bool TransparentOrderingRunning { get; }
+	public int TransparentCoalescedRequests { get; }
+	public int TransparentStaleResults { get; }
+	public int TransparentDroppedResults { get; }
+	public long TransparentOrderingGeometryRevision { get; }
+	public double TransparentOrderingAgeSeconds { get; }
+	public float TransparentOrderingCameraDistanceDelta { get; }
+	public float TransparentOrderingCameraAngleDeltaDegrees { get; }
+	public VoxelTransparentInvalidationReason TransparentOrderingReason { get; }
 }

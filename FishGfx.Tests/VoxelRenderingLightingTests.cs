@@ -221,34 +221,19 @@ public partial class VoxelRenderingLightingTests
 		}
 
 		Vector3 origin = new(32, -16, 48);
-		List<VoxelTransparentFaceInstance> instances = mesh.TransparentFaces
-			.Select(
-				(face, index) => new VoxelTransparentFaceInstance(
-					new ChunkCoordinate(2, -1, 3),
-					index,
-					origin,
-					face
-				)
-			)
-			.ToList();
-		VoxelVertex[] stream = VoxelTransparentStreamBuilder.Build(
-			new Vector3(32, -16, 80),
-			-Vector3.UnitZ,
-			instances
-		);
-		int destination = 0;
-
-		foreach (VoxelTransparentFaceInstance instance in instances)
+		foreach (VoxelTransparentFace face in mesh.TransparentFaces)
 		{
-			foreach (VoxelVertex source in instance.Face.Vertices)
+			for (int vertexIndex = 0; vertexIndex < face.VertexArray.Length; vertexIndex++)
 			{
-				Assert.Equal(source.Position + origin, stream[destination].Position);
+				VoxelVertex source = face.VertexArray[vertexIndex];
+				VoxelVertex worldVertex = source;
+				worldVertex.Position += origin;
+				Assert.Equal(source.Position + origin, worldVertex.Position);
 				Assert.Equal(
 					source.PackedLightChannels,
-					stream[destination].PackedLightChannels
+					worldVertex.PackedLightChannels
 				);
-				Assert.Equal(source.WaveParameters, stream[destination].WaveParameters);
-				destination++;
+				Assert.Equal(source.WaveParameters, worldVertex.WaveParameters);
 			}
 		}
 	}

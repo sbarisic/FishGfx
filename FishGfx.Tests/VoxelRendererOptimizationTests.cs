@@ -42,13 +42,13 @@ public sealed class VoxelRendererOptimizationTests
 	[Theory]
 	[InlineData(false, 4, 10, 0, 0, VoxelTransparentInvalidationReason.FirstFrame)]
 	[InlineData(true, 5, 10, 0, 0, VoxelTransparentInvalidationReason.Geometry)]
-	[InlineData(true, 4, 11, 0, 0, VoxelTransparentInvalidationReason.Visibility)]
+	[InlineData(true, 4, 11, 0, 0, VoxelTransparentInvalidationReason.ActiveSet)]
 	[InlineData(true, 4, 10, 0.25f, 0, VoxelTransparentInvalidationReason.Translation)]
 	[InlineData(true, 4, 10, 0, 1.1f, VoxelTransparentInvalidationReason.Rotation)]
 	public void TransparentCacheReportsDeterministicInvalidationReasons(
 		bool hasCache,
 		long geometry,
-		ulong signature,
+		long signature,
 		float translation,
 		float rotationDegrees,
 		VoxelTransparentInvalidationReason expected

@@ -22,17 +22,16 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		gpuTimer.Poll();
+		RefreshActiveSetIfNeeded(camera.Position, distance);
+		UpdateTransparentOrdering(camera, distance);
 		long allocatedStart = GC.GetAllocatedBytesForCurrentThread();
 		long cullingStart = Stopwatch.GetTimestamp();
-		RefreshActiveSetIfNeeded(camera.Position, distance);
 		ViewFrustum frustum = ViewFrustum.FromCamera(camera);
 		float distanceSquared = distance * distance;
 		Vector3 cameraForward = camera.WorldForwardNormal;
 		visibleOpaque.Clear();
 		visibleCutout.Clear();
-		visibleTransparentChunks.Clear();
 		visibleChunks = 0;
-		ulong transparentSignature = 14695981039346656037UL;
 
 		for (int chunkIndex = 0; chunkIndex < activeGpuChunks.Count; chunkIndex++)
 		{
@@ -68,13 +67,6 @@ public sealed partial class VoxelRenderer : IDisposable
 			{
 				visibleCutout.Add(new VoxelPassEntry(chunk.Cutout, chunk.Coordinate, depth));
 			}
-
-			if (chunk.TransparentFaces.Length > 0)
-			{
-				visibleTransparentChunks.Add(chunk);
-				transparentSignature = AddSignature(transparentSignature, chunk.Coordinate);
-				transparentSignature = AddSignature(transparentSignature, chunk.Revision);
-			}
 		}
 
 		visibleOpaque.Sort(ComparePassEntries);
@@ -96,46 +88,45 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		double commandBuildMilliseconds = Stopwatch.GetElapsedTime(commandStart).TotalMilliseconds;
-		VoxelTransparentInvalidationReason invalidationReason = GetTransparentInvalidationReason(
-			transparentGeometryRevision,
-			transparentSignature,
-			camera.Position,
-			cameraForward
-		);
-		bool transparentCacheHit = invalidationReason == VoxelTransparentInvalidationReason.None;
-		double transparentBuildMilliseconds = 0;
-		int transparentUploadBytes = 0;
-
-		if (!transparentCacheHit)
-		{
-			long transparentStart = Stopwatch.GetTimestamp();
-			transparentUploadBytes = BuildTransparentStream(camera);
-			transparentBuildMilliseconds = Stopwatch.GetElapsedTime(transparentStart).TotalMilliseconds;
-			transparentCacheKey = new VoxelTransparentCacheKey(
+		bool transparentHasPendingRequest = transparentOrdering.HasPending;
+		bool transparentWorkerRunning = transparentOrdering.IsRunning;
+		bool transparentPending = transparentHasPendingRequest || transparentWorkerRunning;
+		bool transparentCacheHit = !transparentPending
+			&& transparentSourceBuildMilliseconds == 0
+			&& transparentIndexUploadMilliseconds == 0
+			&& GetTransparentInvalidationReason(
 				transparentGeometryRevision,
-				transparentSignature,
+				activeSetGeneration,
 				camera.Position,
 				cameraForward
-			);
-			hasTransparentCache = true;
-		}
+			) == VoxelTransparentInvalidationReason.None;
 
-		if (transparentMesh.VertexCount > 0)
+		if (transparentSnapshot?.IndexCount > 0)
 		{
 			SubmitTransparentSnapshot(queue, camera);
 			passSubmissions++;
 		}
 
-		int transparentDrawCalls = transparentMesh.VertexCount > 0 ? 1 : 0;
+		int transparentDrawCalls = transparentSnapshot?.IndexCount > 0 ? 1 : 0;
 		int cullingAndCommandAllocatedBytes = checked(
 			(int)(GC.GetAllocatedBytesForCurrentThread() - allocatedStart)
 		);
+		double transparentOrderingAgeSeconds = transparentSnapshot == null
+			? 0
+			: Stopwatch.GetElapsedTime(transparentSnapshot.CompletedTimestamp).TotalSeconds;
+		float transparentCameraDistanceDelta = transparentSnapshot == null
+			? 0
+			: Vector3.Distance(transparentSnapshot.CameraPosition, camera.Position);
+		float transparentCameraAngleDelta = transparentSnapshot == null
+			? 0
+			: GetAngleDegrees(transparentSnapshot.CameraForward, cameraForward);
 		frameDiagnostics = new VoxelRendererFrameDiagnostics(
 			cullingMilliseconds,
 			commandBuildMilliseconds,
 			lastSubmissionMilliseconds,
 			gpuTimer.LastMilliseconds,
-			transparentBuildMilliseconds,
+			transparentSourceBuildMilliseconds
+				+ transparentResultApplyMilliseconds,
 			meshSchedulingMilliseconds,
 			meshUploadMilliseconds,
 			scheduledMeshes,
@@ -152,12 +143,34 @@ public sealed partial class VoxelRenderer : IDisposable
 			indirectCommandCount,
 			opaquePageGroups + cutoutPageGroups,
 			passSubmissions,
-			transparentUploadBytes,
+			transparentIndexUploadBytes,
 			cullingAndCommandAllocatedBytes,
 			lastSubmissionAllocatedBytes,
 			transparentCacheHit,
-			invalidationReason
+			transparentPending
+				? transparentLastRequestReason
+				: VoxelTransparentInvalidationReason.None,
+			transparentSnapshot?.FaceCount ?? 0,
+			transparentSnapshot?.IndexCount ?? 0,
+			transparentSourceBuildMilliseconds,
+			transparentSortMilliseconds,
+			transparentResultApplyMilliseconds,
+			transparentIndexUploadMilliseconds,
+			transparentGpuTimer.LastMilliseconds,
+			transparentMainThreadAllocatedBytes,
+			transparentWorkerAllocatedBytes,
+			transparentHasPendingRequest,
+			transparentWorkerRunning,
+			transparentOrdering.CoalescedRequests,
+			transparentStaleResults,
+			transparentOrdering.DroppedResults,
+			transparentSnapshot?.GeometryRevision ?? 0,
+			transparentOrderingAgeSeconds,
+			transparentCameraDistanceDelta,
+			transparentCameraAngleDelta,
+			transparentSnapshot?.Reason ?? VoxelTransparentInvalidationReason.None
 		);
+		ResetTransparentFrameWorkDiagnostics();
 	}
 
 	private DrawVoxelPagesCommand SubmitPageSnapshot(RenderQueue queue, Camera camera)
@@ -199,14 +212,14 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	private void SubmitTransparentSnapshot(RenderQueue queue, Camera camera)
 	{
-		DrawVoxelMeshCommand command = new(
-			transparentMesh,
+		DrawVoxelIndexedCommand command = new(
+			transparentSnapshot,
 			atlasTexture,
 			waveShader,
 			transparentState,
 			sun,
-			alphaCutoff: -1,
-			fog
+			fog,
+			transparentGpuTimer
 		);
 
 		try
@@ -231,20 +244,26 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	private VoxelTransparentInvalidationReason GetTransparentInvalidationReason(
 		long geometryRevision,
-		ulong visibleSignature,
+		long activeSetGeneration,
 		Vector3 cameraPosition,
 		Vector3 cameraForward
 	)
 	{
 		return VoxelTransparentCachePolicy.Evaluate(
-			hasTransparentCache,
-			transparentCacheKey,
+			hasTransparentRequestKey,
+			transparentRequestKey,
 			geometryRevision,
-			visibleSignature,
+			activeSetGeneration,
 			cameraPosition,
 			cameraForward,
 			options.TransparentResortDistance,
 			options.TransparentResortAngleDegrees
 		);
+	}
+
+	private static float GetAngleDegrees(Vector3 left, Vector3 right)
+	{
+		float dot = Math.Clamp(Vector3.Dot(left, right), -1, 1);
+		return MathF.Acos(dot) * (180f / MathF.PI);
 	}
 }

@@ -6,7 +6,7 @@ namespace FishGfx.Voxels;
 
 public sealed partial class VoxelRenderer
 {
-	private void RefreshActiveSetIfNeeded(Vector3 cameraPosition, float renderDistance)
+	private bool RefreshActiveSetIfNeeded(Vector3 cameraPosition, float renderDistance)
 	{
 		float refreshDistanceSquared = options.ActiveSetRefreshDistance
 			* options.ActiveSetRefreshDistance;
@@ -18,7 +18,7 @@ public sealed partial class VoxelRenderer
 		{
 			candidateChunks = gpuChunks.Count;
 			inactiveCachedChunks = gpuChunks.Count - activeGpuChunks.Count;
-			return;
+			return false;
 		}
 
 		HashSet<ChunkCoordinate> previous = new(activeCoordinates);
@@ -50,5 +50,8 @@ public sealed partial class VoxelRenderer
 		activeSetDirty = false;
 		candidateChunks = gpuChunks.Count;
 		inactiveCachedChunks = gpuChunks.Count - activeGpuChunks.Count;
+		activeSetGeneration++;
+		transparentSourceDirty = true;
+		return true;
 	}
 }

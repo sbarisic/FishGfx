@@ -286,63 +286,7 @@ public partial class VoxelTests
 	}
 
 	[Fact]
-	public void TransparentStreamSortsBackToFrontAndAppliesChunkOrigins()
-	{
-		VoxelVertex[] nearVertices =
-		{
-			new VoxelVertex(new Vector3(1, 0, 0), Color.Red, Vector2.Zero, Vector3.UnitZ)
-			{
-				WaveParameters = new Vector4(0.1f, 2, 3, 1),
-				PackedLightChannels = new Color(17, 34, 51, 68),
-			},
-		};
-		VoxelVertex[] farVertices =
-		{
-			new VoxelVertex(new Vector3(2, 0, 0), Color.Blue, Vector2.Zero, Vector3.UnitZ),
-		};
-		VoxelTransparentFace near = new VoxelTransparentFace(new Vector3(0, 0, -2), nearVertices);
-		VoxelTransparentFace far = new VoxelTransparentFace(new Vector3(0, 0, -10), farVertices);
-		List<VoxelTransparentFaceInstance> faces = new()
-		{
-			new VoxelTransparentFaceInstance(new ChunkCoordinate(0, 0, 0), 0, new Vector3(10, 0, 0), near),
-			new VoxelTransparentFaceInstance(new ChunkCoordinate(1, 0, 0), 0, new Vector3(20, 0, 0), far),
-		};
-
-		VoxelVertex[] stream = VoxelTransparentStreamBuilder.Build(Vector3.Zero, -Vector3.UnitZ, faces);
-
-		Assert.Equal(Color.Blue, stream[0].Color);
-		Assert.Equal(new Vector3(22, 0, 0), stream[0].Position);
-		Assert.Equal(Color.Red, stream[1].Color);
-		Assert.Equal(new Vector3(11, 0, 0), stream[1].Position);
-		Assert.Equal(new Vector4(0.1f, 2, 3, 1), stream[1].WaveParameters);
-		Assert.Equal(new Color(17, 34, 51, 68), stream[1].PackedLightChannels);
-	}
-
-	[Fact]
-	public void TransparentStreamUsesPrecomputedDepthAndStableCoordinateTies()
-	{
-		VoxelTransparentFace face = new VoxelTransparentFace(
-			Vector3.Zero,
-			new[] { new VoxelVertex(Vector3.Zero, Color.White, Vector2.Zero, Vector3.UnitY) }
-		);
-		List<VoxelTransparentFaceInstance> faces = new()
-		{
-			new VoxelTransparentFaceInstance(new ChunkCoordinate(1, 0, 0), 0, Vector3.Zero, face, 5),
-			new VoxelTransparentFaceInstance(new ChunkCoordinate(0, 0, 0), 0, Vector3.Zero, face, 5),
-			new VoxelTransparentFaceInstance(new ChunkCoordinate(2, 0, 0), 0, Vector3.Zero, face, 10),
-		};
-		VoxelVertex[] destination = new VoxelVertex[3];
-
-		int count = VoxelTransparentStreamBuilder.BuildSorted(faces, destination);
-
-		Assert.Equal(3, count);
-		Assert.Equal(new ChunkCoordinate(2, 0, 0), faces[0].Coordinate);
-		Assert.Equal(new ChunkCoordinate(0, 0, 0), faces[1].Coordinate);
-		Assert.Equal(new ChunkCoordinate(1, 0, 0), faces[2].Coordinate);
-	}
-
-	[Fact]
-	public void TransparentCacheKeyChangesForCameraVisibilityAndGeometry()
+	public void TransparentCacheKeyChangesForActiveSetCameraAndGeometry()
 	{
 		VoxelTransparentCacheKey baseline = new VoxelTransparentCacheKey(
 			4,

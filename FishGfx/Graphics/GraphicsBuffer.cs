@@ -62,6 +62,17 @@ public unsafe sealed class GraphicsBuffer : GraphicsResource
 		Allocate(sizeInBytes);
 	}
 
+	/// <summary>
+	/// Replaces the buffer's data store without changing its size or descriptor.
+	/// Existing contents become undefined, allowing streaming callers to avoid
+	/// synchronizing with commands that still consume the previous store.
+	/// </summary>
+	public void DiscardContents()
+	{
+		EnsureCurrentOwner();
+		Allocate(SizeInBytes);
+	}
+
 	public void Write<T>(
 		ReadOnlySpan<T> data,
 		int destinationByteOffset = 0

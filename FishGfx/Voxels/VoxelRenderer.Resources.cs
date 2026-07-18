@@ -15,6 +15,11 @@ public sealed partial class VoxelRenderer : IDisposable
 		disposed = true;
 		world.ChunkRemoved -= OnChunkRemoved;
 		scheduler.Dispose();
+		transparentOrdering.Dispose();
+		transparentSnapshot?.Dispose();
+		transparentSnapshot = null;
+		transparentSource?.ReleaseOwner();
+		transparentSource = null;
 
 		foreach (VoxelMeshData pending in pendingUploads)
 		{
@@ -32,7 +37,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		orderedGpuChunks.Clear();
 		activeGpuChunks.Clear();
 		activeCoordinates.Clear();
-		transparentMesh.Dispose();
+		transparentIndexRing.Dispose();
+		transparentGeometry.Dispose();
+		transparentGpuTimer.Dispose();
 		gpuTimer.Dispose();
 		indirectBuffer.Dispose();
 		cutoutGeometry.Dispose();
@@ -69,8 +76,6 @@ public sealed partial class VoxelRenderer : IDisposable
 		gpuChunk.Revision = result.Revision;
 		gpuChunk.LightRevision = result.LightRevision;
 		gpuChunk.Bounds = result.Bounds;
-		gpuChunk.TransparentFaces = result.TransparentFaces;
-
 		gpuChunk.Opaque = opaqueGeometry.Update(
 			gpuChunk.Opaque,
 			result.OpaqueVertexSpan,
@@ -81,9 +86,16 @@ public sealed partial class VoxelRenderer : IDisposable
 			result.CutoutVertexSpan,
 			result.Coordinate.WorldOrigin
 		);
+		gpuChunk.Transparent = transparentGeometry.Update(
+			gpuChunk.Transparent,
+			result.TransparentFaces,
+			result.Coordinate,
+			result.Coordinate.WorldOrigin
+		);
 		opaqueVertices += gpuChunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices += gpuChunk.Cutout?.VertexCount ?? 0;
 		transparentGeometryRevision++;
+		transparentSourceDirty = true;
 		activeSetDirty = true;
 	}
 

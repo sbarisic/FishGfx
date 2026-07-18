@@ -264,7 +264,10 @@ public partial class VoxelTests
 	public void GpuVoxelImplementationTypesAreNotPublicApi()
 	{
 		Assert.False(typeof(VoxelMesh).IsPublic);
-		Assert.False(typeof(DrawVoxelMeshCommand).IsPublic);
+		Assert.False(typeof(DrawVoxelIndexedCommand).IsPublic);
+		Assert.False(typeof(VoxelTransparentGeometryStore).IsPublic);
+		Assert.False(typeof(VoxelTransparentOrderingScheduler).IsPublic);
+		Assert.False(typeof(VoxelTransparentIndexRing).IsPublic);
 		Assert.False(typeof(DrawVoxelPagesCommand).IsPublic);
 	}
 

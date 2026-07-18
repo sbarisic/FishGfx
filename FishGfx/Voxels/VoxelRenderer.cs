@@ -22,12 +22,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly HashSet<ChunkCoordinate> activeCoordinates = new HashSet<ChunkCoordinate>();
 	private readonly List<VoxelPassEntry> visibleOpaque = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> visibleCutout = new List<VoxelPassEntry>();
-	private readonly List<GpuChunk> visibleTransparentChunks = new List<GpuChunk>();
 	private readonly List<VoxelMeshData> pendingUploads = new List<VoxelMeshData>();
-	private readonly List<VoxelTransparentFaceInstance> transparentFaces =
-		new List<VoxelTransparentFaceInstance>();
 	private readonly ConcurrentQueue<ChunkCoordinate> removedChunks = new ConcurrentQueue<ChunkCoordinate>();
-	private VoxelMesh transparentMesh;
 	private readonly ShaderProgram voxelShader;
 	private readonly ShaderProgram waveShader;
 	private readonly ShaderStage vertexShader;
@@ -37,8 +33,12 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly RenderState transparentState;
 	private readonly VoxelGeometryPagePool opaqueGeometry;
 	private readonly VoxelGeometryPagePool cutoutGeometry;
+	private readonly VoxelTransparentGeometryStore transparentGeometry;
+	private readonly VoxelTransparentOrderingScheduler transparentOrdering;
+	private readonly VoxelTransparentIndexRing transparentIndexRing;
 	private readonly GraphicsBuffer indirectBuffer;
 	private readonly VoxelGpuTimer gpuTimer;
+	private readonly VoxelGpuTimer transparentGpuTimer;
 	private bool disposed;
 	private int acceptedMeshes;
 	private int discardedMeshes;
@@ -48,9 +48,22 @@ public sealed partial class VoxelRenderer : IDisposable
 	private int opaqueVertices;
 	private int cutoutVertices;
 	private long transparentGeometryRevision;
-	private VoxelTransparentCacheKey transparentCacheKey;
-	private bool hasTransparentCache;
-	private VoxelVertex[] transparentVertexBuffer = Array.Empty<VoxelVertex>();
+	private long activeSetGeneration;
+	private long transparentRequestSequence;
+	private VoxelTransparentOrderingSource transparentSource;
+	private VoxelTransparentDrawSnapshot transparentSnapshot;
+	private VoxelTransparentCacheKey transparentRequestKey;
+	private bool hasTransparentRequestKey;
+	private bool transparentSourceDirty = true;
+	private int transparentStaleResults;
+	private double transparentSourceBuildMilliseconds;
+	private double transparentSortMilliseconds;
+	private double transparentResultApplyMilliseconds;
+	private double transparentIndexUploadMilliseconds;
+	private int transparentIndexUploadBytes;
+	private int transparentMainThreadAllocatedBytes;
+	private int transparentWorkerAllocatedBytes;
+	private VoxelTransparentInvalidationReason transparentLastRequestReason;
 	private VoxelRendererFrameDiagnostics frameDiagnostics;
 	private double meshSchedulingMilliseconds;
 	private double meshUploadMilliseconds;
@@ -139,15 +152,24 @@ public sealed partial class VoxelRenderer : IDisposable
 		);
 		voxelShader = graphics.CreateShaderProgram(vertexShader, fragmentShader);
 		waveShader = graphics.CreateShaderProgram(waveVertexShader, fragmentShader);
-		transparentMesh = new VoxelMesh(graphics, BufferUsage.Stream);
 		opaqueGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
 		cutoutGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
+		transparentGeometry = new VoxelTransparentGeometryStore(
+			graphics,
+			this.options.GeometryPageSizeBytes
+		);
+		transparentOrdering = new VoxelTransparentOrderingScheduler();
+		transparentIndexRing = new VoxelTransparentIndexRing(graphics);
 		indirectBuffer = graphics.CreateBuffer(new GraphicsBufferDescriptor(
 			64 * 1024,
 			BufferBindFlags.Indirect,
 			BufferUsage.Stream
 		));
 		gpuTimer = new VoxelGpuTimer(graphics)
+		{
+			Enabled = this.options.GpuProfilingEnabled,
+		};
+		transparentGpuTimer = new VoxelGpuTimer(graphics)
 		{
 			Enabled = this.options.GpuProfilingEnabled,
 		};
@@ -177,7 +199,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		atlasTexture = atlas;
 	}
 
-	public bool IsIdle => scheduler.PendingCount == 0 && pendingUploads.Count == 0;
+	public bool IsIdle => scheduler.PendingCount == 0
+		&& pendingUploads.Count == 0
+		&& transparentOrdering.IsIdle;
 
 	public bool IsCullingEnabled
 	{
@@ -237,6 +261,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		{
 			ThrowIfDisposed();
 			gpuTimer.Enabled = value;
+			transparentGpuTimer.Enabled = value;
 			options.GpuProfilingEnabled = value;
 		}
 	}
@@ -279,7 +304,10 @@ public sealed partial class VoxelRenderer : IDisposable
 			cullingEnabled
 		);
 
-		return UpdateMeshesCore(focus, meshUploadBudget);
+		int uploaded = UpdateMeshesCore(focus, meshUploadBudget);
+		RefreshActiveSetIfNeeded(camera.Position, options.MaxRenderDistance);
+		UpdateTransparentOrdering(camera, options.MaxRenderDistance);
+		return uploaded;
 	}
 
 	private int UpdateMeshesCore(
