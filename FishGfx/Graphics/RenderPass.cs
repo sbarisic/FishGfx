@@ -34,6 +34,7 @@ public sealed partial class RenderPass : IDisposable
 
 		try
 		{
+			context.BindingCache.Invalidate();
 			target.Bind(FramebufferTarget.Framebuffer);
 			Internal_OpenGL.GL.Viewport(0, 0, (uint)target.Width, (uint)target.Height);
 			ClearForLoadActions(descriptor);
@@ -158,6 +159,7 @@ public sealed partial class RenderPass : IDisposable
 		}
 		finally
 		{
+			context.BindingCache.Invalidate();
 			frame.EndPass(this);
 		}
 	}

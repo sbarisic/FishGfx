@@ -196,7 +196,7 @@ public partial class VoxelTests
 			new VoxelAtlasLayout(2, 2, 32, 32),
 			maxWorkers: 1
 		);
-		VoxelMeshingFocus focus = new(camera, 100, cullingEnabled: true);
+		VoxelMeshingFocus focus = new(camera, 100, schedulingMargin: 32, cullingEnabled: true);
 
 		Assert.Equal(1, scheduler.SchedulePending(focus));
 		VoxelMeshData result = WaitForResult(scheduler);
@@ -344,14 +344,19 @@ public partial class VoxelTests
 	[Fact]
 	public void TransparentCacheKeyChangesForCameraVisibilityAndGeometry()
 	{
-		VoxelTransparentCacheKey baseline = new VoxelTransparentCacheKey(4, 10, Matrix4x4.Identity);
+		VoxelTransparentCacheKey baseline = new VoxelTransparentCacheKey(
+			4,
+			10,
+			Vector3.Zero,
+			-Vector3.UnitZ
+		);
 
-		Assert.Equal(baseline, new VoxelTransparentCacheKey(4, 10, Matrix4x4.Identity));
-		Assert.NotEqual(baseline, new VoxelTransparentCacheKey(5, 10, Matrix4x4.Identity));
-		Assert.NotEqual(baseline, new VoxelTransparentCacheKey(4, 11, Matrix4x4.Identity));
+		Assert.Equal(baseline, new VoxelTransparentCacheKey(4, 10, Vector3.Zero, -Vector3.UnitZ));
+		Assert.NotEqual(baseline, new VoxelTransparentCacheKey(5, 10, Vector3.Zero, -Vector3.UnitZ));
+		Assert.NotEqual(baseline, new VoxelTransparentCacheKey(4, 11, Vector3.Zero, -Vector3.UnitZ));
 		Assert.NotEqual(
 			baseline,
-			new VoxelTransparentCacheKey(4, 10, Matrix4x4.CreateTranslation(1, 0, 0))
+			new VoxelTransparentCacheKey(4, 10, Vector3.UnitX, -Vector3.UnitZ)
 		);
 	}
 

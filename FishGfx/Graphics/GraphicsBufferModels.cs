@@ -12,6 +12,7 @@ public enum BufferBindFlags
 	Storage = 1 << 3,
 	TransferSource = 1 << 4,
 	TransferDestination = 1 << 5,
+	Indirect = 1 << 6,
 }
 
 public enum BufferUsage
@@ -29,7 +30,8 @@ public readonly record struct GraphicsBufferDescriptor
 		BufferBindFlags.Uniform |
 		BufferBindFlags.Storage |
 		BufferBindFlags.TransferSource |
-		BufferBindFlags.TransferDestination;
+		BufferBindFlags.TransferDestination |
+		BufferBindFlags.Indirect;
 
 	public GraphicsBufferDescriptor(
 		int sizeInBytes,

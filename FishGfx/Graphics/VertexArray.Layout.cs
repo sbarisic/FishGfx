@@ -152,6 +152,26 @@ internal unsafe sealed partial class VertexArray
 		AttribEnable(attributeIndex);
 	}
 
+	internal void BindingDivisor(uint bindingIndex, uint divisor)
+	{
+		EnsureCurrentOwner();
+
+		if (!Owner.Capabilities.SupportsVertexAttributeBinding)
+		{
+			throw new NotSupportedException(
+				"Vertex binding divisors require OpenGL 4.3 or GL_ARB_vertex_attrib_binding."
+			);
+		}
+
+		if (Internal_OpenGL.Is45OrAbove)
+		{
+			Internal_OpenGL.GL.VertexArrayBindingDivisor(Handle, bindingIndex, divisor);
+			return;
+		}
+
+		WithBound(() => Internal_OpenGL.GL.VertexBindingDivisor(bindingIndex, divisor));
+	}
+
 	private uint SelectBindingIndex(int bindingIndex)
 	{
 		if (bindingIndex == -1)

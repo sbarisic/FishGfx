@@ -18,6 +18,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly VoxelMeshingScheduler scheduler;
 	private readonly Dictionary<ChunkCoordinate, GpuChunk> gpuChunks = new Dictionary<ChunkCoordinate, GpuChunk>();
 	private readonly List<GpuChunk> orderedGpuChunks = new List<GpuChunk>();
+	private readonly List<GpuChunk> activeGpuChunks = new List<GpuChunk>();
+	private readonly HashSet<ChunkCoordinate> activeCoordinates = new HashSet<ChunkCoordinate>();
 	private readonly List<VoxelPassEntry> visibleOpaque = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> visibleCutout = new List<VoxelPassEntry>();
 	private readonly List<GpuChunk> visibleTransparentChunks = new List<GpuChunk>();
@@ -33,6 +35,10 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly ShaderStage fragmentShader;
 	private readonly RenderState opaqueState;
 	private readonly RenderState transparentState;
+	private readonly VoxelGeometryPagePool opaqueGeometry;
+	private readonly VoxelGeometryPagePool cutoutGeometry;
+	private readonly GraphicsBuffer indirectBuffer;
+	private readonly VoxelGpuTimer gpuTimer;
 	private bool disposed;
 	private int acceptedMeshes;
 	private int discardedMeshes;
@@ -54,6 +60,14 @@ public sealed partial class VoxelRenderer : IDisposable
 	private bool cullingEnabled = true;
 	private VoxelFogSettings fog = VoxelFogSettings.Disabled;
 	private VoxelSunSettings sun;
+	private bool activeSetDirty = true;
+	private bool hasActiveSetAnchor;
+	private Vector3 activeSetAnchor;
+	private float activeSetRenderDistance;
+	private int candidateChunks;
+	private int inactiveCachedChunks;
+	private double lastSubmissionMilliseconds;
+	private int lastSubmissionAllocatedBytes;
 
 	public VoxelRenderer(
 		GraphicsContext graphics,
@@ -74,6 +88,15 @@ public sealed partial class VoxelRenderer : IDisposable
 		VoxelPalette resolvedPalette = palette ?? throw new ArgumentNullException(nameof(palette));
 
 		ValidateOptions(this.options);
+
+		if (!Graphics.Capabilities.SupportsMultiDrawIndirect
+			|| !Graphics.Capabilities.SupportsVertexAttributeBinding)
+		{
+			throw new NotSupportedException(
+				$"FishGfx voxel rendering requires OpenGL 4.3; current context is {Graphics.Capabilities.Version}."
+			);
+		}
+
 		sun = this.options.Sun;
 		atlasTexture.EnsureOwner(graphics);
 
@@ -117,6 +140,17 @@ public sealed partial class VoxelRenderer : IDisposable
 		voxelShader = graphics.CreateShaderProgram(vertexShader, fragmentShader);
 		waveShader = graphics.CreateShaderProgram(waveVertexShader, fragmentShader);
 		transparentMesh = new VoxelMesh(graphics, BufferUsage.Stream);
+		opaqueGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
+		cutoutGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
+		indirectBuffer = graphics.CreateBuffer(new GraphicsBufferDescriptor(
+			64 * 1024,
+			BufferBindFlags.Indirect,
+			BufferUsage.Stream
+		));
+		gpuTimer = new VoxelGpuTimer(graphics)
+		{
+			Enabled = this.options.GpuProfilingEnabled,
+		};
 
 		opaqueState = CreateState(transparent: false);
 		transparentState = CreateState(transparent: true);
@@ -151,6 +185,12 @@ public sealed partial class VoxelRenderer : IDisposable
 		set
 		{
 			ThrowIfDisposed();
+
+			if (cullingEnabled != value)
+			{
+				activeSetDirty = true;
+			}
+
 			cullingEnabled = value;
 		}
 	}
@@ -190,6 +230,17 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	public VoxelRendererFrameDiagnostics FrameDiagnostics => frameDiagnostics;
 
+	public bool GpuProfilingEnabled
+	{
+		get => gpuTimer.Enabled;
+		set
+		{
+			ThrowIfDisposed();
+			gpuTimer.Enabled = value;
+			options.GpuProfilingEnabled = value;
+		}
+	}
+
 	public VoxelRendererStatistics Statistics => new VoxelRendererStatistics(
 		world.LoadedChunkCount,
 		gpuChunks.Count,
@@ -200,7 +251,12 @@ public sealed partial class VoxelRenderer : IDisposable
 		opaqueVertices,
 		cutoutVertices,
 		visibleTransparentFaces,
-		visibleTransparentVertices
+		visibleTransparentVertices,
+		candidateChunks,
+		activeGpuChunks.Count,
+		inactiveCachedChunks,
+		opaqueGeometry.PageCount,
+		cutoutGeometry.PageCount
 	);
 
 	public int UpdateMeshes(int? meshUploadBudget = null)
@@ -219,6 +275,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		VoxelMeshingFocus focus = new VoxelMeshingFocus(
 			camera,
 			options.MaxRenderDistance,
+			options.DeactivationMargin,
 			cullingEnabled
 		);
 
@@ -303,6 +360,15 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		return uploaded;
+	}
+
+	internal void RecordPageSubmission(
+		double submissionMilliseconds,
+		int allocatedBytes
+	)
+	{
+		lastSubmissionMilliseconds = submissionMilliseconds;
+		lastSubmissionAllocatedBytes = allocatedBytes;
 	}
 
 	private int RemoveMetadataOnlyResults()

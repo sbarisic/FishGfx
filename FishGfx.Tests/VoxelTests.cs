@@ -265,7 +265,7 @@ public partial class VoxelTests
 	{
 		Assert.False(typeof(VoxelMesh).IsPublic);
 		Assert.False(typeof(DrawVoxelMeshCommand).IsPublic);
-		Assert.False(typeof(DrawVoxelPassCommand).IsPublic);
+		Assert.False(typeof(DrawVoxelPagesCommand).IsPublic);
 	}
 
 	[Fact]
@@ -325,6 +325,12 @@ public partial class VoxelTests
 		Assert.True(options.WorkerCount > 0);
 		Assert.True(options.MeshUploadBudget >= 0);
 		Assert.True(options.MaxRenderDistance > 0);
+		Assert.Equal(64 * 1024 * 1024, options.GeometryPageSizeBytes);
+		Assert.Equal(0.25f, options.TransparentResortDistance);
+		Assert.Equal(1f, options.TransparentResortAngleDegrees);
+		Assert.Equal(8f, options.ActiveSetRefreshDistance);
+		Assert.Equal(16f, options.ActivationMargin);
+		Assert.Equal(32f, options.DeactivationMargin);
 		Assert.NotNull(options.Meshing);
 		Assert.Equal(Color.White, options.Sun.Color);
 		Assert.Null(typeof(VoxelRendererOptions).GetProperty("MaxWorkers"));

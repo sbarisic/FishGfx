@@ -152,25 +152,14 @@ internal unsafe sealed partial class VertexArray : GraphicsResource
 
 	internal override void DeleteResource()
 	{
+		Owner.BindingCache.Invalidate();
 		Internal_OpenGL.GL.DeleteVertexArray(Handle);
 	}
 
 	private void WithBound(Action action)
 	{
-		Internal_OpenGL.GL.GetInteger(
-			GetPName.VertexArrayBinding,
-			out int previous
-		);
-		Internal_OpenGL.GL.BindVertexArray(Handle);
-
-		try
-		{
-			action();
-		}
-		finally
-		{
-			Internal_OpenGL.GL.BindVertexArray((uint)previous);
-		}
+		Owner.BindVertexArray(Handle);
+		action();
 	}
 
 	private void ValidateBuffers()

@@ -75,17 +75,26 @@ public sealed class OpenGl40CompatibilityTests
 
 		Assert.False(version40.SupportsVertexAttributeBinding);
 		Assert.True(version43.SupportsVertexAttributeBinding);
+		Assert.False(version40.SupportsMultiDrawIndirect);
+		Assert.True(version43.SupportsMultiDrawIndirect);
 	}
 
 	[Fact]
-	public void ShippedShadersTargetGlsl400()
+	public void ShippedShadersTargetTheirDocumentedMinimumVersion()
 	{
 		foreach (string path in GetShaderPaths())
 		{
 			string firstLine = File.ReadLines(path).First().TrimStart('\uFEFF');
+			string expected = string.Equals(
+				Path.GetFileName(path),
+				"voxel.vert",
+				StringComparison.OrdinalIgnoreCase
+			)
+				? "#version 430"
+				: "#version 400";
 
 			Assert.True(
-				string.Equals(firstLine, "#version 400", StringComparison.Ordinal),
+				string.Equals(firstLine, expected, StringComparison.Ordinal),
 				$"{Path.GetFileName(path)} targets '{firstLine}'."
 			);
 		}

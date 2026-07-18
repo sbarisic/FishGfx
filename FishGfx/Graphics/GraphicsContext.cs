@@ -47,6 +47,8 @@ public sealed partial class GraphicsContext : IDisposable
 
 	internal OpenGlRenderStateApplier StateApplier { get; } = new OpenGlRenderStateApplier();
 
+	internal OpenGlBindingCache BindingCache { get; } = new OpenGlBindingCache();
+
 	internal ImmediateRenderer Renderer { get; private set; }
 
 	public RenderFrame BeginFrame()
@@ -81,6 +83,19 @@ public sealed partial class GraphicsContext : IDisposable
 	{
 		EnsureCurrent();
 		StateApplier.Invalidate();
+		BindingCache.Invalidate();
+	}
+
+	internal void BindVertexArray(uint handle)
+	{
+		EnsureCurrent();
+		BindingCache.BindVertexArray(handle);
+	}
+
+	internal void BindBuffer(BufferTargetARB target, uint handle)
+	{
+		EnsureCurrent();
+		BindingCache.BindBuffer(target, handle);
 	}
 
 	public void CollectGarbage()

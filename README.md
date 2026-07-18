@@ -15,7 +15,7 @@ FishGfx is a Windows-first C# graphics and game-framework library built on OpenG
 - The bundled native `glfw3.dll`
 - `System.Drawing.Common` for the current Windows bitmap APIs
 
-The core tries OpenGL 4.6 first and falls back version-by-version to 4.0. OpenGL 4.5 and newer use Direct State Access where available; older contexts use bind-to-edit fallbacks.
+The core tries OpenGL 4.6 first and falls back version-by-version to 4.0. OpenGL 4.5 and newer use Direct State Access where available; older contexts use bind-to-edit fallbacks. The paged `VoxelRenderer` requires OpenGL 4.3 for vertex-binding divisors and multi-draw indirect; constructing it on an older context fails with a version diagnostic.
 
 ## Build and run
 
@@ -296,11 +296,11 @@ renderer.UpdateMeshes();
 
 Pass the active camera to `VoxelRenderer.UpdateMeshes(camera)` to prioritize visible chunks, then nearby off-screen chunks, while retaining the original `UpdateMeshes()` overload for neutral scheduling. This priority affects mesh preparation and upload order only. Lighting residency must still include known air and the propagation halo; visibility never makes lighting data safe to discard. Dedicated below-normal-priority workers materialize captured immutable world/light neighborhoods, prove empty or enclosed chunks, and build geometry. The render thread examines only a bounded priority window when worker slots are free. Empty chunks and completely enclosed occluding cube chunks complete without padded voxel or light snapshots, and are reconsidered when their content or neighbors change.
 
-`VoxelRendererOptions.MeshUploadBudget` limits uploads by count. `MeshUploadTimeBudgetMilliseconds` adds a time ceiling and defaults to positive infinity for compatibility; the renderer always permits the first eligible upload so a large mesh cannot starve. `FrameDiagnostics` reports scheduling/capture time, upload time, scheduled jobs, uploaded meshes, and metadata-only empty completions.
+`VoxelRendererOptions.MeshUploadBudget` limits uploads by count. `MeshUploadTimeBudgetMilliseconds` adds a time ceiling and defaults to positive infinity for compatibility; the renderer always permits the first eligible upload so a large mesh cannot starve. Opaque and cutout geometry is stored in reusable 64 MiB pages and submitted once per visible page through `glMultiDrawArraysIndirect`; chunk origins use an instanced attribute selected by each command's base instance. Uploaded pages remain cached while an active working set limits per-frame culling and meshing work. `FrameDiagnostics` reports active and visible chunks, logical and driver draws, indirect commands, touched pages, CPU/GPU timing, allocations, scheduling, uploads, and transparent-cache invalidation.
 
 Lit voxel meshes store RGB block light and skylight in a normalized RGBA8 vertex attribute at location 5; the existing color attribute continues to hold material tint, alpha, and ambient occlusion. `VoxelSunSettings` is immutable and validates its normalized direction, color, nonnegative intensity, and 0–1 ambient shading factor.
 
-Transparent cube materials can opt into GPU surface animation with `VoxelWaveSettings`. Amplitude is measured around a surface lowered by the same amount, so the original block top remains the crest: an amplitude of `0.1f` ranges from the original height to 0.2 units below it. Top faces and exposed upper side rims move together while bottoms and buried joins remain fixed. Wavelength is expressed in world units and speed in cycles per second. Supply elapsed seconds through `RenderPassDescriptor.Time`; changing time animates the shader without rebuilding or uploading voxel geometry.
+Transparent cube materials can opt into GPU surface animation with `VoxelWaveSettings`. Amplitude is measured around a surface lowered by the same amount, so the original block top remains the crest: an amplitude of `0.1f` ranges from the original height to 0.2 units below it. Top faces and exposed upper side rims move together while bottoms and buried joins remain fixed. Wavelength is expressed in world units and speed in cycles per second. Supply elapsed seconds through `RenderPassDescriptor.Time`; changing time animates the shader without rebuilding or uploading voxel geometry. Transparent face sorting remains a streamed pass, but its cached stream is rebuilt only after geometry/visibility changes or configurable camera translation and rotation thresholds.
 
 ```csharp
 VoxelMaterial water = new VoxelMaterial(

@@ -185,12 +185,13 @@ public unsafe sealed class GraphicsBuffer : GraphicsResource
 
 	internal void Bind(BufferTarget target)
 	{
-		EnsureCurrentOwner();
-		Internal_OpenGL.GL.BindBuffer(target, Handle);
+		GraphicsContext context = EnsureCurrentOwner();
+		context.BindBuffer(target, Handle);
 	}
 
 	internal override void DeleteResource()
 	{
+		Owner.BindingCache.Invalidate();
 		Internal_OpenGL.GL.DeleteBuffer(Handle);
 	}
 
@@ -222,28 +223,13 @@ public unsafe sealed class GraphicsBuffer : GraphicsResource
 		int destinationByteOffset
 	)
 	{
-		Internal_OpenGL.GL.GetInteger(
-			GetPName.ArrayBufferBinding,
-			out int previous
+		Owner.BindBuffer(BufferTarget.ArrayBuffer, Handle);
+		Internal_OpenGL.GL.BufferSubData(
+			BufferTarget.ArrayBuffer,
+			destinationByteOffset,
+			(nuint)byteCount,
+			data
 		);
-		Internal_OpenGL.GL.BindBuffer(BufferTarget.ArrayBuffer, Handle);
-
-		try
-		{
-			Internal_OpenGL.GL.BufferSubData(
-				BufferTarget.ArrayBuffer,
-				destinationByteOffset,
-				(nuint)byteCount,
-				data
-			);
-		}
-		finally
-		{
-			Internal_OpenGL.GL.BindBuffer(
-				BufferTarget.ArrayBuffer,
-				(uint)previous
-			);
-		}
 	}
 
 	private void CopyBound(
@@ -286,23 +272,8 @@ public unsafe sealed class GraphicsBuffer : GraphicsResource
 
 	private void WithArrayBufferBound(Action action)
 	{
-		Internal_OpenGL.GL.GetInteger(
-			GetPName.ArrayBufferBinding,
-			out int previous
-		);
-		Internal_OpenGL.GL.BindBuffer(BufferTarget.ArrayBuffer, Handle);
-
-		try
-		{
-			action();
-		}
-		finally
-		{
-			Internal_OpenGL.GL.BindBuffer(
-				BufferTarget.ArrayBuffer,
-				(uint)previous
-			);
-		}
+		Owner.BindBuffer(BufferTarget.ArrayBuffer, Handle);
+		action();
 	}
 
 	private static void ValidateDescriptor(GraphicsBufferDescriptor descriptor)

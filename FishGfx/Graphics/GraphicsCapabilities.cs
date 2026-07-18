@@ -105,6 +105,9 @@ public sealed class GraphicsCapabilities
 
 	public bool SupportsVertexAttributeBinding => Version >= new OpenGlVersion(4, 3);
 
+	public bool SupportsMultiDrawIndirect => Version >= new OpenGlVersion(4, 3)
+		|| SupportsExtension("GL_ARB_multi_draw_indirect");
+
 	public bool SupportsCopyImage => Version >= new OpenGlVersion(4, 3)
 		|| SupportsExtension("GL_ARB_copy_image");
 

@@ -22,6 +22,11 @@ public sealed partial class VoxelMeshingScheduler
 
 		foreach (ChunkCoordinate coordinate in coordinates)
 		{
+			if (focus.HasValue && !focus.Value.ShouldSchedule(coordinate))
+			{
+				continue;
+			}
+
 			VoxelMeshingPriority priority = focus.HasValue
 				? focus.Value.GetPriority(coordinate)
 				: new VoxelMeshingPriority(0, 0, coordinate);
@@ -52,11 +57,13 @@ internal readonly struct VoxelMeshingFocus
 	private readonly Vector3 cameraPosition;
 	private readonly ViewFrustum frustum;
 	private readonly float maximumDistanceSquared;
+	private readonly float schedulingDistanceSquared;
 	private readonly bool cullingEnabled;
 
 	internal VoxelMeshingFocus(
 		Camera camera,
 		float maximumDistance,
+		float schedulingMargin,
 		bool cullingEnabled
 	)
 	{
@@ -67,10 +74,28 @@ internal readonly struct VoxelMeshingFocus
 			throw new ArgumentOutOfRangeException(nameof(maximumDistance));
 		}
 
+		if (!float.IsFinite(schedulingMargin) || schedulingMargin < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(schedulingMargin));
+		}
+
 		cameraPosition = camera.Position;
 		frustum = ViewFrustum.FromCamera(camera);
 		maximumDistanceSquared = maximumDistance * maximumDistance;
+		float schedulingDistance = maximumDistance + schedulingMargin;
+		schedulingDistanceSquared = schedulingDistance * schedulingDistance;
 		this.cullingEnabled = cullingEnabled;
+	}
+
+	internal bool ShouldSchedule(ChunkCoordinate coordinate)
+	{
+		if (!cullingEnabled)
+		{
+			return true;
+		}
+
+		Vector3 center = coordinate.WorldOrigin + new Vector3(VoxelWorld.ChunkSize * 0.5f);
+		return Vector3.DistanceSquared(cameraPosition, center) <= schedulingDistanceSquared;
 	}
 
 	internal VoxelMeshingPriority GetPriority(ChunkCoordinate coordinate)

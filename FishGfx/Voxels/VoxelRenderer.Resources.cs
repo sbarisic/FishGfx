@@ -30,7 +30,13 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		gpuChunks.Clear();
 		orderedGpuChunks.Clear();
+		activeGpuChunks.Clear();
+		activeCoordinates.Clear();
 		transparentMesh.Dispose();
+		gpuTimer.Dispose();
+		indirectBuffer.Dispose();
+		cutoutGeometry.Dispose();
+		opaqueGeometry.Dispose();
 		waveShader.Dispose();
 		voxelShader.Dispose();
 		waveVertexShader.Dispose();
@@ -65,54 +71,20 @@ public sealed partial class VoxelRenderer : IDisposable
 		gpuChunk.Bounds = result.Bounds;
 		gpuChunk.TransparentFaces = result.TransparentFaces;
 
-		UpdateMesh(ref gpuChunk.Opaque, result.OpaqueVertexSpan);
-		UpdateMesh(ref gpuChunk.Cutout, result.CutoutVertexSpan);
+		gpuChunk.Opaque = opaqueGeometry.Update(
+			gpuChunk.Opaque,
+			result.OpaqueVertexSpan,
+			result.Coordinate.WorldOrigin
+		);
+		gpuChunk.Cutout = cutoutGeometry.Update(
+			gpuChunk.Cutout,
+			result.CutoutVertexSpan,
+			result.Coordinate.WorldOrigin
+		);
 		opaqueVertices += gpuChunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices += gpuChunk.Cutout?.VertexCount ?? 0;
 		transparentGeometryRevision++;
-	}
-
-	private void UpdateMesh(ref VoxelMesh mesh, ReadOnlySpan<VoxelVertex> vertices)
-	{
-		if (mesh?.IsRetained == true)
-		{
-			VoxelMesh previous = mesh;
-			VoxelMesh replacement = null;
-
-			try
-			{
-				if (vertices.Length > 0)
-				{
-					replacement = new VoxelMesh(
-						Graphics,
-						vertices.Length,
-						BufferUsage.Dynamic
-					);
-					replacement.Update(vertices);
-				}
-			}
-			catch
-			{
-				replacement?.Dispose();
-				throw;
-			}
-
-			mesh = replacement;
-			previous.Dispose();
-
-			return;
-		}
-
-		if (mesh == null && vertices.Length > 0)
-		{
-			mesh = new VoxelMesh(
-				Graphics,
-				vertices.Length,
-				BufferUsage.Dynamic
-			);
-		}
-
-		mesh?.Update(vertices);
+		activeSetDirty = true;
 	}
 
 }

@@ -51,7 +51,8 @@ public partial class VoxelRenderingLightingTests
 		string waving = File.ReadAllText(Path.Combine(shaderDirectory, "voxel_wave.vert"));
 		string fragment = File.ReadAllText(Path.Combine(shaderDirectory, "voxel.frag"));
 
-		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ModelUniformName);
+		Assert.Contains("layout (location = 6) in vec3 ChunkOrigin;", standard);
+		Assert.DoesNotContain($"uniform mat4 {RenderUniformState.ModelUniformName};", standard);
 		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ViewUniformName);
 		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ProjectionUniformName);
 		AssertUniformDeclaration(waving, "mat4", RenderUniformState.ModelUniformName);

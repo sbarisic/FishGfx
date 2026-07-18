@@ -1,28 +1,25 @@
-using System;
 using System.Numerics;
 
 namespace FishGfx.Voxels;
 
-internal readonly struct VoxelTransparentCacheKey : IEquatable<VoxelTransparentCacheKey>
+internal readonly struct VoxelTransparentCacheKey
 {
-	internal VoxelTransparentCacheKey(long geometryRevision, ulong visibleSignature, Matrix4x4 view)
+	internal VoxelTransparentCacheKey(
+		long geometryRevision,
+		ulong visibleSignature,
+		Vector3 cameraPosition,
+		Vector3 cameraForward
+	)
 	{
 		GeometryRevision = geometryRevision;
 		VisibleSignature = visibleSignature;
-		View = view;
+		CameraPosition = cameraPosition;
+		CameraForward = cameraForward;
 	}
 
 	internal long GeometryRevision { get; }
 	internal ulong VisibleSignature { get; }
-	internal Matrix4x4 View { get; }
+	internal Vector3 CameraPosition { get; }
 
-	public bool Equals(VoxelTransparentCacheKey other)
-	{
-		return GeometryRevision == other.GeometryRevision
-			&& VisibleSignature == other.VisibleSignature
-			&& View == other.View;
-	}
-
-	public override bool Equals(object obj) => obj is VoxelTransparentCacheKey other && Equals(other);
-	public override int GetHashCode() => HashCode.Combine(GeometryRevision, VisibleSignature, View);
+	internal Vector3 CameraForward { get; }
 }

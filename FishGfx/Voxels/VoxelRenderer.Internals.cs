@@ -86,6 +86,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		opaqueVertices -= chunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices -= chunk.Cutout?.VertexCount ?? 0;
 		orderedGpuChunks.Remove(chunk);
+		activeCoordinates.Remove(coordinate);
+		activeGpuChunks.Remove(chunk);
+		activeSetDirty = true;
 		transparentGeometryRevision++;
 		chunk.Dispose();
 	}
@@ -139,10 +142,45 @@ public sealed partial class VoxelRenderer : IDisposable
 			throw new ArgumentOutOfRangeException(nameof(options.AlphaCutoff));
 		}
 
+		if (options.GeometryPageSizeBytes <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options.GeometryPageSizeBytes));
+		}
+
+		ValidateNonNegativeFinite(options.TransparentResortDistance, nameof(options.TransparentResortDistance));
+		ValidateNonNegativeFinite(options.TransparentResortAngleDegrees, nameof(options.TransparentResortAngleDegrees));
+		ValidatePositiveFinite(options.ActiveSetRefreshDistance, nameof(options.ActiveSetRefreshDistance));
+		ValidateNonNegativeFinite(options.ActivationMargin, nameof(options.ActivationMargin));
+		ValidateNonNegativeFinite(options.DeactivationMargin, nameof(options.DeactivationMargin));
+
+		if (options.DeactivationMargin < options.ActivationMargin)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(options.DeactivationMargin),
+				"The deactivation margin must be at least the activation margin."
+			);
+		}
+
 		options.Sun.Validate(nameof(options.Sun));
 		if (options.Meshing == null)
 		{
 			throw new ArgumentNullException(nameof(options.Meshing));
+		}
+	}
+
+	private static void ValidateNonNegativeFinite(float value, string name)
+	{
+		if (!float.IsFinite(value) || value < 0)
+		{
+			throw new ArgumentOutOfRangeException(name);
+		}
+	}
+
+	private static void ValidatePositiveFinite(float value, string name)
+	{
+		if (!float.IsFinite(value) || value <= 0)
+		{
+			throw new ArgumentOutOfRangeException(name);
 		}
 	}
 
@@ -222,14 +260,14 @@ public sealed partial class VoxelRenderer : IDisposable
 		public long Revision;
 		public long LightRevision;
 		public AxisAlignedBoundingBox Bounds;
-		public VoxelMesh Opaque;
-		public VoxelMesh Cutout;
+		public VoxelGeometryAllocation Opaque;
+		public VoxelGeometryAllocation Cutout;
 		public VoxelTransparentFace[] TransparentFaces = Array.Empty<VoxelTransparentFace>();
 
 		public void Dispose()
 		{
-			Opaque?.Dispose();
-			Cutout?.Dispose();
+			Opaque?.ReleaseOwner();
+			Cutout?.ReleaseOwner();
 		}
 	}
 
