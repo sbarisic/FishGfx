@@ -12,7 +12,8 @@ public sealed partial class VoxelRenderer : IDisposable
 {
 	private readonly VoxelWorld world;
 	private readonly VoxelLighting lighting;
-	private readonly Texture atlasTexture;
+	private Texture atlasTexture;
+	private readonly VoxelAtlasLayout atlasLayout;
 	private readonly VoxelRendererOptions options;
 	private readonly VoxelMeshingScheduler scheduler;
 	private readonly Dictionary<ChunkCoordinate, GpuChunk> gpuChunks = new Dictionary<ChunkCoordinate, GpuChunk>();
@@ -68,6 +69,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		this.world = world ?? throw new ArgumentNullException(nameof(world));
 		this.lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
 		atlasTexture = atlas ?? throw new ArgumentNullException(nameof(atlas));
+		this.atlasLayout = atlasLayout;
 		this.options = options ?? new VoxelRendererOptions();
 		VoxelPalette resolvedPalette = palette ?? throw new ArgumentNullException(nameof(palette));
 
@@ -121,6 +123,25 @@ public sealed partial class VoxelRenderer : IDisposable
 	}
 
 	public GraphicsContext Graphics { get; }
+
+	public Texture AtlasTexture => atlasTexture;
+
+	public void SetAtlasTexture(Texture atlas)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(atlas);
+		atlas.EnsureOwner(Graphics);
+		if (atlas.Width != atlasLayout.TextureWidth
+			|| atlas.Height != atlasLayout.TextureHeight)
+		{
+			throw new ArgumentException(
+				"Voxel atlas layout dimensions must match the supplied texture.",
+				nameof(atlas)
+			);
+		}
+
+		atlasTexture = atlas;
+	}
 
 	public bool IsIdle => scheduler.PendingCount == 0 && pendingUploads.Count == 0;
 
