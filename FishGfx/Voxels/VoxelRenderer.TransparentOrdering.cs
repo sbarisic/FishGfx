@@ -85,7 +85,7 @@ public sealed partial class VoxelRenderer
 
 		for (int index = 0; index < activeGpuChunks.Count; index++)
 		{
-			if (activeGpuChunks[index].Transparent?.VertexCount > 0)
+			if (HasTransparentGeometry(activeGpuChunks[index].Transparent))
 			{
 				count++;
 			}
@@ -99,7 +99,7 @@ public sealed partial class VoxelRenderer
 			GpuChunk chunk = activeGpuChunks[index];
 			VoxelTransparentAllocation allocation = chunk.Transparent;
 
-			if (allocation?.VertexCount <= 0)
+			if (!HasTransparentGeometry(allocation))
 			{
 				continue;
 			}
@@ -120,6 +120,11 @@ public sealed partial class VoxelRenderer
 		transparentSourceDirty = false;
 		previous?.ReleaseOwner();
 		transparentSourceBuildMilliseconds += Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+	}
+
+	internal static bool HasTransparentGeometry(VoxelTransparentAllocation allocation)
+	{
+		return allocation is { VertexCount: > 0 };
 	}
 
 	private VoxelTransparentOrderingRequest CreateTransparentOrderingRequest(

@@ -282,6 +282,26 @@ public sealed class VoxelTransparentOrderingTests
 		Assert.NotNull(typeof(GraphicsBuffer).GetMethod(nameof(GraphicsBuffer.DiscardContents)));
 	}
 
+	[Fact]
+	public void TransparentSourcePredicateRejectsMissingAndEmptyAllocations()
+	{
+		Assert.False(VoxelRenderer.HasTransparentGeometry(null));
+		Assert.False(VoxelRenderer.HasTransparentGeometry(CreateAllocation()));
+		Assert.True(
+			VoxelRenderer.HasTransparentGeometry(
+				CreateAllocation(
+					new VoxelTransparentFaceRecord(
+						Vector3.Zero,
+						0,
+						6,
+						new ChunkCoordinate(0, 0, 0),
+						0
+					)
+				)
+			)
+		);
+	}
+
 	private static VoxelTransparentOrderingSource CreateSource(
 		VoxelTransparentAllocation allocation
 	)
