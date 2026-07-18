@@ -6,6 +6,27 @@ namespace FishGfx.FishUI;
 /// <summary>Coordinate, atlas, and color conversions shared by the FishUI backend.</summary>
 public static class FishUIConversions
 {
+	public static Vector2 CalculateFramebufferScale(
+		Vector2 logicalSize,
+		Vector2 framebufferSize
+	)
+	{
+		ValidateSize(logicalSize, nameof(logicalSize));
+		ValidateSize(framebufferSize, nameof(framebufferSize));
+
+		if (logicalSize.X <= 0 || logicalSize.Y <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(logicalSize));
+		}
+
+		if (framebufferSize.X <= 0 || framebufferSize.Y <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(framebufferSize));
+		}
+
+		return framebufferSize / logicalSize;
+	}
+
 	public static (Vector2 Position, Vector2 Size) ToFramebufferRectangle(
 		Vector2 position,
 		Vector2 size,

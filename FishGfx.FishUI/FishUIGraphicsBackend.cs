@@ -145,11 +145,15 @@ public sealed partial class FishUIGraphicsBackend : global::FishUI.SimpleFishUIG
 	public override void BeginScissor(Vector2 position, Vector2 size)
 	{
 		RenderPass activePass = RequireDrawing();
+		Vector2 framebufferScale = FishUIConversions.CalculateFramebufferScale(
+			window.Size,
+			window.FramebufferSize
+		);
 		(Vector2 converted, Vector2 framebufferSize) = FishUIConversions.ToFramebufferRectangle(
 			position,
 			size,
 			GetWindowHeight(),
-			window.ContentScale
+			framebufferScale
 		);
 		AxisAlignedBoundingBox rectangle = AxisAlignedBoundingBox.FromPositionAndSize(
 			new Vector3(converted, 0),

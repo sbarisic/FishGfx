@@ -32,6 +32,17 @@ public sealed class FishUIIntegrationTests
 	}
 
 	[Fact]
+	public void FramebufferScaleDoesNotUseWindowsContentScale()
+	{
+		Vector2 scale = FishUIConversions.CalculateFramebufferScale(
+			new Vector2(1920, 1080),
+			new Vector2(1920, 1080)
+		);
+
+		Assert.Equal(Vector2.One, scale);
+	}
+
+	[Fact]
 	public void AtlasUvConversionAccountsForTopLeftSourceCoordinates()
 	{
 		(Vector2 minimum, Vector2 maximum) = FishUIConversions.ToAtlasUv(
