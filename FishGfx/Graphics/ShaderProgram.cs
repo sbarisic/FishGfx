@@ -200,6 +200,132 @@ public unsafe sealed class ShaderProgram : GraphicsResource
 		return true;
 	}
 
+	public bool SetUniform(string name, ReadOnlySpan<Matrix4x4> values)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(name);
+		int location = GetUniformLocation(name);
+
+		if (location == -1 || values.IsEmpty)
+		{
+			return false;
+		}
+
+		fixed (Matrix4x4* pointer = values)
+		{
+			if (Owner.Capabilities.SupportsProgramUniforms)
+			{
+				Internal_OpenGL.GL.ProgramUniformMatrix4(
+					Handle,
+					location,
+					(uint)values.Length,
+					false,
+					(float*)pointer
+				);
+			}
+			else
+			{
+				Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previousProgram);
+
+				try
+				{
+					Internal_OpenGL.GL.UseProgram(Handle);
+					Internal_OpenGL.GL.UniformMatrix4(
+						location,
+						(uint)values.Length,
+						false,
+						(float*)pointer
+					);
+				}
+				finally
+				{
+					Internal_OpenGL.GL.UseProgram((uint)previousProgram);
+				}
+			}
+		}
+
+		return true;
+	}
+
+	public bool SetUniform(string name, ReadOnlySpan<float> values)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(name);
+		int location = GetUniformLocation(name);
+
+		if (location == -1 || values.IsEmpty)
+		{
+			return false;
+		}
+
+		fixed (float* pointer = values)
+		{
+			if (Owner.Capabilities.SupportsProgramUniforms)
+			{
+				Internal_OpenGL.GL.ProgramUniform1(
+					Handle,
+					location,
+					(uint)values.Length,
+					pointer
+				);
+			}
+			else
+			{
+				Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previousProgram);
+
+				try
+				{
+					Internal_OpenGL.GL.UseProgram(Handle);
+					Internal_OpenGL.GL.Uniform1(location, (uint)values.Length, pointer);
+				}
+				finally
+				{
+					Internal_OpenGL.GL.UseProgram((uint)previousProgram);
+				}
+			}
+		}
+
+		return true;
+	}
+
+	public bool SetUniform(string name, ReadOnlySpan<int> values)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(name);
+		int location = GetUniformLocation(name);
+
+		if (location == -1 || values.IsEmpty)
+		{
+			return false;
+		}
+
+		fixed (int* pointer = values)
+		{
+			if (Owner.Capabilities.SupportsProgramUniforms)
+			{
+				Internal_OpenGL.GL.ProgramUniform1(
+					Handle,
+					location,
+					(uint)values.Length,
+					pointer
+				);
+			}
+			else
+			{
+				Internal_OpenGL.GL.GetInteger(GetPName.CurrentProgram, out int previousProgram);
+
+				try
+				{
+					Internal_OpenGL.GL.UseProgram(Handle);
+					Internal_OpenGL.GL.Uniform1(location, (uint)values.Length, pointer);
+				}
+				finally
+				{
+					Internal_OpenGL.GL.UseProgram((uint)previousProgram);
+				}
+			}
+		}
+
+		return true;
+	}
+
 	internal void Bind(RenderUniformState uniforms)
 	{
 		EnsureCurrentOwner();

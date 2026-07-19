@@ -12,16 +12,19 @@ public sealed class Mesh3D : IDisposable
 	private const uint VertexAttribute = 0;
 	private const uint ColorAttribute = 1;
 	private const uint UvAttribute = 2;
+	private const uint NormalAttribute = 3;
 
 	private readonly BufferUsage usage;
 	private readonly GraphicsContext owner;
 	private GraphicsBuffer vertexBuffer;
 	private GraphicsBuffer colorBuffer;
 	private GraphicsBuffer uvBuffer;
+	private GraphicsBuffer normalBuffer;
 	private GraphicsBuffer elementBuffer;
 	private int vertexBinding = -1;
 	private int colorBinding = -1;
 	private int uvBinding = -1;
+	private int normalBinding = -1;
 	private int vertexCount;
 	private int elementCount;
 	private bool hasColors;
@@ -90,6 +93,8 @@ public sealed class Mesh3D : IDisposable
 
 	public bool IsDisposed => disposed;
 
+	public bool HasNormals { get; private set; }
+
 	public Color DefaultColor { get; set; } = Color.White;
 
 	public PolygonMode PolygonMode { get; set; } = PolygonMode.Fill;
@@ -151,6 +156,31 @@ public sealed class Mesh3D : IDisposable
 			false,
 			0,
 			sizeof(float) * 2
+		);
+	}
+
+	public void SetNormals(ReadOnlySpan<Vector3> normals)
+	{
+		ThrowIfDisposed();
+
+		if (normals.Length != vertexCount)
+		{
+			throw new ArgumentException(
+				"The normal count must match the mesh vertex count.",
+				nameof(normals)
+			);
+		}
+
+		HasNormals = SetAttribute(
+			ref normalBuffer,
+			ref normalBinding,
+			normals,
+			NormalAttribute,
+			3,
+			VertexElementType.Float,
+			false,
+			0,
+			sizeof(float) * 3
 		);
 	}
 
@@ -264,6 +294,7 @@ public sealed class Mesh3D : IDisposable
 		vertexBuffer?.Dispose();
 		colorBuffer?.Dispose();
 		uvBuffer?.Dispose();
+		normalBuffer?.Dispose();
 		elementBuffer?.Dispose();
 		VertexArray.Dispose();
 	}

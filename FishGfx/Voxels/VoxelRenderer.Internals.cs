@@ -189,12 +189,14 @@ public sealed partial class VoxelRenderer : IDisposable
 		public AxisAlignedBoundingBox Bounds;
 		public VoxelGeometryAllocation Opaque;
 		public VoxelGeometryAllocation Cutout;
+		public VoxelGeometryAllocation AlphaShadow;
 		public VoxelTransparentAllocation Transparent;
 
 		public void Dispose()
 		{
 			Opaque?.ReleaseOwner();
 			Cutout?.ReleaseOwner();
+			AlphaShadow?.ReleaseOwner();
 			Transparent?.ReleaseOwner();
 		}
 	}

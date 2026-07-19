@@ -14,6 +14,8 @@ public static partial class VoxelMesher
 		ref int opaqueIndex,
 		VoxelVertex[] cutout,
 		ref int cutoutIndex,
+		VoxelVertex[] alphaShadow,
+		ref int alphaShadowIndex,
 		VoxelTransparentFace[] transparent,
 		ref int transparentIndex,
 		ref MeshBoundsBuilder bounds
@@ -44,13 +46,15 @@ public static partial class VoxelMesher
 			}
 
 			AppendCustomTriangle(
-				material.RenderMode,
+				material,
 				triangle,
 				center / 3,
 				opaque,
 				ref opaqueIndex,
 				cutout,
 				ref cutoutIndex,
+				alphaShadow,
+				ref alphaShadowIndex,
 				transparent,
 				ref transparentIndex
 			);
@@ -65,13 +69,15 @@ public static partial class VoxelMesher
 				}
 
 				AppendCustomTriangle(
-					material.RenderMode,
+					material,
 					triangle,
 					center / 3,
 					opaque,
 					ref opaqueIndex,
 					cutout,
 					ref cutoutIndex,
+					alphaShadow,
+					ref alphaShadowIndex,
 					transparent,
 					ref transparentIndex
 				);
@@ -80,18 +86,20 @@ public static partial class VoxelMesher
 	}
 
 	private static void AppendCustomTriangle(
-		VoxelRenderMode renderMode,
+		VoxelMaterial material,
 		ReadOnlySpan<VoxelVertex> triangle,
 		Vector3 center,
 		VoxelVertex[] opaque,
 		ref int opaqueIndex,
 		VoxelVertex[] cutout,
 		ref int cutoutIndex,
+		VoxelVertex[] alphaShadow,
+		ref int alphaShadowIndex,
 		VoxelTransparentFace[] transparent,
 		ref int transparentIndex
 	)
 	{
-		switch (renderMode)
+		switch (material.RenderMode)
 		{
 			case VoxelRenderMode.Opaque:
 				triangle.CopyTo(opaque.AsSpan(opaqueIndex));
@@ -106,9 +114,25 @@ public static partial class VoxelMesher
 					center,
 					triangle.ToArray()
 				);
+
+				if (material.ShadowCasterMode == VoxelShadowCasterMode.AlphaTest)
+				{
+					Span<VoxelVertex> destination = alphaShadow.AsSpan(
+						alphaShadowIndex,
+						triangle.Length
+					);
+					triangle.CopyTo(destination);
+
+					for (int index = 0; index < destination.Length; index++)
+					{
+						destination[index].WaveParameters.X = material.ShadowAlphaCutoff;
+					}
+
+					alphaShadowIndex += triangle.Length;
+				}
 				break;
 			default:
-				throw new ArgumentOutOfRangeException(nameof(renderMode));
+				throw new ArgumentOutOfRangeException(nameof(material));
 		}
 	}
 

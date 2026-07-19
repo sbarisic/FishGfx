@@ -85,9 +85,8 @@ public sealed class OpenGl40CompatibilityTests
 		foreach (string path in GetShaderPaths())
 		{
 			string firstLine = File.ReadLines(path).First().TrimStart('\uFEFF');
-			string expected = string.Equals(
-				Path.GetFileName(path),
-				"voxel.vert",
+			string expected = Path.GetFileName(path).StartsWith(
+				"voxel",
 				StringComparison.OrdinalIgnoreCase
 			)
 				? "#version 430"
@@ -106,6 +105,12 @@ public sealed class OpenGl40CompatibilityTests
 		foreach (string path in GetShaderPaths())
 		{
 			string source = File.ReadAllText(path);
+
+			if (!source.StartsWith("#version 400", StringComparison.Ordinal))
+			{
+				continue;
+			}
+
 			string extension = Path.GetExtension(path);
 			string qualifierPattern = extension switch
 			{

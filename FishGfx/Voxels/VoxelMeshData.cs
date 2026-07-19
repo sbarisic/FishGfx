@@ -8,8 +8,10 @@ public sealed class VoxelMeshData
 {
 	private readonly VoxelVertex[] opaqueVertices;
 	private readonly VoxelVertex[] cutoutVertices;
+	private readonly VoxelVertex[] alphaShadowVertices;
 	private readonly int opaqueVertexCount;
 	private readonly int cutoutVertexCount;
+	private readonly int alphaShadowVertexCount;
 	private readonly bool pooledVertexBuffers;
 	private bool pooledBuffersReleased;
 
@@ -21,6 +23,7 @@ public sealed class VoxelMeshData
 		long lightRevision,
 		VoxelVertex[] opaqueVertices,
 		VoxelVertex[] cutoutVertices,
+		VoxelVertex[] alphaShadowVertices,
 		VoxelTransparentFace[] transparentFaces,
 		AxisAlignedBoundingBox bounds
 	)
@@ -32,8 +35,10 @@ public sealed class VoxelMeshData
 		LightRevision = lightRevision;
 		this.opaqueVertices = opaqueVertices;
 		this.cutoutVertices = cutoutVertices;
+		this.alphaShadowVertices = alphaShadowVertices;
 		opaqueVertexCount = opaqueVertices.Length;
 		cutoutVertexCount = cutoutVertices.Length;
+		alphaShadowVertexCount = alphaShadowVertices.Length;
 		TransparentFaces = transparentFaces;
 		Bounds = bounds;
 	}
@@ -48,6 +53,8 @@ public sealed class VoxelMeshData
 		int opaqueVertexCount,
 		VoxelVertex[] cutoutVertices,
 		int cutoutVertexCount,
+		VoxelVertex[] alphaShadowVertices,
+		int alphaShadowVertexCount,
 		VoxelTransparentFace[] transparentFaces,
 		AxisAlignedBoundingBox bounds
 	)
@@ -61,6 +68,8 @@ public sealed class VoxelMeshData
 		this.cutoutVertices = cutoutVertices;
 		this.opaqueVertexCount = opaqueVertexCount;
 		this.cutoutVertexCount = cutoutVertexCount;
+		this.alphaShadowVertices = alphaShadowVertices;
+		this.alphaShadowVertexCount = alphaShadowVertexCount;
 		pooledVertexBuffers = true;
 		TransparentFaces = transparentFaces;
 		Bounds = bounds;
@@ -86,6 +95,11 @@ public sealed class VoxelMeshData
 		cutoutVertexCount
 	);
 
+	public VoxelVertex[] AlphaShadowVertices => GetPublicVertices(
+		alphaShadowVertices,
+		alphaShadowVertexCount
+	);
+
 	public VoxelTransparentFace[] TransparentFaces { get; }
 
 	public AxisAlignedBoundingBox Bounds { get; }
@@ -94,10 +108,13 @@ public sealed class VoxelMeshData
 
 	internal int OpaqueVertexCount => opaqueVertexCount;
 	internal int CutoutVertexCount => cutoutVertexCount;
+	internal int AlphaShadowVertexCount => alphaShadowVertexCount;
 	internal ReadOnlySpan<VoxelVertex> OpaqueVertexSpan =>
 		opaqueVertices.AsSpan(0, opaqueVertexCount);
 	internal ReadOnlySpan<VoxelVertex> CutoutVertexSpan =>
 		cutoutVertices.AsSpan(0, cutoutVertexCount);
+	internal ReadOnlySpan<VoxelVertex> AlphaShadowVertexSpan =>
+		alphaShadowVertices.AsSpan(0, alphaShadowVertexCount);
 
 	internal void ReleasePooledVertexBuffers()
 	{
@@ -116,6 +133,11 @@ public sealed class VoxelMeshData
 		if (cutoutVertices.Length > 0)
 		{
 			ArrayPool<VoxelVertex>.Shared.Return(cutoutVertices);
+		}
+
+		if (alphaShadowVertices.Length > 0)
+		{
+			ArrayPool<VoxelVertex>.Shared.Return(alphaShadowVertices);
 		}
 	}
 

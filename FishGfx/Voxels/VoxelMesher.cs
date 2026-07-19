@@ -140,12 +140,17 @@ public static partial class VoxelMesher
 			counts.CutoutVertices,
 			poolOutputBuffers
 		);
+		VoxelVertex[] alphaShadow = CreateVertexBuffer(
+			counts.AlphaShadowVertices,
+			poolOutputBuffers
+		);
 
 		try
 		{
 			VoxelTransparentFace[] transparent = new VoxelTransparentFace[counts.TransparentFaces];
 			int opaqueIndex = 0;
 			int cutoutIndex = 0;
+			int alphaShadowIndex = 0;
 			int transparentIndex = 0;
 			MeshBoundsBuilder bounds = new MeshBoundsBuilder();
 			Span<VoxelVertex> faceVertices = stackalloc VoxelVertex[12];
@@ -183,6 +188,8 @@ public static partial class VoxelMesher
 								ref opaqueIndex,
 								cutout,
 								ref cutoutIndex,
+								alphaShadow,
+								ref alphaShadowIndex,
 								transparent,
 								ref transparentIndex,
 								ref bounds
@@ -235,11 +242,27 @@ public static partial class VoxelMesher
 									cutoutIndex += vertexCount;
 									break;
 								case VoxelRenderMode.Transparent:
-									transparent[transparentIndex++] = new VoxelTransparentFace(
-										blockPosition + FaceCenter(face),
-										written.ToArray()
+								transparent[transparentIndex++] = new VoxelTransparentFace(
+									blockPosition + FaceCenter(face),
+									written.ToArray()
+								);
+
+								if (material.ShadowCasterMode == VoxelShadowCasterMode.AlphaTest)
+								{
+									Span<VoxelVertex> shadowDestination = alphaShadow.AsSpan(
+										alphaShadowIndex,
+										vertexCount
 									);
-									break;
+									written.CopyTo(shadowDestination);
+
+									for (int shadowIndex = 0; shadowIndex < shadowDestination.Length; shadowIndex++)
+									{
+										shadowDestination[shadowIndex].WaveParameters.X = material.ShadowAlphaCutoff;
+									}
+
+									alphaShadowIndex += vertexCount;
+								}
+								break;
 								default:
 									throw new ArgumentOutOfRangeException();
 							}
@@ -259,6 +282,8 @@ public static partial class VoxelMesher
 					opaqueIndex,
 					cutout,
 					cutoutIndex,
+					alphaShadow,
+					alphaShadowIndex,
 					transparent,
 					bounds.Build()
 				)
@@ -270,6 +295,7 @@ public static partial class VoxelMesher
 					lightSnapshot?.Revision ?? 0,
 					opaque,
 					cutout,
+					alphaShadow,
 					transparent,
 					bounds.Build()
 				);
@@ -286,6 +312,11 @@ public static partial class VoxelMesher
 				if (cutout.Length > 0)
 				{
 					ArrayPool<VoxelVertex>.Shared.Return(cutout);
+				}
+
+				if (alphaShadow.Length > 0)
+				{
+					ArrayPool<VoxelVertex>.Shared.Return(alphaShadow);
 				}
 			}
 
@@ -371,6 +402,7 @@ public static partial class VoxelMesher
 		internal int OpaqueVertices;
 		internal int CutoutVertices;
 		internal int TransparentFaces;
+		internal int AlphaShadowVertices;
 
 		internal void AddFace(VoxelMaterial material)
 		{
@@ -386,6 +418,11 @@ public static partial class VoxelMesher
 					break;
 				case VoxelRenderMode.Transparent:
 					TransparentFaces = checked(TransparentFaces + 1);
+
+					if (material.ShadowCasterMode == VoxelShadowCasterMode.AlphaTest)
+					{
+						AlphaShadowVertices = checked(AlphaShadowVertices + vertices);
+					}
 					break;
 				default:
 					throw new ArgumentOutOfRangeException();
@@ -409,6 +446,11 @@ public static partial class VoxelMesher
 					TransparentFaces = checked(
 						TransparentFaces + model.VertexArray.Length / 3 * multiplier
 					);
+
+					if (material.ShadowCasterMode == VoxelShadowCasterMode.AlphaTest)
+					{
+						AlphaShadowVertices = checked(AlphaShadowVertices + vertices);
+					}
 					break;
 				default:
 					throw new ArgumentOutOfRangeException();

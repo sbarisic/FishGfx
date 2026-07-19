@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using FishGfx.Graphics;
+using FishGfx.Graphics.Shadows;
 
 namespace FishGfx.Voxels;
 
@@ -41,6 +42,7 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 	private readonly VoxelPageDrawGroup[] opaqueGroups;
 	private readonly VoxelPageDrawGroup[] cutoutGroups;
 	private readonly VoxelRenderer renderer;
+	private readonly DirectionalShadowFrame? shadows;
 	private int disposed;
 
 	internal DrawVoxelPagesCommand(
@@ -54,7 +56,8 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 		VoxelGpuTimer gpuTimer,
 		IReadOnlyList<VoxelPassEntry> opaqueEntries,
 		IReadOnlyList<VoxelPassEntry> cutoutEntries,
-		VoxelRenderer renderer
+		VoxelRenderer renderer,
+		DirectionalShadowFrame? shadows
 	)
 	{
 		this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
@@ -67,6 +70,7 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 		this.indirectBuffer = indirectBuffer ?? throw new ArgumentNullException(nameof(indirectBuffer));
 		this.gpuTimer = gpuTimer ?? throw new ArgumentNullException(nameof(gpuTimer));
 		this.renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+		this.shadows = shadows;
 		opaqueGroups = CreateGroups(opaqueEntries);
 
 		try
@@ -107,6 +111,7 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 		long start = Stopwatch.GetTimestamp();
 		bool shaderBound = false;
 		bool textureBound = false;
+		IDisposable shadowBindings = null;
 		using IDisposable stateScope = pass.PushState(state);
 		int queryIndex = gpuTimer.Begin(pass, out IDisposable queryScope);
 
@@ -121,6 +126,8 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 			shader.SetUniform("FogDensity", fog.Density);
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
 			shader.SetUniform("AlphaCutoff", -1f);
+			shader.SetUniform("uShadowEnabled", 0);
+			shadowBindings = shadows?.Bind(shader, 1);
 			shader.Bind(pass.Uniforms);
 			shaderBound = true;
 			atlas.BindTextureUnit();
@@ -138,6 +145,8 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 		{
 			try
 			{
+				shadowBindings?.Dispose();
+
 				if (textureBound)
 				{
 					atlas.UnbindTextureUnit();

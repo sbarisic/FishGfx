@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using FishGfx.Graphics;
+using FishGfx.Graphics.Shadows;
 
 namespace FishGfx.Voxels;
 
@@ -24,17 +25,26 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly HashSet<ChunkCoordinate> activeCoordinates = new HashSet<ChunkCoordinate>();
 	private readonly List<VoxelPassEntry> visibleOpaque = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> visibleCutout = new List<VoxelPassEntry>();
+	private readonly List<VoxelPassEntry> shadowOpaque = new List<VoxelPassEntry>();
+	private readonly List<VoxelPassEntry> shadowCutout = new List<VoxelPassEntry>();
+	private readonly List<VoxelPassEntry> shadowAlpha = new List<VoxelPassEntry>();
 	private readonly List<VoxelMeshData> pendingUploads = new List<VoxelMeshData>();
 	private readonly ConcurrentQueue<ChunkCoordinate> removedChunks = new ConcurrentQueue<ChunkCoordinate>();
 	private readonly ShaderProgram voxelShader;
 	private readonly ShaderProgram waveShader;
+	private readonly ShaderProgram shadowOpaqueShader;
+	private readonly ShaderProgram shadowAlphaShader;
 	private readonly ShaderStage vertexShader;
 	private readonly ShaderStage waveVertexShader;
 	private readonly ShaderStage fragmentShader;
+	private readonly ShaderStage shadowVertexShader;
+	private readonly ShaderStage shadowOpaqueFragmentShader;
+	private readonly ShaderStage shadowAlphaFragmentShader;
 	private readonly RenderState opaqueState;
 	private readonly RenderState transparentState;
 	private readonly VoxelGeometryPagePool opaqueGeometry;
 	private readonly VoxelGeometryPagePool cutoutGeometry;
+	private readonly VoxelGeometryPagePool alphaShadowGeometry;
 	private readonly VoxelTransparentGeometryStore transparentGeometry;
 	private readonly VoxelTransparentOrderingScheduler transparentOrdering;
 	private readonly VoxelTransparentIndexRing transparentIndexRing;
@@ -152,10 +162,31 @@ public sealed partial class VoxelRenderer : IDisposable
 			ShaderStageType.Fragment,
 			Path.Combine(shaderDirectory, "voxel.frag")
 		);
+		shadowVertexShader = graphics.LoadShaderStage(
+			ShaderStageType.Vertex,
+			Path.Combine(shaderDirectory, "voxel_shadow.vert")
+		);
+		shadowOpaqueFragmentShader = graphics.LoadShaderStage(
+			ShaderStageType.Fragment,
+			Path.Combine(shaderDirectory, "voxel_shadow_opaque.frag")
+		);
+		shadowAlphaFragmentShader = graphics.LoadShaderStage(
+			ShaderStageType.Fragment,
+			Path.Combine(shaderDirectory, "voxel_shadow_alpha.frag")
+		);
 		voxelShader = graphics.CreateShaderProgram(vertexShader, fragmentShader);
 		waveShader = graphics.CreateShaderProgram(waveVertexShader, fragmentShader);
+		shadowOpaqueShader = graphics.CreateShaderProgram(
+			shadowVertexShader,
+			shadowOpaqueFragmentShader
+		);
+		shadowAlphaShader = graphics.CreateShaderProgram(
+			shadowVertexShader,
+			shadowAlphaFragmentShader
+		);
 		opaqueGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
 		cutoutGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
+		alphaShadowGeometry = new VoxelGeometryPagePool(graphics, this.options.GeometryPageSizeBytes);
 		transparentGeometry = new VoxelTransparentGeometryStore(
 			graphics,
 			this.options.GeometryPageSizeBytes
@@ -255,6 +286,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	}
 
 	public VoxelRendererFrameDiagnostics FrameDiagnostics => frameDiagnostics;
+
+	public long GeometryRevision => transparentGeometryRevision;
 
 	public bool GpuProfilingEnabled
 	{
@@ -506,6 +539,7 @@ public sealed partial class VoxelRenderer : IDisposable
 	{
 		return result.OpaqueVertexCount == 0
 			&& result.CutoutVertexCount == 0
+			&& result.AlphaShadowVertexCount == 0
 			&& result.TransparentFaces.Length == 0;
 	}
 

@@ -68,6 +68,16 @@ public unsafe sealed partial class Texture : GraphicsResource
 
 	public TextureSamplingState Sampling { get; private set; }
 
+	/// <summary>
+	/// Binds this texture to a texture unit until the returned scope is disposed.
+	/// Nested bindings restore the previous texture for that unit.
+	/// </summary>
+	public IDisposable Bind(uint unit = 0)
+	{
+		BindTextureUnit(unit);
+		return new TextureBindingScope(this, unit);
+	}
+
 	public void SetSampling(TextureSamplingState sampling)
 	{
 		EnsureCurrentOwner();
@@ -419,6 +429,28 @@ public unsafe sealed partial class Texture : GraphicsResource
 		}
 
 		return bindings;
+	}
+
+	private sealed class TextureBindingScope : IDisposable
+	{
+		private Texture texture;
+		private readonly uint unit;
+
+		internal TextureBindingScope(Texture texture, uint unit)
+		{
+			this.texture = texture;
+			this.unit = unit;
+		}
+
+		public void Dispose()
+		{
+			Texture current = System.Threading.Interlocked.Exchange(ref texture, null);
+
+			if (current != null)
+			{
+				current.UnbindTextureUnit(unit);
+			}
+		}
 	}
 
 	private void ValidateSubresource(TextureSubresource subresource)

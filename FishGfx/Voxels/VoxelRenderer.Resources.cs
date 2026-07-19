@@ -44,12 +44,18 @@ public sealed partial class VoxelRenderer : IDisposable
 		gpuTimer.Dispose();
 		indirectBuffer.Dispose();
 		cutoutGeometry.Dispose();
+		alphaShadowGeometry.Dispose();
 		opaqueGeometry.Dispose();
+		shadowAlphaShader.Dispose();
+		shadowOpaqueShader.Dispose();
 		waveShader.Dispose();
 		voxelShader.Dispose();
 		waveVertexShader.Dispose();
 		vertexShader.Dispose();
 		fragmentShader.Dispose();
+		shadowAlphaFragmentShader.Dispose();
+		shadowOpaqueFragmentShader.Dispose();
+		shadowVertexShader.Dispose();
 	}
 
 	private void Upload(VoxelMeshData result)
@@ -57,6 +63,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		if (
 			result.OpaqueVertexCount == 0
 			&& result.CutoutVertexCount == 0
+			&& result.AlphaShadowVertexCount == 0
 			&& result.TransparentFaces.Length == 0
 		)
 		{
@@ -94,6 +101,11 @@ public sealed partial class VoxelRenderer : IDisposable
 		gpuChunk.Cutout = cutoutGeometry.Update(
 			gpuChunk.Cutout,
 			result.CutoutVertexSpan,
+			result.Coordinate.WorldOrigin
+		);
+		gpuChunk.AlphaShadow = alphaShadowGeometry.Update(
+			gpuChunk.AlphaShadow,
+			result.AlphaShadowVertexSpan,
 			result.Coordinate.WorldOrigin
 		);
 		gpuChunk.Transparent = transparentGeometry.Update(

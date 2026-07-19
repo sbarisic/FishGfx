@@ -177,6 +177,26 @@ internal sealed class OpenGlRenderStateApplier
 		{
 			SetEnabled((EnableCap)0x864F, state.DepthClampEnabled);
 		}
+
+		bool depthBiasEnabled = state.DepthBiasSlope != 0 || state.DepthBiasConstant != 0;
+		bool depthBiasWasEnabled = previous.DepthBiasSlope != 0 || previous.DepthBiasConstant != 0;
+
+		if (first || depthBiasEnabled != depthBiasWasEnabled)
+		{
+			SetEnabled(EnableCap.PolygonOffsetFill, depthBiasEnabled);
+		}
+
+		if (depthBiasEnabled
+			&& (first
+				|| !depthBiasWasEnabled
+				|| previous.DepthBiasSlope != state.DepthBiasSlope
+				|| previous.DepthBiasConstant != state.DepthBiasConstant))
+		{
+			Internal_OpenGL.GL.PolygonOffset(
+				state.DepthBiasSlope,
+				state.DepthBiasConstant
+			);
+		}
 	}
 
 	private static void SetEnabled(EnableCap capability, bool enabled)

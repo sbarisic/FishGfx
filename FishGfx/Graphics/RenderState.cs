@@ -134,6 +134,10 @@ public readonly record struct RenderState
 
 	public bool DepthClampEnabled { get; init; }
 
+	public float DepthBiasSlope { get; init; }
+
+	public float DepthBiasConstant { get; init; }
+
 	public ColorWriteMask ColorWriteMask { get; init; }
 
 	public float PointSize { get; init; }
@@ -153,6 +157,8 @@ public readonly record struct RenderState
 		DepthWriteEnabled = true,
 		BlendEnabled = true,
 		DepthClampEnabled = true,
+		DepthBiasSlope = 0,
+		DepthBiasConstant = 0,
 		ColorWriteMask = ColorWriteMask.All,
 		PointSize = 1,
 	};
@@ -187,6 +193,16 @@ public readonly record struct RenderState
 		if (!float.IsFinite(PointSize) || PointSize <= 0)
 		{
 			throw new ArgumentOutOfRangeException(nameof(PointSize));
+		}
+
+		if (!float.IsFinite(DepthBiasSlope))
+		{
+			throw new ArgumentOutOfRangeException(nameof(DepthBiasSlope));
+		}
+
+		if (!float.IsFinite(DepthBiasConstant))
+		{
+			throw new ArgumentOutOfRangeException(nameof(DepthBiasConstant));
 		}
 
 		if (ScissorRectangle is AxisAlignedBoundingBox scissor)

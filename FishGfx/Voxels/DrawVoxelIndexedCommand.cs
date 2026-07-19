@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using System.Threading;
 using FishGfx.Graphics;
+using FishGfx.Graphics.Shadows;
 
 namespace FishGfx.Voxels;
 
@@ -14,6 +15,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 	private readonly VoxelSunSettings sun;
 	private readonly VoxelFogSettings fog;
 	private readonly VoxelGpuTimer gpuTimer;
+	private readonly DirectionalShadowFrame? shadows;
 	private int disposed;
 
 	internal DrawVoxelIndexedCommand(
@@ -23,7 +25,8 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		RenderState state,
 		VoxelSunSettings sun,
 		VoxelFogSettings fog,
-		VoxelGpuTimer gpuTimer
+		VoxelGpuTimer gpuTimer,
+		DirectionalShadowFrame? shadows
 	)
 	{
 		this.snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
@@ -34,6 +37,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		this.sun = sun;
 		this.fog = fog;
 		this.gpuTimer = gpuTimer ?? throw new ArgumentNullException(nameof(gpuTimer));
+		this.shadows = shadows;
 		snapshot.RetainReference();
 	}
 
@@ -48,6 +52,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
 		bool shaderBound = false;
 		bool textureBound = false;
+		IDisposable shadowBindings = null;
 		using IDisposable stateScope = pass.PushState(state);
 		int queryIndex = gpuTimer.Begin(pass, out IDisposable queryScope);
 
@@ -62,6 +67,8 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 			shader.SetUniform("FogColor", (Vector3)fog.Color);
 			shader.SetUniform("FogDensity", fog.Density);
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
+			shader.SetUniform("uShadowEnabled", 0);
+			shadowBindings = shadows?.Bind(shader, 1);
 			shader.Bind(pass.Uniforms);
 			shaderBound = true;
 			atlas.BindTextureUnit();
@@ -72,6 +79,8 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		{
 			try
 			{
+				shadowBindings?.Dispose();
+
 				if (textureBound)
 				{
 					atlas.UnbindTextureUnit();

@@ -10,6 +10,13 @@ public enum VoxelRenderMode
 	Transparent,
 }
 
+public enum VoxelShadowCasterMode
+{
+	None,
+	Opaque,
+	AlphaTest,
+}
+
 public enum VoxelFace
 {
 	PositiveX,

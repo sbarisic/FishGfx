@@ -307,7 +307,10 @@ public partial class VoxelTests
 				new[] { typeof(Camera), typeof(int?) }
 			)
 		);
-		Assert.NotNull(typeof(VoxelRenderer).GetMethod(nameof(VoxelRenderer.EnqueueVisible)));
+		Assert.NotNull(typeof(VoxelRenderer).GetMethod(
+			nameof(VoxelRenderer.EnqueueVisible),
+			new[] { typeof(RenderQueue), typeof(Camera), typeof(float?) }
+		));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.IsCullingEnabled)));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.SunSettings)));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.FogSettings)));

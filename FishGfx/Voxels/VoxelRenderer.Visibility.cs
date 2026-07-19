@@ -3,12 +3,22 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using FishGfx.Graphics;
+using FishGfx.Graphics.Shadows;
 
 namespace FishGfx.Voxels;
 
 public sealed partial class VoxelRenderer : IDisposable
 {
 	public void EnqueueVisible(RenderQueue queue, Camera camera, float? maxRenderDistance = null)
+	{
+		EnqueueVisible(queue, camera, shadows: null, maxRenderDistance);
+	}
+
+	public void EnqueueVisible(
+		RenderQueue queue,
+		Camera camera,
+		DirectionalShadowFrame? shadows,
+		float? maxRenderDistance = null)
 	{
 		ThrowIfDisposed();
 		ArgumentNullException.ThrowIfNull(queue);
@@ -80,7 +90,7 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		if (visibleOpaque.Count > 0 || visibleCutout.Count > 0)
 		{
-			DrawVoxelPagesCommand command = SubmitPageSnapshot(queue, camera);
+			DrawVoxelPagesCommand command = SubmitPageSnapshot(queue, camera, shadows);
 			opaquePageGroups = command.OpaqueGroupCount;
 			cutoutPageGroups = command.CutoutGroupCount;
 			indirectCommandCount = command.OpaqueCommandCount + command.CutoutCommandCount;
@@ -103,7 +113,7 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		if (transparentSnapshot?.IndexCount > 0)
 		{
-			SubmitTransparentSnapshot(queue, camera);
+			SubmitTransparentSnapshot(queue, camera, shadows);
 			passSubmissions++;
 		}
 
@@ -173,7 +183,10 @@ public sealed partial class VoxelRenderer : IDisposable
 		ResetTransparentFrameWorkDiagnostics();
 	}
 
-	private DrawVoxelPagesCommand SubmitPageSnapshot(RenderQueue queue, Camera camera)
+	private DrawVoxelPagesCommand SubmitPageSnapshot(
+		RenderQueue queue,
+		Camera camera,
+		DirectionalShadowFrame? shadows)
 	{
 		DrawVoxelPagesCommand command = new(
 			atlasTexture,
@@ -186,7 +199,8 @@ public sealed partial class VoxelRenderer : IDisposable
 			gpuTimer,
 			visibleOpaque,
 			visibleCutout,
-			this
+			this,
+			shadows
 		);
 
 		try
@@ -210,7 +224,10 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 	}
 
-	private void SubmitTransparentSnapshot(RenderQueue queue, Camera camera)
+	private void SubmitTransparentSnapshot(
+		RenderQueue queue,
+		Camera camera,
+		DirectionalShadowFrame? shadows)
 	{
 		DrawVoxelIndexedCommand command = new(
 			transparentSnapshot,
@@ -219,7 +236,8 @@ public sealed partial class VoxelRenderer : IDisposable
 			transparentState,
 			sun,
 			fog,
-			transparentGpuTimer
+			transparentGpuTimer,
+			shadows
 		);
 
 		try

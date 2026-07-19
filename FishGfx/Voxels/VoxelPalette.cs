@@ -70,12 +70,50 @@ public sealed class VoxelMaterial
 		bool doubleSided = false,
 		VoxelModelSet models = null,
 		VoxelWaveSettings? wave = null,
-		VoxelMaterialLightSettings? light = null
+		VoxelMaterialLightSettings? light = null,
+		VoxelShadowCasterMode? shadowCasterMode = null,
+		float? shadowAlphaCutoff = null
 	)
 	{
 		if (string.IsNullOrWhiteSpace(name))
 		{
 			throw new ArgumentException("Voxel material names cannot be empty.", nameof(name));
+		}
+
+		VoxelShadowCasterMode resolvedShadowCasterMode = shadowCasterMode ?? renderMode switch
+		{
+			VoxelRenderMode.Opaque => VoxelShadowCasterMode.Opaque,
+			VoxelRenderMode.Cutout => VoxelShadowCasterMode.AlphaTest,
+			_ => VoxelShadowCasterMode.None,
+		};
+		float resolvedShadowAlphaCutoff = shadowAlphaCutoff ?? 0.5f;
+
+		if (!Enum.IsDefined(resolvedShadowCasterMode))
+		{
+			throw new ArgumentOutOfRangeException(nameof(shadowCasterMode));
+		}
+
+		if (!float.IsFinite(resolvedShadowAlphaCutoff)
+			|| resolvedShadowAlphaCutoff is < 0 or > 1)
+		{
+			throw new ArgumentOutOfRangeException(nameof(shadowAlphaCutoff));
+		}
+
+		if (wave.HasValue && resolvedShadowCasterMode == VoxelShadowCasterMode.AlphaTest)
+		{
+			throw new ArgumentException(
+				"Waving voxel materials cannot use alpha-tested shadow casting.",
+				nameof(shadowCasterMode)
+			);
+		}
+
+		if (renderMode == VoxelRenderMode.Transparent
+			&& resolvedShadowCasterMode == VoxelShadowCasterMode.Opaque)
+		{
+			throw new ArgumentException(
+				"Transparent voxel materials must use alpha-tested or disabled shadow casting.",
+				nameof(shadowCasterMode)
+			);
 		}
 
 		if (wave.HasValue)
@@ -101,6 +139,8 @@ public sealed class VoxelMaterial
 		Models = models;
 		Wave = wave;
 		Light = light ?? new VoxelMaterialLightSettings(OccludesFaces ? (byte)15 : (byte)0);
+		ShadowCasterMode = resolvedShadowCasterMode;
+		ShadowAlphaCutoff = resolvedShadowAlphaCutoff;
 	}
 
 	public string Name { get; }
@@ -112,6 +152,8 @@ public sealed class VoxelMaterial
 	public VoxelModelSet Models { get; }
 	public VoxelWaveSettings? Wave { get; }
 	public VoxelMaterialLightSettings Light { get; }
+	public VoxelShadowCasterMode ShadowCasterMode { get; }
+	public float ShadowAlphaCutoff { get; }
 }
 
 public sealed class VoxelPaletteBuilder

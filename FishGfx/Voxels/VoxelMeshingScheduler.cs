@@ -418,6 +418,7 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 			job.LightSource?.Revision ?? 0,
 			Array.Empty<VoxelVertex>(),
 			Array.Empty<VoxelVertex>(),
+			Array.Empty<VoxelVertex>(),
 			Array.Empty<VoxelTransparentFace>(),
 			AxisAlignedBoundingBox.Empty
 		);
