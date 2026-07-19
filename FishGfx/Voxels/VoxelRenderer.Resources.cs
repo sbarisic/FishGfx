@@ -27,6 +27,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		pendingUploads.Clear();
+		completedEmptyChunks.Clear();
 
 		foreach (GpuChunk chunk in gpuChunks.Values)
 		{
@@ -60,8 +61,15 @@ public sealed partial class VoxelRenderer : IDisposable
 		)
 		{
 			RemoveGpuChunk(result.Coordinate);
+			completedEmptyChunks[result.Coordinate] = new CompletedEmptyChunk(
+				result.WorldGeneration,
+				result.Revision,
+				result.LightGeneration,
+				result.LightRevision);
 			return;
 		}
+
+		completedEmptyChunks.Remove(result.Coordinate);
 
 		if (!gpuChunks.TryGetValue(result.Coordinate, out GpuChunk gpuChunk))
 		{
@@ -73,7 +81,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		opaqueVertices -= gpuChunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices -= gpuChunk.Cutout?.VertexCount ?? 0;
 
+		gpuChunk.WorldGeneration = result.WorldGeneration;
 		gpuChunk.Revision = result.Revision;
+		gpuChunk.LightGeneration = result.LightGeneration;
 		gpuChunk.LightRevision = result.LightRevision;
 		gpuChunk.Bounds = result.Bounds;
 		gpuChunk.Opaque = opaqueGeometry.Update(

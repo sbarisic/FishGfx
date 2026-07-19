@@ -17,6 +17,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly VoxelRendererOptions options;
 	private readonly VoxelMeshingScheduler scheduler;
 	private readonly Dictionary<ChunkCoordinate, GpuChunk> gpuChunks = new Dictionary<ChunkCoordinate, GpuChunk>();
+	private readonly Dictionary<ChunkCoordinate, CompletedEmptyChunk> completedEmptyChunks =
+		new Dictionary<ChunkCoordinate, CompletedEmptyChunk>();
 	private readonly List<GpuChunk> orderedGpuChunks = new List<GpuChunk>();
 	private readonly List<GpuChunk> activeGpuChunks = new List<GpuChunk>();
 	private readonly HashSet<ChunkCoordinate> activeCoordinates = new HashSet<ChunkCoordinate>();
@@ -284,6 +286,58 @@ public sealed partial class VoxelRenderer : IDisposable
 		cutoutGeometry.PageCount
 	);
 
+	public bool HasValidTransparentOrdering => IsTransparentOrderingCurrent(
+		transparentSnapshot != null,
+		transparentSnapshot?.GeometryRevision ?? 0,
+		transparentGeometryRevision,
+		transparentSnapshot?.ActiveSetGeneration ?? 0,
+		activeSetGeneration);
+
+	internal static bool IsTransparentOrderingCurrent(
+		bool hasSnapshot,
+		long snapshotGeometryRevision,
+		long currentGeometryRevision,
+		long snapshotActiveSetGeneration,
+		long currentActiveSetGeneration) =>
+		hasSnapshot &&
+		snapshotGeometryRevision == currentGeometryRevision &&
+		snapshotActiveSetGeneration == currentActiveSetGeneration;
+
+	public VoxelPresentationState GetPresentationState(ChunkCoordinate coordinate)
+	{
+		ThrowIfDisposed();
+		if (!world.TryGetChunk(coordinate, out VoxelChunk chunk))
+			return ResolvePresentationState(false, false, false, false);
+		if (!lighting.TryGetChunkState(coordinate, out long lightGeneration, out long lightRevision))
+			return ResolvePresentationState(true, false, false, false);
+		bool residentMatches = gpuChunks.TryGetValue(coordinate, out GpuChunk gpuChunk) &&
+			gpuChunk.WorldGeneration == chunk.Generation &&
+			gpuChunk.Revision == chunk.Revision &&
+			gpuChunk.LightGeneration == lightGeneration &&
+			gpuChunk.LightRevision == lightRevision;
+		bool emptyMatches = completedEmptyChunks.TryGetValue(coordinate, out CompletedEmptyChunk empty) &&
+			empty.WorldGeneration == chunk.Generation &&
+			empty.WorldRevision == chunk.Revision &&
+			empty.LightGeneration == lightGeneration &&
+			empty.LightRevision == lightRevision;
+		return ResolvePresentationState(true, true, residentMatches, emptyMatches);
+	}
+
+	internal static VoxelPresentationState ResolvePresentationState(
+		bool chunkExists,
+		bool lightingPublished,
+		bool residentMatches,
+		bool emptyMatches)
+	{
+		if (!chunkExists)
+			return VoxelPresentationState.Missing;
+		if (!lightingPublished)
+			return VoxelPresentationState.WaitingForLighting;
+		if (residentMatches)
+			return VoxelPresentationState.Resident;
+		return emptyMatches ? VoxelPresentationState.EmptyComplete : VoxelPresentationState.Meshing;
+	}
+
 	public int UpdateMeshes(int? meshUploadBudget = null)
 	{
 		return UpdateMeshesCore(focus: null, meshUploadBudget);
@@ -426,6 +480,11 @@ public sealed partial class VoxelRenderer : IDisposable
 
 			if (IsEmpty(result) && !gpuChunks.ContainsKey(result.Coordinate))
 			{
+				completedEmptyChunks[result.Coordinate] = new CompletedEmptyChunk(
+					result.WorldGeneration,
+					result.Revision,
+					result.LightGeneration,
+					result.LightRevision);
 				acceptedMeshes++;
 				fastCompleted++;
 				result.ReleasePooledVertexBuffers();

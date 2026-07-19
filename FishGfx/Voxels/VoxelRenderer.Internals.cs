@@ -17,6 +17,7 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	private void RemoveGpuChunk(ChunkCoordinate coordinate)
 	{
+		completedEmptyChunks.Remove(coordinate);
 		if (!gpuChunks.Remove(coordinate, out GpuChunk chunk))
 		{
 			return;
@@ -181,7 +182,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		public ChunkCoordinate Coordinate { get; }
+		public long WorldGeneration;
 		public long Revision;
+		public long LightGeneration;
 		public long LightRevision;
 		public AxisAlignedBoundingBox Bounds;
 		public VoxelGeometryAllocation Opaque;
@@ -195,6 +198,12 @@ public sealed partial class VoxelRenderer : IDisposable
 			Transparent?.ReleaseOwner();
 		}
 	}
+
+	private readonly record struct CompletedEmptyChunk(
+		long WorldGeneration,
+		long WorldRevision,
+		long LightGeneration,
+		long LightRevision);
 
 	private sealed class GpuChunkComparer : IComparer<GpuChunk>
 	{
