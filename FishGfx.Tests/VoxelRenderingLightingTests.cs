@@ -66,6 +66,25 @@ public partial class VoxelRenderingLightingTests
 		);
 	}
 
+	[Fact]
+	public void VoxelShadowReceiverUsesMapDepthAndClampedPcfSamples()
+	{
+		string shaderPath = Path.Combine(
+			AppContext.BaseDirectory,
+			"data",
+			"shaders",
+			"voxel.frag"
+		);
+		string fragment = File.ReadAllText(shaderPath);
+
+		Assert.Contains("uniform float uShadowMapDepthRanges[4];", fragment);
+		Assert.Contains("uniform float uShadowWorldTexelSizes[4];", fragment);
+		Assert.Contains("worldBias * 0.5 / max(uShadowMapDepthRanges[cascade], 1.0)", fragment);
+		Assert.Contains("vec2 sampleUv = clamp(", fragment);
+		Assert.DoesNotContain("(uShadowDepthRanges[cascade] / 128.0)", fragment);
+		Assert.DoesNotContain("visible += 1.0;", fragment);
+	}
+
 	[Theory]
 	[InlineData(VoxelRenderMode.Opaque)]
 	[InlineData(VoxelRenderMode.Cutout)]

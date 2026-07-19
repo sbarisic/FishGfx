@@ -256,7 +256,7 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		{
 			BlendEnabled = false,
 			ColorWriteMask = ColorWriteMask.None,
-			CullMode = CullMode.Front,
+			CullMode = CullMode.Back,
 			Winding = Winding.CounterClockwise,
 			DepthBiasSlope = options.RasterSlopeBias,
 			DepthBiasConstant = options.RasterConstantBias,
@@ -454,6 +454,12 @@ public sealed class DirectionalShadowRenderer : IDisposable
 			currentSnapshot.Matrices[index] = slot.Cascade.ViewProjection;
 			currentSnapshot.Splits[index] = slot.Cascade.FarDistance;
 			currentSnapshot.DepthRanges[index] = slot.Cascade.FarDistance - slot.Cascade.NearDistance;
+			currentSnapshot.MapDepthRanges[index] =
+				slot.Cascade.Camera.Far - slot.Cascade.Camera.Near;
+			currentSnapshot.WorldTexelSizes[index] = Math.Max(
+				slot.Cascade.TexelWorldSize.X,
+				slot.Cascade.TexelWorldSize.Y
+			);
 		}
 
 		currentSnapshot.Strength = currentStrength;
@@ -484,6 +490,8 @@ public sealed class DirectionalShadowRenderer : IDisposable
 				Matrices = new Matrix4x4[options.CascadeCount],
 				Splits = new float[options.CascadeCount],
 				DepthRanges = new float[options.CascadeCount],
+				MapDepthRanges = new float[options.CascadeCount],
+				WorldTexelSizes = new float[options.CascadeCount],
 			};
 
 		for (int index = 0; index < slots.Length; index++)

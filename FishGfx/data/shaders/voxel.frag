@@ -28,11 +28,17 @@ uniform int uShadowFilterRadius;
 uniform mat4 uShadowMatrices[4];
 uniform float uShadowSplits[4];
 uniform float uShadowDepthRanges[4];
+uniform float uShadowMapDepthRanges[4];
+uniform float uShadowWorldTexelSizes[4];
 uniform sampler2D uShadowMaps[4];
 
 float SampleShadowCascade(int cascade, vec3 worldPosition, vec3 normal, float nDotL)
 {
-	vec4 projected = uShadowMatrices[cascade] * vec4(worldPosition, 1.0);
+	float slope = 1.0 - clamp(nDotL, 0.0, 1.0);
+	float worldTexelSize = uShadowWorldTexelSizes[cascade];
+	float normalOffset = min(worldTexelSize * 1.25 * slope, 0.2);
+	vec3 receiverPosition = worldPosition + normal * normalOffset;
+	vec4 projected = uShadowMatrices[cascade] * vec4(receiverPosition, 1.0);
 
 	if (projected.w <= 0.0)
 	{
@@ -49,12 +55,15 @@ float SampleShadowCascade(int cascade, vec3 worldPosition, vec3 normal, float nD
 		return 1.0;
 	}
 
+	float worldBias = 0.01 + worldTexelSize * 0.1 * slope;
 	float bias = clamp(
-		(0.00035 + 0.0015 * (1.0 - nDotL)) * (uShadowDepthRanges[cascade] / 128.0),
-		0.0002,
-		0.0040
+		worldBias * 0.5 / max(uShadowMapDepthRanges[cascade], 1.0),
+		0.000002,
+		0.0001
 	);
 	vec2 texel = 1.0 / vec2(textureSize(uShadowMaps[cascade], 0));
+	vec2 minimumUv = texel * 0.5;
+	vec2 maximumUv = vec2(1.0) - minimumUv;
 	float visible = 0.0;
 	float samples = 0.0;
 
@@ -62,17 +71,13 @@ float SampleShadowCascade(int cascade, vec3 worldPosition, vec3 normal, float nD
 	{
 		for (int x = -uShadowFilterRadius; x <= uShadowFilterRadius; x++)
 		{
-			vec2 sampleUv = uv + vec2(x, y) * texel;
-
-			if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0)
-			{
-				visible += 1.0;
-			}
-			else
-			{
-				float storedDepth = texture(uShadowMaps[cascade], sampleUv).r;
-				visible += receiverDepth - bias <= storedDepth ? 1.0 : 0.0;
-			}
+			vec2 sampleUv = clamp(
+				uv + vec2(x, y) * texel,
+				minimumUv,
+				maximumUv
+			);
+			float storedDepth = texture(uShadowMaps[cascade], sampleUv).r;
+			visible += receiverDepth - bias <= storedDepth ? 1.0 : 0.0;
 
 			samples += 1.0;
 		}

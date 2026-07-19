@@ -35,8 +35,8 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 		this.alphaShader = alphaShader ?? throw new ArgumentNullException(nameof(alphaShader));
 		this.indirectBuffer = indirectBuffer ?? throw new ArgumentNullException(nameof(indirectBuffer));
 		this.cutoutAlphaCutoff = cutoutAlphaCutoff;
-		opaqueState = baseState with { CullMode = CullMode.Front };
-		alphaState = baseState with { CullMode = CullMode.Back };
+		opaqueState = baseState with { CullMode = CullMode.Back };
+		alphaState = CreateAlphaTestState(baseState);
 		opaqueGroups = CreateGroups(opaqueEntries);
 
 		try
@@ -57,6 +57,11 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 	internal int LogicalCommandCount => CountCommands(opaqueGroups)
 		+ CountCommands(cutoutGroups)
 		+ CountCommands(alphaGroups);
+
+	internal static RenderState CreateAlphaTestState(RenderState baseState)
+	{
+		return baseState with { CullMode = CullMode.Back };
+	}
 
 	public void Execute(RenderPass pass)
 	{

@@ -82,4 +82,21 @@ public sealed class DirectionalShadowTests
 		Assert.NotEmpty(mesh.TransparentFaces);
 		Assert.Empty(mesh.AlphaShadowVertices);
 	}
+
+	[Fact]
+	public void AlphaTestCastersRetainTheConfiguredRasterBias()
+	{
+		RenderState baseState = RenderState.Default with
+		{
+			CullMode = CullMode.Front,
+			DepthBiasSlope = 0.75f,
+			DepthBiasConstant = 1f,
+		};
+
+		RenderState alphaState = DrawVoxelShadowPagesCommand.CreateAlphaTestState(baseState);
+
+		Assert.Equal(CullMode.Back, alphaState.CullMode);
+		Assert.Equal(baseState.DepthBiasSlope, alphaState.DepthBiasSlope);
+		Assert.Equal(baseState.DepthBiasConstant, alphaState.DepthBiasConstant);
+	}
 }

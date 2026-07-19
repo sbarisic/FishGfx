@@ -56,7 +56,8 @@ public readonly struct DirectionalShadowFrame
 			shader.SetUniform("uShadowMatrices", snapshot.Matrices);
 			shader.SetUniform("uShadowSplits", snapshot.Splits);
 			shader.SetUniform("uShadowDepthRanges", snapshot.DepthRanges);
-
+			shader.SetUniform("uShadowMapDepthRanges", snapshot.MapDepthRanges);
+			shader.SetUniform("uShadowWorldTexelSizes", snapshot.WorldTexelSizes);
 			shader.SetUniform("uShadowMaps", textureUnits);
 
 			return new BindingScope(bindings);
@@ -87,6 +88,9 @@ public readonly struct DirectionalShadowFrame
 
 		public required float[] DepthRanges { get; init; }
 
+		public required float[] MapDepthRanges { get; init; }
+
+		public required float[] WorldTexelSizes { get; init; }
 	}
 
 	private static void DisposeBindings(IDisposable[] bindings)
