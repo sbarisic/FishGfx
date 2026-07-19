@@ -31,8 +31,11 @@ public sealed partial class VoxelRenderer
 		for (int index = 0; index < activeGpuChunks.Count; index++)
 		{
 			GpuChunk chunk = activeGpuChunks[index];
+			VoxelGeometryAllocation alphaShadow = chunk.AlphaShadow;
 
-			if (chunk.AlphaShadow?.VertexCount <= 0 || chunk.Bounds.IsEmpty)
+			if (alphaShadow is null
+				|| alphaShadow.VertexCount <= 0
+				|| chunk.Bounds.IsEmpty)
 			{
 				continue;
 			}
@@ -50,7 +53,7 @@ public sealed partial class VoxelRenderer
 			}
 
 			shadowAlpha.Add(new VoxelPassEntry(
-				chunk.AlphaShadow,
+				alphaShadow,
 				chunk.Coordinate,
 				0
 			));
