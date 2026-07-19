@@ -9,7 +9,7 @@ namespace FishGfx.Voxels;
 internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 {
 	private readonly VoxelTransparentDrawSnapshot snapshot;
-	private readonly Texture atlas;
+	private readonly VoxelSurfaceTextureSet textures;
 	private readonly ShaderProgram shader;
 	private readonly RenderState state;
 	private readonly VoxelSunSettings sun;
@@ -20,7 +20,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 
 	internal DrawVoxelIndexedCommand(
 		VoxelTransparentDrawSnapshot snapshot,
-		Texture atlas,
+		VoxelSurfaceTextureSet textures,
 		ShaderProgram shader,
 		RenderState state,
 		VoxelSunSettings sun,
@@ -30,7 +30,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 	)
 	{
 		this.snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
-		this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
+		this.textures = textures ?? throw new ArgumentNullException(nameof(textures));
 		this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
 		this.state = state;
 		sun.Validate(nameof(sun));
@@ -51,7 +51,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		ArgumentNullException.ThrowIfNull(pass);
 		ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
 		bool shaderBound = false;
-		bool textureBound = false;
+		IDisposable textureBindings = null;
 		IDisposable shadowBindings = null;
 		using IDisposable stateScope = pass.PushState(state);
 		int queryIndex = gpuTimer.Begin(pass, out IDisposable queryScope);
@@ -68,11 +68,10 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 			shader.SetUniform("FogDensity", fog.Density);
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
 			shader.SetUniform("uShadowEnabled", 0);
-			shadowBindings = shadows?.Bind(shader, 1);
+			shadowBindings = shadows?.Bind(shader, 4);
+			textureBindings = textures.Bind(shader);
 			shader.Bind(pass.Uniforms);
 			shaderBound = true;
-			atlas.BindTextureUnit();
-			textureBound = true;
 			snapshot.DrawRetained();
 		}
 		finally
@@ -81,10 +80,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 			{
 				shadowBindings?.Dispose();
 
-				if (textureBound)
-				{
-					atlas.UnbindTextureUnit();
-				}
+				textureBindings?.Dispose();
 
 				if (shaderBound)
 				{

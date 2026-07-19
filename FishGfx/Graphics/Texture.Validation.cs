@@ -13,7 +13,9 @@ public unsafe sealed partial class Texture
 
 	private static void ValidateDescriptor(TextureDescriptor descriptor)
 	{
-		if (descriptor.Width <= 0 || descriptor.Height <= 0)
+		if (descriptor.Width <= 0
+			|| descriptor.Height <= 0
+			|| descriptor.Depth <= 0)
 		{
 			throw new ArgumentOutOfRangeException(
 				nameof(descriptor),
@@ -42,8 +44,30 @@ public unsafe sealed partial class Texture
 			);
 		}
 
+		if (descriptor.Dimension != TextureDimension.Texture3D
+			&& descriptor.Depth != 1)
+		{
+			throw new ArgumentException(
+				"Only three-dimensional textures may have depth greater than one.",
+				nameof(descriptor)
+			);
+		}
+
+		if (descriptor.Dimension == TextureDimension.Texture3D
+			&& (descriptor.Usage & (TextureUsageFlags.ColorAttachment |
+				TextureUsageFlags.DepthStencilAttachment)) != 0)
+		{
+			throw new ArgumentException(
+				"Three-dimensional textures cannot be render-target attachments.",
+				nameof(descriptor)
+			);
+		}
+
 		int maximumMips = 1 + (int)Math.Floor(
-			Math.Log2(Math.Max(descriptor.Width, descriptor.Height))
+			Math.Log2(Math.Max(
+				Math.Max(descriptor.Width, descriptor.Height),
+				descriptor.Depth
+			))
 		);
 
 		if (descriptor.MipLevels <= 0 || descriptor.MipLevels > maximumMips)
@@ -60,11 +84,16 @@ public unsafe sealed partial class Texture
 		GraphicsCapabilities capabilities
 	)
 	{
-		int limit = descriptor.Dimension == TextureDimension.Cube
-			? capabilities.MaximumCubeTextureSize
-			: capabilities.MaximumTexture2DSize;
+		int limit = descriptor.Dimension switch
+		{
+			TextureDimension.Cube => capabilities.MaximumCubeTextureSize,
+			TextureDimension.Texture3D => capabilities.MaximumTexture3DSize,
+			_ => capabilities.MaximumTexture2DSize,
+		};
 
-		if (descriptor.Width > limit || descriptor.Height > limit)
+		if (descriptor.Width > limit
+			|| descriptor.Height > limit
+			|| descriptor.Depth > limit)
 		{
 			throw new ArgumentOutOfRangeException(
 				nameof(descriptor),

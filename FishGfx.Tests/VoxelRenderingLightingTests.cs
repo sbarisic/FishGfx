@@ -13,7 +13,7 @@ public partial class VoxelRenderingLightingTests
 	[Fact]
 	public void VoxelVertexPreservesThePackedGpuLayout()
 	{
-		Assert.Equal(56, Marshal.SizeOf<VoxelVertex>());
+		Assert.Equal(72, Marshal.SizeOf<VoxelVertex>());
 		Assert.Equal(new IntPtr(0), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Position)));
 		Assert.Equal(new IntPtr(12), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Color)));
 		Assert.Equal(
@@ -23,24 +23,29 @@ public partial class VoxelRenderingLightingTests
 		Assert.Equal(new IntPtr(24), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Normal)));
 		Assert.Equal(
 			new IntPtr(36),
-			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.WaveParameters))
+			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Tangent))
 		);
 		Assert.Equal(
 			new IntPtr(52),
+			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.WaveParameters))
+		);
+		Assert.Equal(
+			new IntPtr(68),
 			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.PackedLightChannels))
 		);
 
 		VoxelVertex vertex = new(Vector3.Zero, Color.White, Vector2.Zero, Vector3.UnitY);
 
 		Assert.Equal(Vector4.Zero, vertex.WaveParameters);
+		Assert.Equal(Vector4.Zero, vertex.Tangent);
 		Assert.Equal(new Color(0, 0, 0, byte.MaxValue), vertex.PackedLightChannels);
 
 		string shaderDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
 		string standard = File.ReadAllText(Path.Combine(shaderDirectory, "voxel.vert"));
 		string waving = File.ReadAllText(Path.Combine(shaderDirectory, "voxel_wave.vert"));
 
-		Assert.Contains("layout (location = 5) in vec4 Light;", standard);
-		Assert.Contains("layout (location = 5) in vec4 Light;", waving);
+		Assert.Contains("layout (location = 6) in vec4 Light;", standard);
+		Assert.Contains("layout (location = 6) in vec4 Light;", waving);
 	}
 
 	[Fact]
@@ -51,7 +56,7 @@ public partial class VoxelRenderingLightingTests
 		string waving = File.ReadAllText(Path.Combine(shaderDirectory, "voxel_wave.vert"));
 		string fragment = File.ReadAllText(Path.Combine(shaderDirectory, "voxel.frag"));
 
-		Assert.Contains("layout (location = 6) in vec3 ChunkOrigin;", standard);
+		Assert.Contains("layout (location = 7) in vec3 ChunkOrigin;", standard);
 		Assert.DoesNotContain($"uniform mat4 {RenderUniformState.ModelUniformName};", standard);
 		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ViewUniformName);
 		AssertUniformDeclaration(standard, "mat4", RenderUniformState.ProjectionUniformName);
@@ -64,6 +69,24 @@ public partial class VoxelRenderingLightingTests
 			"vec3",
 			RenderUniformState.ViewPositionUniformName
 		);
+	}
+
+	[Theory]
+	[InlineData(VoxelRenderMode.Opaque)]
+	[InlineData(VoxelRenderMode.Cutout)]
+	[InlineData(VoxelRenderMode.Transparent)]
+	public void CubeFacesProduceOrthonormalSurfaceMapTangents(VoxelRenderMode mode)
+	{
+		(VoxelWorld world, VoxelPalette palette, _) = CreateCube(mode, 1, 1, 1);
+		VoxelMeshData mesh = VoxelMesher.Build(world.CreateSnapshot(default), palette, Atlas);
+
+		foreach (VoxelVertex vertex in Vertices(mesh, mode))
+		{
+			Vector3 tangent = new(vertex.Tangent.X, vertex.Tangent.Y, vertex.Tangent.Z);
+			Assert.InRange(tangent.Length(), 0.999f, 1.001f);
+			Assert.InRange(MathF.Abs(Vector3.Dot(tangent, vertex.Normal)), 0, 0.001f);
+			Assert.True(vertex.Tangent.W is -1 or 1);
+		}
 	}
 
 	[Fact]
@@ -83,6 +106,24 @@ public partial class VoxelRenderingLightingTests
 		Assert.Contains("vec2 sampleUv = clamp(", fragment);
 		Assert.DoesNotContain("(uShadowDepthRanges[cascade] / 128.0)", fragment);
 		Assert.DoesNotContain("visible += 1.0;", fragment);
+	}
+
+	[Fact]
+	public void VoxelSurfaceShaderUsesTangentMapsButGeometricShadowBias()
+	{
+		string fragment = File.ReadAllText(Path.Combine(
+			AppContext.BaseDirectory,
+			"data",
+			"shaders",
+			"voxel.frag"
+		));
+
+		Assert.Contains("uniform sampler2D NormalTexture;", fragment);
+		Assert.Contains("uniform sampler2D SpecularTexture;", fragment);
+		Assert.Contains("uniform sampler2D RoughnessTexture;", fragment);
+		Assert.Contains("exp2(mix(8.0, 2.0, roughness))", fragment);
+		Assert.Contains("geometricNormal,", fragment);
+		Assert.Contains("litColor += SunColor", fragment);
 	}
 
 	[Theory]

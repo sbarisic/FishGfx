@@ -5,6 +5,7 @@ namespace FishGfx.Graphics;
 public enum TextureDimension
 {
 	Texture2D,
+	Texture3D,
 	Cube,
 	Texture2DMultisample,
 }
@@ -174,10 +175,11 @@ public readonly record struct TextureDescriptor
 		int mipLevels = 1,
 		int samples = 1,
 		bool fixedSampleLocations = true,
-		TextureSamplingState sampling = default
+		TextureSamplingState sampling = default,
+		int depth = 1
 	)
 	{
-		if (width <= 0 || height <= 0)
+		if (width <= 0 || height <= 0 || depth <= 0)
 		{
 			throw new ArgumentOutOfRangeException(
 				nameof(width),
@@ -205,7 +207,26 @@ public readonly record struct TextureDescriptor
 			throw new ArgumentException("Cube textures must be square.");
 		}
 
-		int maximumMips = 1 + (int)Math.Floor(Math.Log2(Math.Max(width, height)));
+		if (dimension != TextureDimension.Texture3D && depth != 1)
+		{
+			throw new ArgumentException(
+				"Only three-dimensional textures may have a depth greater than one.",
+				nameof(depth)
+			);
+		}
+
+		if (dimension == TextureDimension.Texture3D
+			&& (usage & (TextureUsageFlags.ColorAttachment |
+				TextureUsageFlags.DepthStencilAttachment)) != 0)
+		{
+			throw new ArgumentException(
+				"Three-dimensional textures cannot be render-target attachments.",
+				nameof(usage)
+			);
+		}
+
+		int maximumExtent = Math.Max(Math.Max(width, height), depth);
+		int maximumMips = 1 + (int)Math.Floor(Math.Log2(maximumExtent));
 
 		if (mipLevels <= 0 || mipLevels > maximumMips)
 		{
@@ -222,6 +243,7 @@ public readonly record struct TextureDescriptor
 
 		Width = width;
 		Height = height;
+		Depth = depth;
 		Format = format;
 		Usage = usage;
 		Dimension = dimension;
@@ -234,6 +256,8 @@ public readonly record struct TextureDescriptor
 	public int Width { get; }
 
 	public int Height { get; }
+
+	public int Depth { get; }
 
 	public TextureFormat Format { get; }
 
@@ -373,6 +397,48 @@ public readonly record struct TextureRegion
 	public int Width { get; }
 
 	public int Height { get; }
+}
+
+public readonly record struct TextureRegion3D
+{
+	public TextureRegion3D(
+		int x,
+		int y,
+		int z,
+		int width,
+		int height,
+		int depth
+	)
+	{
+		if (x < 0 || y < 0 || z < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(x));
+		}
+
+		if (width <= 0 || height <= 0 || depth <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(width));
+		}
+
+		X = x;
+		Y = y;
+		Z = z;
+		Width = width;
+		Height = height;
+		Depth = depth;
+	}
+
+	public int X { get; }
+
+	public int Y { get; }
+
+	public int Z { get; }
+
+	public int Width { get; }
+
+	public int Height { get; }
+
+	public int Depth { get; }
 }
 
 public readonly record struct TextureCopyRegion(

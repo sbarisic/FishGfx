@@ -3,12 +3,17 @@
 in vec4 frag_Clr;
 in vec2 frag_UV;
 in vec3 frag_Normal;
+in vec4 frag_Tangent;
 in vec3 frag_WorldPosition;
 in vec4 frag_Light;
 
 layout (location = 0) out vec4 OutColor;
 
 uniform sampler2D Texture0;
+uniform sampler2D NormalTexture;
+uniform sampler2D SpecularTexture;
+uniform sampler2D RoughnessTexture;
+uniform int SurfaceMapsEnabled;
 uniform vec3 LightDirection;
 uniform float AmbientLight;
 uniform vec3 SunColor;
@@ -132,15 +137,47 @@ void main()
 		discard;
 	}
 
-	vec3 normal = normalize(frag_Normal);
-	float diffuse = max(dot(normal, normalize(-LightDirection)), 0.0);
-	float shadowVisibility = SampleSunVisibility(frag_WorldPosition, normal, diffuse);
+	vec3 geometricNormal = normalize(frag_Normal);
+	vec3 normal = geometricNormal;
+	bool useSurfaceMaps = SurfaceMapsEnabled != 0 && abs(frag_Tangent.w) > 0.5;
+
+	if (useSurfaceMaps)
+	{
+		vec3 tangent = frag_Tangent.xyz
+			- geometricNormal * dot(geometricNormal, frag_Tangent.xyz);
+		tangent = normalize(tangent);
+		vec3 bitangent = normalize(cross(geometricNormal, tangent))
+			* sign(frag_Tangent.w);
+		vec3 tangentNormal = texture(NormalTexture, frag_UV).xyz * 2.0 - 1.0;
+		normal = normalize(mat3(tangent, bitangent, geometricNormal) * tangentNormal);
+	}
+
+	vec3 lightDirection = normalize(-LightDirection);
+	float diffuse = max(dot(normal, lightDirection), 0.0);
+	float geometricDiffuse = max(dot(geometricNormal, lightDirection), 0.0);
+	float shadowVisibility = SampleSunVisibility(
+		frag_WorldPosition,
+		geometricNormal,
+		geometricDiffuse
+	);
 	vec3 skyAmbient = frag_Light.a * SunColor * SunIntensity * AmbientLight;
 	vec3 skyDirect = frag_Light.a * SunColor * SunIntensity
 		* diffuse * (1.0 - AmbientLight) * shadowVisibility;
 	vec3 skyLight = skyAmbient + skyDirect;
 	vec3 lighting = max(frag_Light.rgb, skyLight);
 	vec3 litColor = sampled.rgb * lighting * LightMultiplier;
+
+	if (useSurfaceMaps && diffuse > 0.0)
+	{
+		float specularIntensity = texture(SpecularTexture, frag_UV).r;
+		float roughness = texture(RoughnessTexture, frag_UV).r;
+		float exponent = exp2(mix(8.0, 2.0, roughness));
+		vec3 viewDirection = normalize(uViewPosition - frag_WorldPosition);
+		vec3 halfDirection = normalize(lightDirection + viewDirection);
+		float highlight = pow(max(dot(normal, halfDirection), 0.0), exponent);
+		litColor += SunColor * SunIntensity * (1.0 - AmbientLight)
+			* frag_Light.a * shadowVisibility * specularIntensity * highlight;
+	}
 	float fogFactor = FogEnabled != 0
 		? clamp(1.0 - exp(-FogDensity * distance(uViewPosition, frag_WorldPosition)), 0.0, 1.0)
 		: 0.0;

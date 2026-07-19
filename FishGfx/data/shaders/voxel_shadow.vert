@@ -2,8 +2,8 @@
 
 layout (location = 0) in vec3 Pos;
 layout (location = 2) in vec2 UV;
-layout (location = 4) in vec4 ShadowData;
-layout (location = 6) in vec3 ChunkOrigin;
+layout (location = 5) in vec4 ShadowData;
+layout (location = 7) in vec3 ChunkOrigin;
 
 out vec2 frag_UV;
 out float frag_AlphaCutoff;

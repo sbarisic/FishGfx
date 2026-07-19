@@ -93,6 +93,53 @@ public sealed class RenderFrame : IDisposable
 		}
 	}
 
+	public void ResolveDepth(RenderTarget source, RenderTarget destination)
+	{
+		EnsureUsable();
+		ArgumentNullException.ThrowIfNull(source);
+		ArgumentNullException.ThrowIfNull(destination);
+
+		if (ActivePass != null)
+		{
+			throw new InvalidOperationException(
+				"Depth attachments cannot be resolved during an active render pass."
+			);
+		}
+
+		ValidateDepthResolve(source, destination);
+		Internal_OpenGL.GL.GetInteger((GetPName)0x8CAA, out int previousRead);
+		Internal_OpenGL.GL.GetInteger((GetPName)0x8CA6, out int previousDraw);
+
+		try
+		{
+			source.Bind(FramebufferTarget.ReadFramebuffer);
+			destination.Bind(FramebufferTarget.DrawFramebuffer);
+			Internal_OpenGL.GL.BlitFramebuffer(
+				0,
+				0,
+				source.Width,
+				source.Height,
+				0,
+				0,
+				destination.Width,
+				destination.Height,
+				ClearBufferMask.DepthBufferBit,
+				BlitFramebufferFilter.Nearest
+			);
+		}
+		finally
+		{
+			Internal_OpenGL.GL.BindFramebuffer(
+				FramebufferTarget.ReadFramebuffer,
+				(uint)previousRead
+			);
+			Internal_OpenGL.GL.BindFramebuffer(
+				FramebufferTarget.DrawFramebuffer,
+				(uint)previousDraw
+			);
+		}
+	}
+
 	public void Present()
 	{
 		EnsureUsable();
@@ -198,6 +245,61 @@ public sealed class RenderFrame : IDisposable
 			!= destination.ColorAttachments[destinationAttachment].Format)
 		{
 			throw new InvalidOperationException("Color resolves require matching attachment formats.");
+		}
+	}
+
+	private void ValidateDepthResolve(
+		RenderTarget source,
+		RenderTarget destination
+	)
+	{
+		if (!ReferenceEquals(source.Owner, context)
+			|| !ReferenceEquals(destination.Owner, context))
+		{
+			throw new InvalidOperationException(
+				"Both render targets must belong to this frame's graphics context."
+			);
+		}
+
+		source.EnsureUsable();
+		destination.EnsureUsable();
+
+		if (source.IsBackbuffer || source.SampleCount <= 1)
+		{
+			throw new InvalidOperationException(
+				"The depth resolve source must be a multisampled render target."
+			);
+		}
+
+		if (destination.IsBackbuffer || destination.SampleCount != 1)
+		{
+			throw new InvalidOperationException(
+				"The depth resolve destination must be a single-sampled texture target."
+			);
+		}
+
+		if (source.Width != destination.Width
+			|| source.Height != destination.Height)
+		{
+			throw new InvalidOperationException(
+				"Depth resolves require matching render-target dimensions."
+			);
+		}
+
+		if (source.DepthStencilAttachment == null
+			|| destination.DepthStencilAttachment == null)
+		{
+			throw new InvalidOperationException(
+				"Both render targets require depth attachments."
+			);
+		}
+
+		if (source.DepthStencilAttachment.Format
+			!= destination.DepthStencilAttachment.Format)
+		{
+			throw new InvalidOperationException(
+				"Depth resolves require matching attachment formats."
+			);
 		}
 	}
 }

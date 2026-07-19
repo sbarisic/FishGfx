@@ -21,6 +21,7 @@ public struct VoxelVertex
 		Color = color;
 		TextureCoordinates = textureCoordinates;
 		Normal = normal;
+		Tangent = Vector4.Zero;
 		WaveParameters = Vector4.Zero;
 		PackedLightChannels = new Color(0, 0, 0, byte.MaxValue);
 	}
@@ -29,6 +30,11 @@ public struct VoxelVertex
 	public Color Color;
 	public Vector2 TextureCoordinates;
 	public Vector3 Normal;
+
+	/// <summary>
+	/// Tangent-space X axis and handedness. A zero W disables surface maps.
+	/// </summary>
+	public Vector4 Tangent;
 
 	/// <summary>
 	/// Amplitude, wave number, angular speed, and vertex influence consumed by the wave shader.

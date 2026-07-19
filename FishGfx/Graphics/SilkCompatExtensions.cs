@@ -59,6 +59,40 @@ internal static unsafe class SilkCompatExtensions
 		int height
 	) => gl.TexStorage2D((GLEnum)target, (uint)levels, (GLEnum)format, (uint)width, (uint)height);
 
+	public static void TextureStorage3D(
+		this GL gl,
+		uint texture,
+		int levels,
+		InternalFormat format,
+		int width,
+		int height,
+		int depth
+	) => gl.TextureStorage3D(
+		texture,
+		(uint)levels,
+		(GLEnum)format,
+		(uint)width,
+		(uint)height,
+		(uint)depth
+	);
+
+	public static void TexStorage3D(
+		this GL gl,
+		TextureTarget target,
+		int levels,
+		InternalFormat format,
+		int width,
+		int height,
+		int depth
+	) => gl.TexStorage3D(
+		(GLEnum)target,
+		(uint)levels,
+		(GLEnum)format,
+		(uint)width,
+		(uint)height,
+		(uint)depth
+	);
+
 	public static void TextureSubImage2D(
 		this GL gl,
 		uint texture,

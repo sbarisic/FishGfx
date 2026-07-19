@@ -219,6 +219,7 @@ public sealed partial class GraphicsContext : IDisposable
 	private GraphicsCapabilities ReadCapabilities()
 	{
 		Internal_OpenGL.GL.GetInteger(GetPName.MaxTextureSize, out int maximumTextureSize);
+		Internal_OpenGL.GL.GetInteger(GetPName.Max3DTextureSize, out int maximum3DTextureSize);
 		Internal_OpenGL.GL.GetInteger(GetPName.MaxCubeMapTextureSize, out int maximumCubeTextureSize);
 		Internal_OpenGL.GL.GetInteger((GetPName)0x8D57, out int maximumSamples);
 		Internal_OpenGL.GL.GetInteger(GetPName.MaxColorAttachments, out int maximumColorAttachments);
@@ -242,6 +243,7 @@ public sealed partial class GraphicsContext : IDisposable
 			Internal_OpenGL.Renderer,
 			Internal_OpenGL.Extensions,
 			maximumTextureSize,
+			maximum3DTextureSize,
 			maximumCubeTextureSize,
 			maximumSamples,
 			maximumColorAttachments,

@@ -15,6 +15,13 @@ public unsafe sealed partial class Texture
 			return;
 		}
 
+		if (Is3D)
+		{
+			Allocate3DStorage();
+
+			return;
+		}
+
 		if (Internal_OpenGL.Is45OrAbove)
 		{
 			Internal_OpenGL.GL.TextureStorage2D(
@@ -38,6 +45,58 @@ public unsafe sealed partial class Texture
 		else
 		{
 			WithBound(AllocateMutableStorage);
+		}
+	}
+
+	private void Allocate3DStorage()
+	{
+		if (Internal_OpenGL.Is45OrAbove)
+		{
+			Internal_OpenGL.GL.TextureStorage3D(
+				Handle,
+				MipLevels,
+				internalFormat,
+				Width,
+				Height,
+				Depth
+			);
+		}
+		else if (Internal_OpenGL.Is42OrAbove)
+		{
+			WithBound(() => Internal_OpenGL.GL.TexStorage3D(
+				target,
+				MipLevels,
+				internalFormat,
+				Width,
+				Height,
+				Depth
+			));
+		}
+		else
+		{
+			WithBound(AllocateMutable3DStorage);
+		}
+	}
+
+	private void AllocateMutable3DStorage()
+	{
+		(GLPixelFormat format, PixelType type) = AllocationPixelFormat(Format);
+
+		for (int level = 0; level < MipLevels; level++)
+		{
+			(int width, int height, int depth) = GetMipSize3D(level);
+			Internal_OpenGL.GL.TexImage3D(
+				target,
+				level,
+				internalFormat,
+				(uint)width,
+				(uint)height,
+				(uint)depth,
+				0,
+				format,
+				type,
+				null
+			);
 		}
 	}
 
@@ -188,6 +247,48 @@ public unsafe sealed partial class Texture
 		{
 			Internal_OpenGL.GL.BindTexture(target, (uint)previous);
 		}
+	}
+
+	private void WritePixels3D(
+		void* pixels,
+		GLPixelFormat pixelFormat,
+		PixelType pixelType,
+		TextureRegion3D region,
+		int mipLevel
+	)
+	{
+		if (Internal_OpenGL.Is45OrAbove)
+		{
+			Internal_OpenGL.GL.TextureSubImage3D(
+				Handle,
+				mipLevel,
+				region.X,
+				region.Y,
+				region.Z,
+				region.Width,
+				region.Height,
+				region.Depth,
+				pixelFormat,
+				pixelType,
+				(nint)pixels
+			);
+
+			return;
+		}
+
+		WithBound(() => Internal_OpenGL.GL.TexSubImage3D(
+			target,
+			mipLevel,
+			region.X,
+			region.Y,
+			region.Z,
+			region.Width,
+			region.Height,
+			region.Depth,
+			pixelFormat,
+			pixelType,
+			(nint)pixels
+		));
 	}
 
 	private void CopyImage(

@@ -14,6 +14,7 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly VoxelWorld world;
 	private readonly VoxelLighting lighting;
 	private Texture atlasTexture;
+	private VoxelSurfaceTextureSet surfaceTextures;
 	private readonly VoxelAtlasLayout atlasLayout;
 	private readonly VoxelRendererOptions options;
 	private readonly VoxelMeshingScheduler scheduler;
@@ -108,6 +109,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		this.world = world ?? throw new ArgumentNullException(nameof(world));
 		this.lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
 		atlasTexture = atlas ?? throw new ArgumentNullException(nameof(atlas));
+		surfaceTextures = new VoxelSurfaceTextureSet(atlasTexture);
 		this.atlasLayout = atlasLayout;
 		this.options = options ?? new VoxelRendererOptions();
 		VoxelPalette resolvedPalette = palette ?? throw new ArgumentNullException(nameof(palette));
@@ -215,6 +217,8 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	public Texture AtlasTexture => atlasTexture;
 
+	public VoxelSurfaceTextureSet SurfaceTextures => surfaceTextures;
+
 	public void SetAtlasTexture(Texture atlas)
 	{
 		ThrowIfDisposed();
@@ -230,6 +234,26 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		atlasTexture = atlas;
+		surfaceTextures = surfaceTextures.WithBaseColor(atlas);
+	}
+
+	public void SetSurfaceTextures(VoxelSurfaceTextureSet textures)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(textures);
+		textures.EnsureOwner(Graphics);
+
+		if (textures.BaseColor.Width != atlasLayout.TextureWidth
+			|| textures.BaseColor.Height != atlasLayout.TextureHeight)
+		{
+			throw new ArgumentException(
+				"Voxel atlas layout dimensions must match the supplied texture set.",
+				nameof(textures)
+			);
+		}
+
+		surfaceTextures = textures;
+		atlasTexture = textures.BaseColor;
 	}
 
 	public bool IsIdle => scheduler.PendingCount == 0

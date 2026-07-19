@@ -77,6 +77,33 @@ public class ResourceDescriptorTests
 	}
 
 	[Fact]
+	public void ThreeDimensionalTextureDescriptorPreservesDepthAndLinearSampling()
+	{
+		TextureDescriptor descriptor = new(
+			128,
+			96,
+			TextureFormat.RGBA8Unorm,
+			TextureUsageFlags.Sampled | TextureUsageFlags.TransferDestination,
+			TextureDimension.Texture3D,
+			sampling: new TextureSamplingState(
+				TextureFilter.Linear,
+				TextureFilter.Linear
+			),
+			depth: 128
+		);
+
+		Assert.Equal(TextureDimension.Texture3D, descriptor.Dimension);
+		Assert.Equal(128, descriptor.Depth);
+		Assert.Equal(TextureFilter.Linear, descriptor.Sampling.MinFilter);
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => new TextureDescriptor(4, 4, dimension: TextureDimension.Texture3D, depth: 0)
+		);
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => new TextureRegion3D(0, 0, 0, 0, 1, 1)
+		);
+	}
+
+	[Fact]
 	public void MultisampleDescriptorsRejectTransfersAndMipmaps()
 	{
 		Assert.Throws<ArgumentOutOfRangeException>(

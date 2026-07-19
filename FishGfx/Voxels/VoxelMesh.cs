@@ -66,14 +66,16 @@ internal sealed class VoxelMesh : IDisposable
 		vertexArray.AttribBinding(3, binding);
 		vertexArray.AttribFormat(4, 4, VertexElementType.Float, false, 36);
 		vertexArray.AttribBinding(4, binding);
+		vertexArray.AttribFormat(5, 4, VertexElementType.Float, false, 52);
+		vertexArray.AttribBinding(5, binding);
 		vertexArray.AttribFormat(
-			5,
+			6,
 			4,
 			VertexElementType.UnsignedByte,
 			true,
-			52
+			68
 		);
-		vertexArray.AttribBinding(5, binding);
+		vertexArray.AttribBinding(6, binding);
 	}
 
 	internal int VertexCount { get; private set; }

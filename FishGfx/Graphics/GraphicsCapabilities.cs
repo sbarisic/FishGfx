@@ -67,6 +67,7 @@ public sealed class GraphicsCapabilities
 		string renderer,
 		IReadOnlyList<string> extensions,
 		int maximumTexture2DSize,
+		int maximumTexture3DSize,
 		int maximumCubeTextureSize,
 		int maximumSamples,
 		int maximumColorAttachments,
@@ -86,6 +87,7 @@ public sealed class GraphicsCapabilities
 		Renderer = renderer ?? string.Empty;
 		Extensions = Array.AsReadOnly(extensionCopy);
 		MaximumTexture2DSize = maximumTexture2DSize;
+		MaximumTexture3DSize = maximumTexture3DSize;
 		MaximumCubeTextureSize = maximumCubeTextureSize;
 		MaximumSamples = Math.Max(1, maximumSamples);
 		MaximumColorAttachments = maximumColorAttachments;
@@ -115,6 +117,8 @@ public sealed class GraphicsCapabilities
 		|| SupportsExtension("GL_ARB_texture_filter_anisotropic");
 
 	public int MaximumTexture2DSize { get; }
+
+	public int MaximumTexture3DSize { get; }
 
 	public int MaximumCubeTextureSize { get; }
 

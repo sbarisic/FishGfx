@@ -189,7 +189,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		DirectionalShadowFrame? shadows)
 	{
 		DrawVoxelPagesCommand command = new(
-			atlasTexture,
+			surfaceTextures,
 			voxelShader,
 			opaqueState,
 			sun,
@@ -231,7 +231,7 @@ public sealed partial class VoxelRenderer : IDisposable
 	{
 		DrawVoxelIndexedCommand command = new(
 			transparentSnapshot,
-			atlasTexture,
+			surfaceTextures,
 			waveShader,
 			transparentState,
 			sun,

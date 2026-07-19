@@ -95,6 +95,16 @@ public static partial class VoxelMesher
 			);
 		}
 
+		Vector4 frontTangent = CalculateFaceTangent(
+			destination[..FrontFaceOrder.Length],
+			face.Normal
+		);
+
+		for (int index = 0; index < FrontFaceOrder.Length; index++)
+		{
+			destination[index].Tangent = frontTangent;
+		}
+
 		if (!material.DoubleSided)
 		{
 			return FrontFaceOrder.Length;
@@ -131,7 +141,52 @@ public static partial class VoxelMesher
 			);
 		}
 
+		Span<VoxelVertex> backVertices = destination.Slice(
+			FrontFaceOrder.Length,
+			BackFaceOrder.Length
+		);
+		Vector4 backTangent = CalculateFaceTangent(backVertices, -face.Normal);
+
+		for (int index = 0; index < backVertices.Length; index++)
+		{
+			backVertices[index].Tangent = backTangent;
+		}
+
 		return FrontFaceOrder.Length + BackFaceOrder.Length;
+	}
+
+	private static Vector4 CalculateFaceTangent(
+		ReadOnlySpan<VoxelVertex> vertices,
+		Vector3 normal
+	)
+	{
+		Vector3 edge1 = vertices[1].Position - vertices[0].Position;
+		Vector3 edge2 = vertices[2].Position - vertices[0].Position;
+		Vector2 uv1 = vertices[1].TextureCoordinates - vertices[0].TextureCoordinates;
+		Vector2 uv2 = vertices[2].TextureCoordinates - vertices[0].TextureCoordinates;
+		float determinant = uv1.X * uv2.Y - uv1.Y * uv2.X;
+
+		if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 0.0000001f)
+		{
+			return Vector4.Zero;
+		}
+
+		float inverse = 1 / determinant;
+		Vector3 tangent = (edge1 * uv2.Y - edge2 * uv1.Y) * inverse;
+		Vector3 bitangent = (edge2 * uv1.X - edge1 * uv2.X) * inverse;
+		tangent -= normal * Vector3.Dot(normal, tangent);
+		float lengthSquared = tangent.LengthSquared();
+
+		if (!float.IsFinite(lengthSquared) || lengthSquared < 0.0000001f)
+		{
+			return Vector4.Zero;
+		}
+
+		tangent /= MathF.Sqrt(lengthSquared);
+		float handedness = Vector3.Dot(Vector3.Cross(normal, tangent), bitangent) < 0
+			? -1
+			: 1;
+		return new Vector4(tangent, handedness);
 	}
 
 	private static Vector4 CreateWaveData(

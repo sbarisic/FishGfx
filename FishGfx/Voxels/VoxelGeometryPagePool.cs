@@ -390,8 +390,10 @@ internal sealed class VoxelGeometryPage : IDisposable
 		array.AttribBinding(3, vertexBinding);
 		array.AttribFormat(4, 4, VertexElementType.Float, false, 36);
 		array.AttribBinding(4, vertexBinding);
-		array.AttribFormat(5, 4, VertexElementType.UnsignedByte, true, 52);
+		array.AttribFormat(5, 4, VertexElementType.Float, false, 52);
 		array.AttribBinding(5, vertexBinding);
+		array.AttribFormat(6, 4, VertexElementType.UnsignedByte, true, 68);
+		array.AttribBinding(6, vertexBinding);
 
 		uint originBinding = array.BindVertexBuffer(
 			origins,
@@ -399,8 +401,8 @@ internal sealed class VoxelGeometryPage : IDisposable
 			0,
 			Marshal.SizeOf<Vector3>()
 		);
-		array.AttribFormat(6, 3, VertexElementType.Float, false, 0);
-		array.AttribBinding(6, originBinding);
+		array.AttribFormat(7, 3, VertexElementType.Float, false, 0);
+		array.AttribBinding(7, originBinding);
 		array.BindingDivisor(originBinding, 1);
 	}
 

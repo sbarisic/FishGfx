@@ -51,6 +51,8 @@ public unsafe sealed partial class Texture : GraphicsResource
 
 	public int Height => Descriptor.Height;
 
+	public int Depth => Descriptor.Depth;
+
 	public int MipLevels => Descriptor.MipLevels;
 
 	public int Multisamples => Multisampled ? Descriptor.Samples : 0;
@@ -60,11 +62,15 @@ public unsafe sealed partial class Texture : GraphicsResource
 
 	public bool IsCubeMap => Descriptor.Dimension == TextureDimension.Cube;
 
+	public bool Is3D => Descriptor.Dimension == TextureDimension.Texture3D;
+
 	public TextureFormat Format => Descriptor.Format;
 
 	public TextureUsageFlags Usage => Descriptor.Usage;
 
 	public Vector2 Size => new(Width, Height);
+
+	public Vector3 Size3D => new(Width, Height, Depth);
 
 	public TextureSamplingState Sampling { get; private set; }
 
@@ -145,6 +151,22 @@ public unsafe sealed partial class Texture : GraphicsResource
 		where T : unmanaged
 	{
 		ValidateSubresource(subresource);
+
+		if (Is3D)
+		{
+			(int width3D, int height3D, int depth3D) = GetMipSize3D(
+				subresource.MipLevel
+			);
+			Write(
+				data,
+				dataFormat,
+				new TextureRegion3D(0, 0, 0, width3D, height3D, depth3D),
+				subresource.MipLevel
+			);
+
+			return;
+		}
+
 		(int width, int height) = GetMipSize(subresource.MipLevel);
 		Write(
 			data,
@@ -163,6 +185,13 @@ public unsafe sealed partial class Texture : GraphicsResource
 		where T : unmanaged
 	{
 		EnsureCurrentOwner();
+
+		if (Is3D)
+		{
+			throw new InvalidOperationException(
+				"Use TextureRegion3D when uploading a three-dimensional texture."
+			);
+		}
 
 		if (Multisampled)
 		{
@@ -264,11 +293,19 @@ public unsafe sealed partial class Texture : GraphicsResource
 		if (Descriptor.Dimension != destination.Descriptor.Dimension
 			|| Width != destination.Width
 			|| Height != destination.Height
+			|| Depth != destination.Depth
 			|| MipLevels != destination.MipLevels)
 		{
 			throw new InvalidOperationException(
 				"Whole-texture copies require matching dimensions, extents, and mip counts."
 			);
+		}
+
+		if (Is3D)
+		{
+			Copy3DTo(destination);
+
+			return;
 		}
 
 		int faceCount = IsCubeMap ? 6 : 1;
@@ -304,6 +341,13 @@ public unsafe sealed partial class Texture : GraphicsResource
 		GraphicsContext context = EnsureCurrentOwner();
 		ArgumentNullException.ThrowIfNull(destination);
 		destination.EnsureOwner(context);
+
+		if (Is3D || destination.Is3D)
+		{
+			throw new InvalidOperationException(
+				"Use whole-texture copies for three-dimensional textures."
+			);
+		}
 
 		if (ReferenceEquals(this, destination))
 		{
@@ -431,6 +475,72 @@ public unsafe sealed partial class Texture : GraphicsResource
 		return bindings;
 	}
 
+	public void Write<T>(
+		ReadOnlySpan<T> data,
+		TextureDataFormat dataFormat,
+		TextureRegion3D region,
+		int mipLevel = 0
+	)
+		where T : unmanaged
+	{
+		EnsureCurrentOwner();
+
+		if (!Is3D)
+		{
+			throw new InvalidOperationException(
+				"TextureRegion3D uploads require a three-dimensional texture."
+			);
+		}
+
+		if ((Usage & TextureUsageFlags.TransferDestination) == 0)
+		{
+			throw new InvalidOperationException(
+				"The texture is missing TransferDestination usage."
+			);
+		}
+
+		ValidateSubresource(new TextureSubresource(mipLevel));
+		ValidateRegion3D(region, mipLevel);
+		ValidateUploadCompatibility(Format, dataFormat);
+
+		int pixelCount = checked(region.Width * region.Height * region.Depth);
+		int requiredBytes = checked(pixelCount * BytesPerPixel(dataFormat));
+		int actualBytes = checked(data.Length * Unsafe.SizeOf<T>());
+
+		if (actualBytes != requiredBytes)
+		{
+			throw new ArgumentException(
+				$"Upload contains {actualBytes} bytes; " +
+				$"{requiredBytes} bytes are required.",
+				nameof(data)
+			);
+		}
+
+		if (actualBytes == 0)
+		{
+			return;
+		}
+
+		(GLPixelFormat pixelFormat, PixelType pixelType) = ToPixelFormat(dataFormat);
+		Internal_OpenGL.GL.GetInteger(GetPName.UnpackAlignment, out int previousAlignment);
+		Internal_OpenGL.GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+
+		try
+		{
+			fixed (T* pointer = data)
+			{
+				WritePixels3D(pointer, pixelFormat, pixelType, region, mipLevel);
+			}
+		}
+		finally
+		{
+			Internal_OpenGL.GL.PixelStore(
+				PixelStoreParameter.UnpackAlignment,
+				previousAlignment
+			);
+		}
+	}
+
 	private sealed class TextureBindingScope : IDisposable
 	{
 		private Texture texture;
@@ -494,6 +604,95 @@ public unsafe sealed partial class Texture : GraphicsResource
 	private (int Width, int Height) GetMipSize(int level)
 	{
 		return (Math.Max(1, Width >> level), Math.Max(1, Height >> level));
+	}
+
+	private void ValidateRegion3D(TextureRegion3D region, int mipLevel)
+	{
+		if (region.X < 0
+			|| region.Y < 0
+			|| region.Z < 0
+			|| region.Width <= 0
+			|| region.Height <= 0
+			|| region.Depth <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(region));
+		}
+
+		(int width, int height, int depth) = GetMipSize3D(mipLevel);
+
+		if (region.X > width - region.Width
+			|| region.Y > height - region.Height
+			|| region.Z > depth - region.Depth)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(region),
+				"The region exceeds the mip bounds."
+			);
+		}
+	}
+
+	private (int Width, int Height, int Depth) GetMipSize3D(int level)
+	{
+		return (
+			Math.Max(1, Width >> level),
+			Math.Max(1, Height >> level),
+			Math.Max(1, Depth >> level)
+		);
+	}
+
+	private void Copy3DTo(Texture destination)
+	{
+		GraphicsContext context = EnsureCurrentOwner();
+		destination.EnsureOwner(context);
+
+		if (ReferenceEquals(this, destination))
+		{
+			throw new InvalidOperationException("A texture cannot be copied to itself.");
+		}
+
+		if ((Usage & TextureUsageFlags.TransferSource) == 0
+			|| (destination.Usage & TextureUsageFlags.TransferDestination) == 0)
+		{
+			throw new InvalidOperationException(
+				"Three-dimensional copies require matching transfer usage flags."
+			);
+		}
+
+		if (Format != destination.Format)
+		{
+			throw new InvalidOperationException(
+				"Texture copies require identical formats."
+			);
+		}
+
+		if (!context.Capabilities.SupportsCopyImage)
+		{
+			throw new NotSupportedException(
+				"Three-dimensional texture copies require OpenGL 4.3 or GL_ARB_copy_image."
+			);
+		}
+
+		for (int level = 0; level < MipLevels; level++)
+		{
+			(int width, int height, int depth) = GetMipSize3D(level);
+			Internal_OpenGL.GL.CopyImageSubData(
+				Handle,
+				(GLEnum)target,
+				level,
+				0,
+				0,
+				0,
+				destination.Handle,
+				(GLEnum)destination.target,
+				level,
+				0,
+				0,
+				0,
+				(uint)width,
+				(uint)height,
+				(uint)depth
+			);
+		}
 	}
 
 	private int Layer(TextureSubresource subresource)
