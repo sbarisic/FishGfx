@@ -119,10 +119,10 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 		{
 			shader.SetUniform("LightDirection", sun.Direction);
 			shader.SetUniform("AmbientLight", sun.AmbientLight);
-			shader.SetUniform("SunColor", (Vector3)sun.Color);
+			shader.SetUniform("SunColor", ColorSpace.SrgbToLinear(sun.Color));
 			shader.SetUniform("SunIntensity", sun.Intensity);
 			shader.SetUniform("FogEnabled", fog.Enabled ? 1 : 0);
-			shader.SetUniform("FogColor", (Vector3)fog.Color);
+			shader.SetUniform("FogColor", ColorSpace.SrgbToLinear(fog.Color));
 			shader.SetUniform("FogDensity", fog.Density);
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
 			shader.SetUniform("AlphaCutoff", -1f);

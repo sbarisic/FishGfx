@@ -138,10 +138,12 @@ public static partial class VoxelMesher
 
 	private static Color Multiply(Color left, Color right)
 	{
+		Color linearLeft = ColorSpace.SrgbToLinearColor(left);
+		Color linearRight = ColorSpace.SrgbToLinearColor(right);
 		return new Color(
-			(byte)(left.R * right.R / 255),
-			(byte)(left.G * right.G / 255),
-			(byte)(left.B * right.B / 255),
+			(byte)(linearLeft.R * linearRight.R / 255),
+			(byte)(linearLeft.G * linearRight.G / 255),
+			(byte)(linearLeft.B * linearRight.B / 255),
 			(byte)(left.A * right.A / 255)
 		);
 	}

@@ -344,7 +344,7 @@ public partial class VoxelTests
 	}
 
 	[Fact]
-	public void AtlasUvsUseSelectedTileAndHalfTexelInset()
+	public void AtlasUvsUseTheSelectedTilesExactBoundaries()
 	{
 		VoxelPaletteBuilder builder = new();
 		ushort material = builder.Add(new VoxelMaterial("Tile", VoxelRenderMode.Opaque, new VoxelFaceTiles(1)));
@@ -358,10 +358,54 @@ public partial class VoxelTests
 		float minV = mesh.OpaqueVertices.Min(vertex => vertex.TextureCoordinates.Y);
 		float maxV = mesh.OpaqueVertices.Max(vertex => vertex.TextureCoordinates.Y);
 
-		Assert.Equal(0.515625f, minU, 6);
-		Assert.Equal(0.984375f, maxU, 6);
-		Assert.Equal(0.515625f, minV, 6);
-		Assert.Equal(0.984375f, maxV, 6);
+		Assert.Equal(0.5f, minU, 6);
+		Assert.Equal(1, maxU, 6);
+		Assert.Equal(0.5f, minV, 6);
+		Assert.Equal(1, maxV, 6);
+	}
+
+	[Fact]
+	public void AtlasTileBoundsMapEveryNearestSampleToExactlyOneSourceTexel()
+	{
+		VoxelAtlasLayout atlas = new(16, 16, 512, 512);
+		int[] tiles = { 0, 1, 15, 16, 127, 240, 255 };
+
+		foreach (int tile in tiles)
+		{
+			VoxelAtlasUvBounds bounds = atlas.GetTileUvBounds(tile);
+			int tileX = tile % atlas.Columns * atlas.TileWidth;
+			int tileYFromBottom = (atlas.Rows - 1 - tile / atlas.Columns)
+				* atlas.TileHeight;
+
+			for (int texel = 0; texel < atlas.TileWidth; texel++)
+			{
+				float local = (texel + 0.5f) / atlas.TileWidth;
+				float u = float.Lerp(bounds.MinimumU, bounds.MaximumU, local);
+				int sampled = (int)MathF.Floor(u * atlas.TextureWidth);
+				Assert.Equal(tileX + texel, sampled);
+			}
+
+			for (int texel = 0; texel < atlas.TileHeight; texel++)
+			{
+				float local = (texel + 0.5f) / atlas.TileHeight;
+				float v = float.Lerp(bounds.MinimumV, bounds.MaximumV, local);
+				int sampled = (int)MathF.Floor(v * atlas.TextureHeight);
+				Assert.Equal(tileYFromBottom + texel, sampled);
+			}
+		}
+	}
+
+	[Fact]
+	public void AtlasLayoutRequiresIntegralPixelSizedTiles()
+	{
+		Assert.Throws<ArgumentException>(() => new VoxelAtlasLayout(16, 16, 513, 512));
+		Assert.Throws<ArgumentException>(() => new VoxelAtlasLayout(16, 16, 512, 513));
+		VoxelAtlasLayout atlas = new(16, 16, 512, 512);
+
+		Assert.Equal(32, atlas.TileWidth);
+		Assert.Equal(32, atlas.TileHeight);
+		Assert.Throws<ArgumentOutOfRangeException>(() => atlas.GetTileUvBounds(-1));
+		Assert.Throws<ArgumentOutOfRangeException>(() => atlas.GetTileUvBounds(256));
 	}
 
 	[Fact]
@@ -371,10 +415,10 @@ public partial class VoxelTests
 		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
 
 		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
-		const float MinimumU = 0.015625f;
-		const float MaximumU = 0.484375f;
-		const float MinimumV = 0.515625f;
-		const float MaximumV = 0.984375f;
+		const float MinimumU = 0;
+		const float MaximumU = 0.5f;
+		const float MinimumV = 0.5f;
+		const float MaximumV = 1;
 		Vector2 topRight = new(MaximumU, MaximumV);
 		Vector2 topLeft = new(MinimumU, MaximumV);
 		Vector2 bottomLeft = new(MinimumU, MinimumV);

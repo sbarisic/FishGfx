@@ -90,6 +90,32 @@ public partial class VoxelRenderingLightingTests
 	}
 
 	[Fact]
+	public void CubeTintIsConvertedFromAuthoredSrgbBeforeLighting()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort material = builder.Add(new VoxelMaterial(
+			"Tinted",
+			VoxelRenderMode.Opaque,
+			new VoxelFaceTiles(0),
+			tint: new Color(128, 64, 255, 73)
+		));
+		VoxelWorld world = new();
+		world.SetVoxel(1, 1, 1, new VoxelCell(material));
+
+		VoxelMeshData mesh = VoxelMesher.Build(
+			world.CreateSnapshot(default),
+			builder.Build(),
+			Atlas,
+			new VoxelMeshingOptions { AmbientOcclusion = false }
+		);
+
+		Assert.All(
+			mesh.OpaqueVertices,
+			vertex => Assert.Equal(new Color(55, 13, 255, 73), vertex.Color)
+		);
+	}
+
+	[Fact]
 	public void VoxelShadowReceiverUsesMapDepthAndClampedPcfSamples()
 	{
 		string shaderPath = Path.Combine(
@@ -124,6 +150,33 @@ public partial class VoxelRenderingLightingTests
 		Assert.Contains("exp2(mix(8.0, 2.0, roughness))", fragment);
 		Assert.Contains("geometricNormal,", fragment);
 		Assert.Contains("litColor += SunColor", fragment);
+		Assert.Contains("* diffuse * LightMultiplier;", fragment);
+		Assert.Contains("SafeNormalize", fragment);
+		Assert.Contains("TryBuildDerivativeTangent", fragment);
+		Assert.Contains("frag_WaveAmplitude > 0.0", fragment);
+	}
+
+	[Theory]
+	[InlineData(TextureFormat.RGBA8Unorm, true)]
+	[InlineData(TextureFormat.SRGB8Alpha8, false)]
+	[InlineData(TextureFormat.R8Unorm, false)]
+	[InlineData(TextureFormat.Depth24Unorm, false)]
+	public void VoxelSurfaceDataMapsRequireLinearRgba8(
+		TextureFormat format,
+		bool accepted)
+	{
+		Exception exception = Record.Exception(
+			() => VoxelSurfaceTextureSet.ValidateLinearSurfaceMapFormat(format, "map")
+		);
+
+		if (accepted)
+		{
+			Assert.Null(exception);
+		}
+		else
+		{
+			Assert.IsType<ArgumentException>(exception);
+		}
 	}
 
 	[Theory]

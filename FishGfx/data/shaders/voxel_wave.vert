@@ -14,6 +14,7 @@ out vec3 frag_Normal;
 out vec4 frag_Tangent;
 out vec3 frag_WorldPosition;
 out vec4 frag_Light;
+out float frag_WaveAmplitude;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -49,8 +50,13 @@ void main()
 	frag_Clr = Clr;
 	frag_UV = UV;
 	frag_Normal = worldNormal;
-	frag_Tangent = vec4(normalize(mat3(uModel) * Tangent.xyz), Tangent.w);
+	vec3 transformedTangent = mat3(uModel) * Tangent.xyz;
+	float tangentLengthSquared = dot(transformedTangent, transformedTangent);
+	frag_Tangent = tangentLengthSquared > 0.0000001
+		? vec4(transformedTangent * inversesqrt(tangentLengthSquared), Tangent.w)
+		: vec4(0.0);
 	frag_WorldPosition = worldPosition.xyz;
 	frag_Light = Light;
+	frag_WaveAmplitude = Wave.x;
 	gl_Position = uProjection * uView * worldPosition;
 }

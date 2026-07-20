@@ -14,6 +14,7 @@ out vec3 frag_Normal;
 out vec4 frag_Tangent;
 out vec3 frag_WorldPosition;
 out vec4 frag_Light;
+out float frag_WaveAmplitude;
 
 uniform mat4 uView;
 uniform mat4 uProjection;
@@ -27,5 +28,6 @@ void main()
 	frag_Tangent = Tangent;
 	frag_WorldPosition = worldPosition.xyz;
 	frag_Light = Light;
+	frag_WaveAmplitude = 0.0;
 	gl_Position = uProjection * uView * worldPosition;
 }

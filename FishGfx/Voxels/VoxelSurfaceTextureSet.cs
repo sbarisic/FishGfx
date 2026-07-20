@@ -33,6 +33,9 @@ public sealed class VoxelSurfaceTextureSet
 			ValidateTexture(Normal, nameof(normal));
 			ValidateTexture(Specular, nameof(specular));
 			ValidateTexture(Roughness, nameof(roughness));
+			ValidateLinearSurfaceMap(Normal, nameof(normal));
+			ValidateLinearSurfaceMap(Specular, nameof(specular));
+			ValidateLinearSurfaceMap(Roughness, nameof(roughness));
 			ValidateDimensions(Normal, nameof(normal));
 			ValidateDimensions(Specular, nameof(specular));
 			ValidateDimensions(Roughness, nameof(roughness));
@@ -110,10 +113,13 @@ public sealed class VoxelSurfaceTextureSet
 
 	private static void ValidateTexture(Texture texture, string parameterName)
 	{
-		if (texture.Is3D || texture.IsCubeMap || texture.Multisampled)
+		if (texture.Is3D
+			|| texture.IsCubeMap
+			|| texture.Multisampled
+			|| Texture.IsDepthFormat(texture.Format))
 		{
 			throw new ArgumentException(
-				"Voxel surface maps must be ordinary two-dimensional textures.",
+				"Voxel surface textures must be ordinary two-dimensional color textures.",
 				parameterName
 			);
 		}
@@ -122,6 +128,25 @@ public sealed class VoxelSurfaceTextureSet
 		{
 			throw new ArgumentException(
 				"Voxel surface maps require Sampled usage.",
+				parameterName
+			);
+		}
+	}
+
+	private static void ValidateLinearSurfaceMap(Texture texture, string parameterName)
+	{
+		ValidateLinearSurfaceMapFormat(texture.Format, parameterName);
+	}
+
+	internal static void ValidateLinearSurfaceMapFormat(
+		TextureFormat format,
+		string parameterName
+	)
+	{
+		if (format != TextureFormat.RGBA8Unorm)
+		{
+			throw new ArgumentException(
+				"Voxel normal, specular, and roughness maps must use linear RGBA8Unorm data.",
 				parameterName
 			);
 		}

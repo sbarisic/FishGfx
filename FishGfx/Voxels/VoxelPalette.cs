@@ -217,6 +217,12 @@ public sealed class VoxelPalette
 	public bool Contains(ushort materialId) => materialId < materials.Length;
 }
 
+public readonly record struct VoxelAtlasUvBounds(
+	float MinimumU,
+	float MinimumV,
+	float MaximumU,
+	float MaximumV);
+
 public readonly struct VoxelAtlasLayout
 {
 	public VoxelAtlasLayout(int columns, int rows, int textureWidth, int textureHeight)
@@ -241,6 +247,22 @@ public readonly struct VoxelAtlasLayout
 			throw new ArgumentOutOfRangeException(nameof(textureHeight));
 		}
 
+		if (textureWidth % columns != 0)
+		{
+			throw new ArgumentException(
+				"The atlas width must divide evenly into its columns.",
+				nameof(textureWidth)
+			);
+		}
+
+		if (textureHeight % rows != 0)
+		{
+			throw new ArgumentException(
+				"The atlas height must divide evenly into its rows.",
+				nameof(textureHeight)
+			);
+		}
+
 		Columns = columns;
 		Rows = rows;
 		TextureWidth = textureWidth;
@@ -251,5 +273,23 @@ public readonly struct VoxelAtlasLayout
 	public int Rows { get; }
 	public int TextureWidth { get; }
 	public int TextureHeight { get; }
+	public int TileWidth => TextureWidth / Columns;
+	public int TileHeight => TextureHeight / Rows;
 	public int TileCount => Columns * Rows;
+
+	public VoxelAtlasUvBounds GetTileUvBounds(int tile)
+	{
+		if ((uint)tile >= (uint)TileCount)
+		{
+			throw new ArgumentOutOfRangeException(nameof(tile));
+		}
+
+		int column = tile % Columns;
+		int row = tile / Columns;
+		float minimumU = column * TileWidth / (float)TextureWidth;
+		float maximumU = (column + 1) * TileWidth / (float)TextureWidth;
+		float maximumV = 1 - row * TileHeight / (float)TextureHeight;
+		float minimumV = 1 - (row + 1) * TileHeight / (float)TextureHeight;
+		return new VoxelAtlasUvBounds(minimumU, minimumV, maximumU, maximumV);
+	}
 }

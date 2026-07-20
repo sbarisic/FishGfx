@@ -196,10 +196,11 @@ public static partial class VoxelMesher
 
 	private static Color ApplyAo(Color tint, byte ao)
 	{
+		Color linearTint = ColorSpace.SrgbToLinearColor(tint);
 		return new Color(
-			(byte)(tint.R * ao / 255),
-			(byte)(tint.G * ao / 255),
-			(byte)(tint.B * ao / 255),
+			(byte)(linearTint.R * ao / 255),
+			(byte)(linearTint.G * ao / 255),
+			(byte)(linearTint.B * ao / 255),
 			tint.A
 		);
 	}

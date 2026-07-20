@@ -66,7 +66,7 @@ public static partial class VoxelMesher
 			);
 		}
 
-		GetUVBounds(tile, atlas, out float u0, out float v0, out float u1, out float v1);
+		VoxelAtlasUvBounds uvBounds = atlas.GetTileUvBounds(tile);
 		bool animatedSurface = material.Wave.HasValue
 			&& snapshot.GetMaterialUnchecked(x, y + 1, z) != snapshot.GetMaterialUnchecked(x, y, z);
 
@@ -80,7 +80,7 @@ public static partial class VoxelMesher
 			destination[i] = new VoxelVertex(
 				blockPosition + corner,
 				ApplyAo(material.Tint, ao),
-				MapFaceUv(face.GetUv(cornerIndex), u0, v0, u1, v1),
+				MapFaceUv(face.GetUv(cornerIndex), uvBounds),
 				face.Normal
 			);
 			destination[i].WaveParameters = CreateWaveData(material, face, corner, animatedSurface);
@@ -121,7 +121,7 @@ public static partial class VoxelMesher
 			destination[destinationIndex] = new VoxelVertex(
 				blockPosition + corner,
 				ApplyAo(material.Tint, ao),
-				MapFaceUv(face.GetUv(cornerIndex), u0, v0, u1, v1),
+				MapFaceUv(face.GetUv(cornerIndex), uvBounds),
 				-face.Normal
 			);
 			destination[destinationIndex].WaveParameters = CreateWaveData(
@@ -226,30 +226,14 @@ public static partial class VoxelMesher
 		return (face.Q0 + face.Q1 + face.Q2 + face.Q3) / 4;
 	}
 
-	private static void GetUVBounds(
-		int tile,
-		VoxelAtlasLayout atlas,
-		out float u0,
-		out float v0,
-		out float u1,
-		out float v1
+	private static Vector2 MapFaceUv(
+		Vector2 sourceUv,
+		VoxelAtlasUvBounds bounds
 	)
 	{
-		int column = tile % atlas.Columns;
-		int row = tile / atlas.Columns;
-		float insetU = 0.5f / atlas.TextureWidth;
-		float insetV = 0.5f / atlas.TextureHeight;
-		u0 = column / (float)atlas.Columns + insetU;
-		u1 = (column + 1) / (float)atlas.Columns - insetU;
-		v1 = 1 - row / (float)atlas.Rows - insetV;
-		v0 = 1 - (row + 1) / (float)atlas.Rows + insetV;
-	}
-
-	private static Vector2 MapFaceUv(Vector2 sourceUv, float u0, float v0, float u1, float v1)
-	{
 		return new Vector2(
-			float.Lerp(u0, u1, sourceUv.X),
-			float.Lerp(v1, v0, sourceUv.Y)
+			float.Lerp(bounds.MinimumU, bounds.MaximumU, sourceUv.X),
+			float.Lerp(bounds.MaximumV, bounds.MinimumV, sourceUv.Y)
 		);
 	}
 
