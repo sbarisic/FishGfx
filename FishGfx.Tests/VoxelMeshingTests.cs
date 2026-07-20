@@ -140,6 +140,19 @@ public partial class VoxelTests
 	}
 
 	[Fact]
+	public void AdjacentMatchingNonOccludingCutoutBlocksRemoveInternalFaces()
+	{
+		(VoxelWorld world, VoxelPalette palette, _, ushort cutout, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(cutout));
+		world.SetVoxel(2, 1, 1, new VoxelCell(cutout));
+
+		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
+
+		Assert.Equal(60, mesh.CutoutVertices.Length);
+		Assert.Empty(mesh.TransparentFaces);
+	}
+
+	[Fact]
 	public void TransparentBlocksDoNotEmitCoplanarFacesAgainstOccludingNeighbors()
 	{
 		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, ushort transparent) =

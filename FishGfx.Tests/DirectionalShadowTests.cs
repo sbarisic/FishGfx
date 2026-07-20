@@ -47,6 +47,31 @@ public sealed class DirectionalShadowTests
 	}
 
 	[Fact]
+	public void CutoutAlphaCasterReusesVisibleGeometryWithoutIndependentShadowGeometry()
+	{
+		VoxelPaletteBuilder builder = new();
+		ushort leaf = builder.Add(new VoxelMaterial(
+			"Leaf",
+			VoxelRenderMode.Cutout,
+			new VoxelFaceTiles(0),
+			occludesFaces: false,
+			shadowAlphaCutoff: VoxelRendererOptions.DefaultAlphaCutoff
+		));
+		VoxelWorld world = new();
+		world.SetVoxel(0, 0, 0, new VoxelCell(leaf));
+
+		VoxelMeshData mesh = VoxelMesher.Build(
+			world.CreateSnapshot(new ChunkCoordinate(0, 0, 0)),
+			builder.Build(),
+			new VoxelAtlasLayout(1, 1, 16, 16)
+		);
+
+		Assert.Equal(36, mesh.CutoutVertices.Length);
+		Assert.Empty(mesh.TransparentFaces);
+		Assert.Empty(mesh.AlphaShadowVertices);
+	}
+
+	[Fact]
 	public void WavingAlphaTestCasterIsRejected()
 	{
 		Assert.Throws<ArgumentException>(() => new VoxelMaterial(

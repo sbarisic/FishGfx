@@ -25,19 +25,16 @@ public static partial class VoxelMesher
 			throw new InvalidOperationException($"Chunk contains unknown voxel material ID {neighborId}.");
 		}
 
-		if (material.RenderMode == VoxelRenderMode.Transparent)
+		// Matching non-occluding materials share the same surface treatment. Their
+		// internal interface can never be visible, even when the material uses
+		// alpha testing or blending rather than declaring itself face-occluding.
+		if (neighborId == materialId)
 		{
-			if (neighborId == materialId)
-			{
-				return false;
-			}
-
-			// A fully occluding neighbor emits the visible interface face. Emitting the
-			// transparent side as well would place two triangles on the same plane.
-			// Non-occluding cutouts still need this face behind their discarded texels.
-			return !palette[neighborId].OccludesFaces;
+			return false;
 		}
 
+		// A fully occluding neighbor owns the visible interface. Non-occluding
+		// materials still need this face behind their discarded or blended texels.
 		return !palette[neighborId].OccludesFaces;
 	}
 

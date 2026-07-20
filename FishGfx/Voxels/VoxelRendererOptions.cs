@@ -6,6 +6,7 @@ namespace FishGfx.Voxels;
 public sealed class VoxelRendererOptions
 {
 	public const int DefaultGeometryPageSizeBytes = 64 * 1024 * 1024;
+	public const float DefaultAlphaCutoff = 0.5f;
 
 	public int WorkerCount { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
 
@@ -15,7 +16,7 @@ public sealed class VoxelRendererOptions
 
 	public float MaxRenderDistance { get; set; } = 256;
 
-	public float AlphaCutoff { get; set; } = 0.5f;
+	public float AlphaCutoff { get; set; } = DefaultAlphaCutoff;
 
 	public int GeometryPageSizeBytes { get; set; } = DefaultGeometryPageSizeBytes;
 
