@@ -75,7 +75,7 @@ public sealed partial class VoxelRenderer
 			DepthBiasConstant = 0,
 		};
 		using DrawVoxelShadowPagesCommand command = new(
-			atlasTexture,
+			surfaceTextures,
 			shadowOpaqueShader,
 			shadowAlphaShader,
 			indirectBuffer,

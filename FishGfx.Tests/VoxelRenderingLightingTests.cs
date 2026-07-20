@@ -13,7 +13,7 @@ public partial class VoxelRenderingLightingTests
 	[Fact]
 	public void VoxelVertexPreservesThePackedGpuLayout()
 	{
-		Assert.Equal(72, Marshal.SizeOf<VoxelVertex>());
+		Assert.Equal(76, Marshal.SizeOf<VoxelVertex>());
 		Assert.Equal(new IntPtr(0), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Position)));
 		Assert.Equal(new IntPtr(12), Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.Color)));
 		Assert.Equal(
@@ -33,11 +33,16 @@ public partial class VoxelRenderingLightingTests
 			new IntPtr(68),
 			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.PackedLightChannels))
 		);
+		Assert.Equal(
+			new IntPtr(72),
+			Marshal.OffsetOf<VoxelVertex>(nameof(VoxelVertex.TextureLayer))
+		);
 
 		VoxelVertex vertex = new(Vector3.Zero, Color.White, Vector2.Zero, Vector3.UnitY);
 
 		Assert.Equal(Vector4.Zero, vertex.WaveParameters);
 		Assert.Equal(Vector4.Zero, vertex.Tangent);
+		Assert.Equal(-1, vertex.TextureLayer);
 		Assert.Equal(new Color(0, 0, 0, byte.MaxValue), vertex.PackedLightChannels);
 
 		string shaderDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
@@ -46,6 +51,8 @@ public partial class VoxelRenderingLightingTests
 
 		Assert.Contains("layout (location = 6) in vec4 Light;", standard);
 		Assert.Contains("layout (location = 6) in vec4 Light;", waving);
+		Assert.Contains("layout (location = 8) in int TextureLayer;", standard);
+		Assert.Contains("layout (location = 8) in int TextureLayer;", waving);
 	}
 
 	[Fact]
@@ -144,9 +151,11 @@ public partial class VoxelRenderingLightingTests
 			"voxel.frag"
 		));
 
-		Assert.Contains("uniform sampler2D NormalTexture;", fragment);
-		Assert.Contains("uniform sampler2D SpecularTexture;", fragment);
-		Assert.Contains("uniform sampler2D RoughnessTexture;", fragment);
+		Assert.Contains("uniform sampler2DArray CubeBaseColor;", fragment);
+		Assert.Contains("uniform sampler2DArray CubeNormal;", fragment);
+		Assert.Contains("uniform sampler2DArray CubeSpecular;", fragment);
+		Assert.Contains("uniform sampler2DArray CubeRoughness;", fragment);
+		Assert.Contains("uniform sampler2D ModelAtlas;", fragment);
 		Assert.Contains("exp2(mix(8.0, 2.0, roughness))", fragment);
 		Assert.Contains("geometricNormal,", fragment);
 		Assert.Contains("litColor += SunColor", fragment);
@@ -154,6 +163,23 @@ public partial class VoxelRenderingLightingTests
 		Assert.Contains("SafeNormalize", fragment);
 		Assert.Contains("TryBuildDerivativeTangent", fragment);
 		Assert.Contains("frag_WaveAmplitude > 0.0", fragment);
+	}
+
+	[Fact]
+	public void AlphaShadowShaderRoutesCubeLayersAndCustomModelAtlas()
+	{
+		string shaderDirectory = Path.Combine(AppContext.BaseDirectory, "data", "shaders");
+		string vertex = File.ReadAllText(Path.Combine(shaderDirectory, "voxel_shadow.vert"));
+		string fragment = File.ReadAllText(Path.Combine(
+			shaderDirectory,
+			"voxel_shadow_alpha.frag"
+		));
+
+		Assert.Contains("layout (location = 8) in int TextureLayer;", vertex);
+		Assert.Contains("flat out int frag_TextureLayer;", vertex);
+		Assert.Contains("uniform sampler2DArray CubeBaseColor;", fragment);
+		Assert.Contains("uniform sampler2D ModelAtlas;", fragment);
+		Assert.Contains("frag_TextureLayer >= 0", fragment);
 	}
 
 	[Theory]

@@ -246,7 +246,7 @@ using VoxelRenderer renderer = new VoxelRenderer(
 	window.Graphics,
 	world,
 	palette,
-	atlasTexture,
+	voxelTextures,
 	new VoxelAtlasLayout(columns: 8, rows: 8, textureWidth: 512, textureHeight: 512),
 	lighting
 );
@@ -257,7 +257,7 @@ renderer.EnqueueVisible(queue, camera);
 pass.Execute(queue);
 ```
 
-The renderer owns its worker schedulers, shaders, paged opaque/cutout geometry, and persistent world-space transparent geometry. The application retains ownership of the world, palette, atlas texture, and lighting solver and must keep them alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted to the opaque bucket with stable sort keys. Transparent faces retain their vertices in a growable VBO; a single worker asynchronously produces an exact global back-to-front 32-bit index order, which is uploaded through a three-slot orphaned EBO ring and drawn once. Camera movement continues drawing the last completed ordering instead of copying vertices or blocking the render thread. Face occlusion, per-face atlas tiles, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
+The renderer owns its worker schedulers, shaders, paged opaque/cutout geometry, and persistent world-space transparent geometry. The application retains ownership of the world, palette, voxel texture set, and lighting solver and must keep them alive until the renderer is disposed. Opaque and cutout chunks are distance/frustum culled and submitted to the opaque bucket with stable sort keys. Transparent faces retain their vertices in a growable VBO; a single worker asynchronously produces an exact global back-to-front 32-bit index order, which is uploaded through a three-slot orphaned EBO ring and drawn once. Camera movement continues drawing the last completed ordering instead of copying vertices or blocking the render thread. Face occlusion, per-face texture layers, tint, normals, classic vertex ambient occlusion, alpha cutout, and optional double-sided materials are supported.
 
 Propagated lighting remains explicit and separate from world generation; the current `VoxelRenderer` requires a compatible `VoxelLighting` instance. The solver stores 0–15 RGB block light and skylight in explicitly resident chunks, including known all-air chunks. Unregistered space blocks propagation, so a streaming application must register every loaded vertical chunk and mark the highest chunk in an open column with `skyExposedAbove`. Material light opacity is independent of face occlusion. Direct skylight loses no energy through opacity-zero cells; propagated light loses at least one level per step.
 
@@ -279,7 +279,7 @@ using VoxelRenderer renderer = new VoxelRenderer(
 	window.Graphics,
 	world,
 	palette,
-	atlasTexture,
+	voxelTextures,
 	atlasLayout,
 	lighting,
 	new VoxelRendererOptions()
@@ -300,9 +300,9 @@ Pass the active camera to `VoxelRenderer.UpdateMeshes(camera)` to prioritize vis
 
 `DirectionalShadowRenderer` provides reusable cascaded directional shadow maps for moving sun lights. It uses independently retained depth textures and matrices per cascade, practical split distances, stable texel-snapped orthographic cameras, staggered refresh intervals, depth bias, manual 3x3 or 5x5 PCF, and blend regions between cascades. `VoxelRenderer.RenderShadowCasters` reuses opaque and cutout geometry pages and a dedicated alpha-tested stream for transparent materials such as foliage; `EnqueueVisible` accepts the resulting `DirectionalShadowFrame` so opaque, cutout, and transparent receivers share the same maps. The voxel renderer and its shadow submission require OpenGL 4.3.
 
-`VoxelSurfaceTextureSet` binds a base-color atlas plus an optional complete normal/specular/roughness atlas set. Cube meshes publish tangent handedness for tangent-space lighting; custom model vertices keep a zero tangent and therefore continue through the original diffuse-only path. Material maps occupy units 0 through 3 and directional-shadow maps begin at unit 4.
+`VoxelSurfaceTextureSet` binds mipmapped two-dimensional arrays for cube base color, normal, specular, and roughness data plus a one-mip two-dimensional atlas for custom voxel models. Cube vertices use local 0-1 UVs and an integer array-layer attribute, while custom model vertices retain atlas UVs and a layer sentinel of -1. Cube meshes publish tangent handedness for tangent-space lighting; custom model vertices keep a zero tangent and therefore continue through the original diffuse-only path. Cube maps occupy units 0 through 3, the custom-model atlas uses unit 4, and directional-shadow maps begin at unit 5.
 
-Three-dimensional textures use `TextureDimension.Texture3D`, `TextureDescriptor.Depth`, and bounded `TextureRegion3D` uploads. `RenderFrame.ResolveDepth` resolves a multisampled depth attachment into a matching single-sample target for depth-aware post effects without exposing OpenGL framebuffer state.
+Two-dimensional texture arrays use `TextureDimension.Texture2DArray`, `TextureDescriptor.ArrayLayers`, and bounded `TextureArrayRegion` uploads; array-layer count remains constant through every mip level. Three-dimensional textures use `TextureDimension.Texture3D`, `TextureDescriptor.Depth`, and bounded `TextureRegion3D` uploads. `RenderFrame.ResolveDepth` resolves a multisampled depth attachment into a matching single-sample target for depth-aware post effects without exposing OpenGL framebuffer state.
 
 Lit voxel meshes store RGB block light and skylight in a normalized RGBA8 vertex attribute at location 5; the existing color attribute continues to hold material tint, alpha, and ambient occlusion. `VoxelSunSettings` is immutable and validates its normalized direction, color, nonnegative intensity, and 0–1 ambient shading factor.
 

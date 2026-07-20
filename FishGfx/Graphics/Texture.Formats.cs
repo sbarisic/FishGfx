@@ -11,6 +11,7 @@ public unsafe sealed partial class Texture
 		return dimension switch
 		{
 			TextureDimension.Texture2D => TextureTarget.Texture2D,
+			TextureDimension.Texture2DArray => TextureTarget.Texture2DArray,
 			TextureDimension.Texture3D => TextureTarget.Texture3D,
 			TextureDimension.Cube => TextureTarget.TextureCubeMap,
 			TextureDimension.Texture2DMultisample => TextureTarget.Texture2DMultisample,
@@ -28,6 +29,7 @@ public unsafe sealed partial class Texture
 		return textureTarget switch
 		{
 			TextureTarget.Texture2D => GetPName.TextureBinding2D,
+			TextureTarget.Texture2DArray => (GetPName)0x8C1D,
 			TextureTarget.Texture3D => GetPName.TextureBinding3D,
 			TextureTarget.TextureCubeMap => GetPName.TextureBindingCubeMap,
 			TextureTarget.Texture2DMultisample => (GetPName)0x9104,

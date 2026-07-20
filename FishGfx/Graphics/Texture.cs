@@ -53,6 +53,8 @@ public unsafe sealed partial class Texture : GraphicsResource
 
 	public int Depth => Descriptor.Depth;
 
+	public int ArrayLayers => Descriptor.ArrayLayers;
+
 	public int MipLevels => Descriptor.MipLevels;
 
 	public int Multisamples => Multisampled ? Descriptor.Samples : 0;
@@ -63,6 +65,8 @@ public unsafe sealed partial class Texture : GraphicsResource
 	public bool IsCubeMap => Descriptor.Dimension == TextureDimension.Cube;
 
 	public bool Is3D => Descriptor.Dimension == TextureDimension.Texture3D;
+
+	public bool Is2DArray => Descriptor.Dimension == TextureDimension.Texture2DArray;
 
 	public TextureFormat Format => Descriptor.Format;
 
@@ -167,6 +171,26 @@ public unsafe sealed partial class Texture : GraphicsResource
 			return;
 		}
 
+		if (Is2DArray)
+		{
+			(int arrayWidth, int arrayHeight) = GetMipSize(subresource.MipLevel);
+			Write(
+				data,
+				dataFormat,
+				new TextureArrayRegion(
+					0,
+					0,
+					0,
+					arrayWidth,
+					arrayHeight,
+					ArrayLayers
+				),
+				subresource.MipLevel
+			);
+
+			return;
+		}
+
 		(int width, int height) = GetMipSize(subresource.MipLevel);
 		Write(
 			data,
@@ -186,10 +210,10 @@ public unsafe sealed partial class Texture : GraphicsResource
 	{
 		EnsureCurrentOwner();
 
-		if (Is3D)
+		if (Is3D || Is2DArray)
 		{
 			throw new InvalidOperationException(
-				"Use TextureRegion3D when uploading a three-dimensional texture."
+				"Use a layered region when uploading a three-dimensional or array texture."
 			);
 		}
 
@@ -294,6 +318,7 @@ public unsafe sealed partial class Texture : GraphicsResource
 			|| Width != destination.Width
 			|| Height != destination.Height
 			|| Depth != destination.Depth
+			|| ArrayLayers != destination.ArrayLayers
 			|| MipLevels != destination.MipLevels)
 		{
 			throw new InvalidOperationException(
@@ -301,9 +326,9 @@ public unsafe sealed partial class Texture : GraphicsResource
 			);
 		}
 
-		if (Is3D)
+		if (Is3D || Is2DArray)
 		{
-			Copy3DTo(destination);
+			CopyLayeredTo(destination);
 
 			return;
 		}
@@ -342,10 +367,10 @@ public unsafe sealed partial class Texture : GraphicsResource
 		ArgumentNullException.ThrowIfNull(destination);
 		destination.EnsureOwner(context);
 
-		if (Is3D || destination.Is3D)
+		if (Is3D || Is2DArray || destination.Is3D || destination.Is2DArray)
 		{
 			throw new InvalidOperationException(
-				"Use whole-texture copies for three-dimensional textures."
+				"Use whole-texture copies for layered textures."
 			);
 		}
 
@@ -492,6 +517,17 @@ public unsafe sealed partial class Texture : GraphicsResource
 			);
 		}
 
+		WriteLayered(data, dataFormat, region, mipLevel);
+	}
+
+	private void WriteLayered<T>(
+		ReadOnlySpan<T> data,
+		TextureDataFormat dataFormat,
+		TextureRegion3D region,
+		int mipLevel
+	)
+		where T : unmanaged
+	{
 		if ((Usage & TextureUsageFlags.TransferDestination) == 0)
 		{
 			throw new InvalidOperationException(
@@ -500,7 +536,7 @@ public unsafe sealed partial class Texture : GraphicsResource
 		}
 
 		ValidateSubresource(new TextureSubresource(mipLevel));
-		ValidateRegion3D(region, mipLevel);
+		ValidateLayeredRegion(region, mipLevel);
 		ValidateUploadCompatibility(Format, dataFormat);
 
 		int pixelCount = checked(region.Width * region.Height * region.Depth);
@@ -539,6 +575,34 @@ public unsafe sealed partial class Texture : GraphicsResource
 				previousAlignment
 			);
 		}
+	}
+
+	public void Write<T>(
+		ReadOnlySpan<T> data,
+		TextureDataFormat dataFormat,
+		TextureArrayRegion region,
+		int mipLevel = 0
+	)
+		where T : unmanaged
+	{
+		EnsureCurrentOwner();
+
+		if (!Is2DArray)
+		{
+			throw new InvalidOperationException(
+				"TextureArrayRegion uploads require a two-dimensional array texture."
+			);
+		}
+
+		TextureRegion3D layeredRegion = new(
+			region.X,
+			region.Y,
+			region.FirstLayer,
+			region.Width,
+			region.Height,
+			region.LayerCount
+		);
+		WriteLayered(data, dataFormat, layeredRegion, mipLevel);
 	}
 
 	private sealed class TextureBindingScope : IDisposable
@@ -606,7 +670,7 @@ public unsafe sealed partial class Texture : GraphicsResource
 		return (Math.Max(1, Width >> level), Math.Max(1, Height >> level));
 	}
 
-	private void ValidateRegion3D(TextureRegion3D region, int mipLevel)
+	private void ValidateLayeredRegion(TextureRegion3D region, int mipLevel)
 	{
 		if (region.X < 0
 			|| region.Y < 0
@@ -618,7 +682,7 @@ public unsafe sealed partial class Texture : GraphicsResource
 			throw new ArgumentOutOfRangeException(nameof(region));
 		}
 
-		(int width, int height, int depth) = GetMipSize3D(mipLevel);
+		(int width, int height, int depth) = GetLayeredMipSize(mipLevel);
 
 		if (region.X > width - region.Width
 			|| region.Y > height - region.Height
@@ -640,7 +704,18 @@ public unsafe sealed partial class Texture : GraphicsResource
 		);
 	}
 
-	private void Copy3DTo(Texture destination)
+	private (int Width, int Height, int Layers) GetLayeredMipSize(int level)
+	{
+		if (Is2DArray)
+		{
+			(int width, int height) = GetMipSize(level);
+			return (width, height, ArrayLayers);
+		}
+
+		return GetMipSize3D(level);
+	}
+
+	private void CopyLayeredTo(Texture destination)
 	{
 		GraphicsContext context = EnsureCurrentOwner();
 		destination.EnsureOwner(context);
@@ -654,7 +729,7 @@ public unsafe sealed partial class Texture : GraphicsResource
 			|| (destination.Usage & TextureUsageFlags.TransferDestination) == 0)
 		{
 			throw new InvalidOperationException(
-				"Three-dimensional copies require matching transfer usage flags."
+				"Layered copies require matching transfer usage flags."
 			);
 		}
 
@@ -668,13 +743,13 @@ public unsafe sealed partial class Texture : GraphicsResource
 		if (!context.Capabilities.SupportsCopyImage)
 		{
 			throw new NotSupportedException(
-				"Three-dimensional texture copies require OpenGL 4.3 or GL_ARB_copy_image."
+				"Layered texture copies require OpenGL 4.3 or GL_ARB_copy_image."
 			);
 		}
 
 		for (int level = 0; level < MipLevels; level++)
 		{
-			(int width, int height, int depth) = GetMipSize3D(level);
+			(int width, int height, int depth) = GetLayeredMipSize(level);
 			Internal_OpenGL.GL.CopyImageSubData(
 				Handle,
 				(GLEnum)target,

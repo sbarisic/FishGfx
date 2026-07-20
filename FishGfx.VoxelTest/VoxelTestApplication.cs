@@ -75,12 +75,14 @@ internal sealed partial class VoxelTestApplication
 		Camera camera = CreateCamera(worldData);
 		Camera uiCamera = new Camera();
 		uiCamera.SetOrthogonal(0, 0, Width, Height);
-		Texture atlas = VoxelTestCompatibilityAssets.CreateTexture(window.Graphics);
+		VoxelSurfaceTextureSet textures = VoxelTestCompatibilityAssets.CreateTextures(
+			window.Graphics
+		);
 		VoxelRenderer renderer = new VoxelRenderer(
 			window.Graphics,
 			world,
 			palette,
-			atlas,
+			textures,
 			VoxelTestCompatibilityAssets.AtlasLayout,
 			lighting,
 			new VoxelRendererOptions
@@ -555,7 +557,11 @@ internal sealed partial class VoxelTestApplication
 			lighting.Dispose();
 			voxelUi.Dispose();
 			input.Dispose();
-			atlas.Dispose();
+			textures.CubeBaseColor.Dispose();
+			textures.Normal.Dispose();
+			textures.Specular.Dispose();
+			textures.Roughness.Dispose();
+			textures.ModelAtlas.Dispose();
 			window.Graphics.CollectGarbage();
 			window.Dispose();
 		}

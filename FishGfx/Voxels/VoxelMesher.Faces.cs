@@ -66,7 +66,6 @@ public static partial class VoxelMesher
 			);
 		}
 
-		VoxelAtlasUvBounds uvBounds = atlas.GetTileUvBounds(tile);
 		bool animatedSurface = material.Wave.HasValue
 			&& snapshot.GetMaterialUnchecked(x, y + 1, z) != snapshot.GetMaterialUnchecked(x, y, z);
 
@@ -80,9 +79,10 @@ public static partial class VoxelMesher
 			destination[i] = new VoxelVertex(
 				blockPosition + corner,
 				ApplyAo(material.Tint, ao),
-				MapFaceUv(face.GetUv(cornerIndex), uvBounds),
+				MapFaceUv(face.GetUv(cornerIndex)),
 				face.Normal
 			);
+			destination[i].TextureLayer = tile;
 			destination[i].WaveParameters = CreateWaveData(material, face, corner, animatedSurface);
 			destination[i].PackedLightChannels = SampleCubeLight(
 				lightSnapshot,
@@ -121,9 +121,10 @@ public static partial class VoxelMesher
 			destination[destinationIndex] = new VoxelVertex(
 				blockPosition + corner,
 				ApplyAo(material.Tint, ao),
-				MapFaceUv(face.GetUv(cornerIndex), uvBounds),
+				MapFaceUv(face.GetUv(cornerIndex)),
 				-face.Normal
 			);
+			destination[destinationIndex].TextureLayer = tile;
 			destination[destinationIndex].WaveParameters = CreateWaveData(
 				material,
 				face,
@@ -226,15 +227,9 @@ public static partial class VoxelMesher
 		return (face.Q0 + face.Q1 + face.Q2 + face.Q3) / 4;
 	}
 
-	private static Vector2 MapFaceUv(
-		Vector2 sourceUv,
-		VoxelAtlasUvBounds bounds
-	)
+	private static Vector2 MapFaceUv(Vector2 sourceUv)
 	{
-		return new Vector2(
-			float.Lerp(bounds.MinimumU, bounds.MaximumU, sourceUv.X),
-			float.Lerp(bounds.MaximumV, bounds.MinimumV, sourceUv.Y)
-		);
+		return new Vector2(sourceUv.X, 1 - sourceUv.Y);
 	}
 
 	private readonly struct FaceDefinition

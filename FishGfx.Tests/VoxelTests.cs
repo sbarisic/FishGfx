@@ -288,7 +288,7 @@ public partial class VoxelTests
 				typeof(GraphicsContext),
 				typeof(VoxelWorld),
 				typeof(VoxelPalette),
-				typeof(Texture),
+				typeof(VoxelSurfaceTextureSet),
 				typeof(VoxelAtlasLayout),
 				typeof(VoxelLighting),
 				typeof(VoxelRendererOptions),
@@ -315,7 +315,8 @@ public partial class VoxelTests
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.SunSettings)));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.FogSettings)));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.AtlasTexture)));
-		Assert.NotNull(typeof(VoxelRenderer).GetMethod(nameof(VoxelRenderer.SetAtlasTexture)));
+		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.SurfaceTextures)));
+		Assert.NotNull(typeof(VoxelRenderer).GetMethod(nameof(VoxelRenderer.SetSurfaceTextures)));
 		Assert.Null(typeof(VoxelRenderer).GetMethod("UpdateMeshing"));
 		Assert.Null(typeof(VoxelRenderer).GetMethod("SubmitVisible"));
 		Assert.Null(typeof(VoxelRenderer).GetProperty("CullingEnabled"));

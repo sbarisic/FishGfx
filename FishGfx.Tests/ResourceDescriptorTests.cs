@@ -104,6 +104,56 @@ public class ResourceDescriptorTests
 	}
 
 	[Fact]
+	public void TextureArrayDescriptorPreservesLayersAcrossMipLevels()
+	{
+		TextureDescriptor descriptor = new(
+			32,
+			32,
+			TextureFormat.SRGB8Alpha8,
+			TextureUsageFlags.Sampled | TextureUsageFlags.TransferDestination,
+			TextureDimension.Texture2DArray,
+			mipLevels: 6,
+			sampling: new TextureSamplingState(
+				TextureFilter.NearestMipmapLinear,
+				TextureFilter.Nearest
+			),
+			arrayLayers: 256
+		);
+
+		Assert.Equal(TextureDimension.Texture2DArray, descriptor.Dimension);
+		Assert.Equal(256, descriptor.ArrayLayers);
+		Assert.Equal(1, descriptor.Depth);
+		Assert.Equal(6, descriptor.MipLevels);
+		Assert.Equal(TextureFilter.NearestMipmapLinear, descriptor.Sampling.MinFilter);
+		Assert.Throws<ArgumentException>(
+			() => new TextureDescriptor(32, 32, arrayLayers: 2)
+		);
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => new TextureDescriptor(
+				32,
+				32,
+				dimension: TextureDimension.Texture2DArray,
+				arrayLayers: 0
+			)
+		);
+	}
+
+	[Fact]
+	public void TextureArrayRegionsValidateLayerRanges()
+	{
+		TextureArrayRegion region = new(2, 3, 7, 8, 9, 4);
+
+		Assert.Equal(7, region.FirstLayer);
+		Assert.Equal(4, region.LayerCount);
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => new TextureArrayRegion(0, 0, -1, 1, 1, 1)
+		);
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => new TextureArrayRegion(0, 0, 0, 1, 1, 0)
+		);
+	}
+
+	[Fact]
 	public void MultisampleDescriptorsRejectTransfersAndMipmaps()
 	{
 		Assert.Throws<ArgumentOutOfRangeException>(

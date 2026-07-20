@@ -7,7 +7,7 @@ namespace FishGfx.Voxels;
 
 internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 {
-	private readonly Texture atlas;
+	private readonly VoxelSurfaceTextureSet textures;
 	private readonly ShaderProgram opaqueShader;
 	private readonly ShaderProgram alphaShader;
 	private readonly GraphicsBuffer indirectBuffer;
@@ -20,7 +20,7 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 	private bool disposed;
 
 	internal DrawVoxelShadowPagesCommand(
-		Texture atlas,
+		VoxelSurfaceTextureSet textures,
 		ShaderProgram opaqueShader,
 		ShaderProgram alphaShader,
 		GraphicsBuffer indirectBuffer,
@@ -30,7 +30,7 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 		IReadOnlyList<VoxelPassEntry> cutoutEntries,
 		IReadOnlyList<VoxelPassEntry> alphaEntries)
 	{
-		this.atlas = atlas ?? throw new ArgumentNullException(nameof(atlas));
+		this.textures = textures ?? throw new ArgumentNullException(nameof(textures));
 		this.opaqueShader = opaqueShader ?? throw new ArgumentNullException(nameof(opaqueShader));
 		this.alphaShader = alphaShader ?? throw new ArgumentNullException(nameof(alphaShader));
 		this.indirectBuffer = indirectBuffer ?? throw new ArgumentNullException(nameof(indirectBuffer));
@@ -90,11 +90,17 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 
 		using IDisposable alphaStateScope = pass.PushState(alphaState);
 		alphaShader.SetUniform("AlphaCutoff", cutoutAlphaCutoff);
+		alphaShader.SetUniform("CubeBaseColor", 0);
+		alphaShader.SetUniform("ModelAtlas", 4);
 		alphaShader.Bind(pass.Uniforms);
-		atlas.BindTextureUnit();
+		IDisposable cubeBinding = null;
+		IDisposable modelBinding = null;
 
 		try
 		{
+			cubeBinding = textures.CubeBaseColor.Bind(0);
+			modelBinding = textures.ModelAtlas.Bind(4);
+
 			if (cutoutGroups.Length > 0)
 			{
 				alphaShader.SetUniform("UseVertexAlphaCutoff", 0);
@@ -109,7 +115,8 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 		}
 		finally
 		{
-			atlas.UnbindTextureUnit();
+			modelBinding?.Dispose();
+			cubeBinding?.Dispose();
 			alphaShader.Unbind();
 		}
 	}

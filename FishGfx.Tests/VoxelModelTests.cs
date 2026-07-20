@@ -164,10 +164,11 @@ public class VoxelModelTests
 				}
 
 				uv /= vertices.Count;
-				System.Drawing.Color actual = SampleUv(composite, uv);
 				int tile = tiles[face];
-				AssertUvInsideTile(uv, tile);
-				System.Drawing.Color expected = SampleUv(source, uv);
+				Assert.All(vertices, vertex => Assert.Equal(tile, vertex.TextureLayer));
+				AssertUvInsideLayer(uv);
+				System.Drawing.Color actual = SampleLayerUv(composite, uv, tile);
+				System.Drawing.Color expected = SampleLayerUv(source, uv, tile);
 				Assert.Equal(expected, actual);
 			}
 		}
@@ -203,9 +204,9 @@ public class VoxelModelTests
 		using System.Drawing.Bitmap source = new(VoxelTestCompatibilityAssets.AssetPath("atlas.png"));
 
 		Assert.Equal(ids.Grass, generatedMaterial);
-		AssertUvInsideTile(topUv, 240);
-		Assert.Equal(SampleUv(source, topUv), SampleUv(composite, topUv));
-		Assert.InRange(topUv.Y, 0, 1 / 16f);
+		Assert.All(mesh.OpaqueVertices.Skip(12).Take(6), vertex => Assert.Equal(240, vertex.TextureLayer));
+		AssertUvInsideLayer(topUv);
+		Assert.Equal(SampleLayerUv(source, topUv, 240), SampleLayerUv(composite, topUv, 240));
 	}
 
 	[Fact]
@@ -399,6 +400,27 @@ public class VoxelModelTests
 		int x = Math.Clamp((int)(uv.X * bitmap.Width), 0, bitmap.Width - 1);
 		int y = Math.Clamp((int)((1 - uv.Y) * bitmap.Height), 0, bitmap.Height - 1);
 		return bitmap.GetPixel(x, y);
+	}
+
+	private static System.Drawing.Color SampleLayerUv(
+		System.Drawing.Bitmap bitmap,
+		Vector2 uv,
+		int layer
+	)
+	{
+		int tileWidth = bitmap.Width / 16;
+		int tileHeight = bitmap.Height / 16;
+		int tileX = (layer % 16) * tileWidth;
+		int tileY = (layer / 16) * tileHeight;
+		int x = tileX + Math.Clamp((int)(uv.X * tileWidth), 0, tileWidth - 1);
+		int y = tileY + Math.Clamp((int)((1 - uv.Y) * tileHeight), 0, tileHeight - 1);
+		return bitmap.GetPixel(x, y);
+	}
+
+	private static void AssertUvInsideLayer(Vector2 uv)
+	{
+		Assert.InRange(uv.X, 0, 1);
+		Assert.InRange(uv.Y, 0, 1);
 	}
 
 	private static void AssertUvInsideTile(Vector2 uv, int tile)

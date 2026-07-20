@@ -7,13 +7,15 @@ in vec4 frag_Tangent;
 in vec3 frag_WorldPosition;
 in vec4 frag_Light;
 in float frag_WaveAmplitude;
+flat in int frag_TextureLayer;
 
 layout (location = 0) out vec4 OutColor;
 
-uniform sampler2D Texture0;
-uniform sampler2D NormalTexture;
-uniform sampler2D SpecularTexture;
-uniform sampler2D RoughnessTexture;
+uniform sampler2DArray CubeBaseColor;
+uniform sampler2DArray CubeNormal;
+uniform sampler2DArray CubeSpecular;
+uniform sampler2DArray CubeRoughness;
+uniform sampler2D ModelAtlas;
 uniform int SurfaceMapsEnabled;
 uniform vec3 LightDirection;
 uniform float AmbientLight;
@@ -180,7 +182,11 @@ float SampleSunVisibility(vec3 worldPosition, vec3 normal, float nDotL)
 
 void main()
 {
-	vec4 sampled = texture(Texture0, frag_UV) * frag_Clr;
+	bool cubeSurface = frag_TextureLayer >= 0;
+	vec3 cubeCoordinate = vec3(frag_UV, float(frag_TextureLayer));
+	vec4 sampled = (cubeSurface
+		? texture(CubeBaseColor, cubeCoordinate)
+		: texture(ModelAtlas, frag_UV)) * frag_Clr;
 
 	if (AlphaCutoff >= 0.0 && sampled.a < AlphaCutoff)
 	{
@@ -191,6 +197,7 @@ void main()
 	vec3 normal = geometricNormal;
 	float tangentLengthSquared = dot(frag_Tangent.xyz, frag_Tangent.xyz);
 	bool useSurfaceMaps = SurfaceMapsEnabled != 0
+		&& cubeSurface
 		&& abs(frag_Tangent.w) > 0.5
 		&& tangentLengthSquared > 0.0000001;
 
@@ -212,7 +219,7 @@ void main()
 			cross(geometricNormal, tangent),
 			vec3(0.0)
 		) * handedness;
-		vec3 tangentNormal = texture(NormalTexture, frag_UV).xyz * 2.0 - 1.0;
+		vec3 tangentNormal = texture(CubeNormal, cubeCoordinate).xyz * 2.0 - 1.0;
 		tangentNormal = SafeNormalize(tangentNormal, vec3(0.0, 0.0, 1.0));
 		if (useSurfaceMaps)
 		{
@@ -240,8 +247,8 @@ void main()
 
 	if (useSurfaceMaps && diffuse > 0.0)
 	{
-		float specularIntensity = texture(SpecularTexture, frag_UV).r;
-		float roughness = texture(RoughnessTexture, frag_UV).r;
+		float specularIntensity = texture(CubeSpecular, cubeCoordinate).r;
+		float roughness = texture(CubeRoughness, cubeCoordinate).r;
 		float exponent = exp2(mix(8.0, 2.0, roughness));
 		vec3 viewDirection = SafeNormalize(
 			uViewPosition - frag_WorldPosition,

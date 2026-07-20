@@ -15,9 +15,9 @@ public unsafe sealed partial class Texture
 			return;
 		}
 
-		if (Is3D)
+		if (Is3D || Is2DArray)
 		{
-			Allocate3DStorage();
+			AllocateLayeredStorage();
 
 			return;
 		}
@@ -48,8 +48,10 @@ public unsafe sealed partial class Texture
 		}
 	}
 
-	private void Allocate3DStorage()
+	private void AllocateLayeredStorage()
 	{
+		int layers = Is2DArray ? ArrayLayers : Depth;
+
 		if (Internal_OpenGL.Is45OrAbove)
 		{
 			Internal_OpenGL.GL.TextureStorage3D(
@@ -58,7 +60,7 @@ public unsafe sealed partial class Texture
 				internalFormat,
 				Width,
 				Height,
-				Depth
+				layers
 			);
 		}
 		else if (Internal_OpenGL.Is42OrAbove)
@@ -69,22 +71,22 @@ public unsafe sealed partial class Texture
 				internalFormat,
 				Width,
 				Height,
-				Depth
+				layers
 			));
 		}
 		else
 		{
-			WithBound(AllocateMutable3DStorage);
+			WithBound(AllocateMutableLayeredStorage);
 		}
 	}
 
-	private void AllocateMutable3DStorage()
+	private void AllocateMutableLayeredStorage()
 	{
 		(GLPixelFormat format, PixelType type) = AllocationPixelFormat(Format);
 
 		for (int level = 0; level < MipLevels; level++)
 		{
-			(int width, int height, int depth) = GetMipSize3D(level);
+			(int width, int height, int depth) = GetLayeredMipSize(level);
 			Internal_OpenGL.GL.TexImage3D(
 				target,
 				level,

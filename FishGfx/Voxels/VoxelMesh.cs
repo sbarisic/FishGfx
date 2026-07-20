@@ -76,6 +76,8 @@ internal sealed class VoxelMesh : IDisposable
 			68
 		);
 		vertexArray.AttribBinding(6, binding);
+		vertexArray.AttribIFormat(8, 1, VertexElementType.Int, 72);
+		vertexArray.AttribBinding(8, binding);
 	}
 
 	internal int VertexCount { get; private set; }

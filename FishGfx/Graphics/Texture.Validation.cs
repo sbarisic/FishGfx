@@ -15,7 +15,8 @@ public unsafe sealed partial class Texture
 	{
 		if (descriptor.Width <= 0
 			|| descriptor.Height <= 0
-			|| descriptor.Depth <= 0)
+			|| descriptor.Depth <= 0
+			|| descriptor.ArrayLayers <= 0)
 		{
 			throw new ArgumentOutOfRangeException(
 				nameof(descriptor),
@@ -53,6 +54,15 @@ public unsafe sealed partial class Texture
 			);
 		}
 
+		if (descriptor.Dimension != TextureDimension.Texture2DArray
+			&& descriptor.ArrayLayers != 1)
+		{
+			throw new ArgumentException(
+				"Only two-dimensional array textures may have multiple layers.",
+				nameof(descriptor)
+			);
+		}
+
 		if (descriptor.Dimension == TextureDimension.Texture3D
 			&& (descriptor.Usage & (TextureUsageFlags.ColorAttachment |
 				TextureUsageFlags.DepthStencilAttachment)) != 0)
@@ -63,12 +73,10 @@ public unsafe sealed partial class Texture
 			);
 		}
 
-		int maximumMips = 1 + (int)Math.Floor(
-			Math.Log2(Math.Max(
-				Math.Max(descriptor.Width, descriptor.Height),
-				descriptor.Depth
-			))
-		);
+		int maximumMipExtent = descriptor.Dimension == TextureDimension.Texture3D
+			? Math.Max(Math.Max(descriptor.Width, descriptor.Height), descriptor.Depth)
+			: Math.Max(descriptor.Width, descriptor.Height);
+		int maximumMips = 1 + (int)Math.Floor(Math.Log2(maximumMipExtent));
 
 		if (descriptor.MipLevels <= 0 || descriptor.MipLevels > maximumMips)
 		{
@@ -98,6 +106,16 @@ public unsafe sealed partial class Texture
 			throw new ArgumentOutOfRangeException(
 				nameof(descriptor),
 				$"Texture dimensions exceed the context limit of {limit}."
+			);
+		}
+
+		if (descriptor.Dimension == TextureDimension.Texture2DArray
+			&& descriptor.ArrayLayers > capabilities.MaximumTextureArrayLayers)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(descriptor),
+				$"Texture array layers exceed the context limit of "
+					+ $"{capabilities.MaximumTextureArrayLayers}."
 			);
 		}
 

@@ -344,7 +344,7 @@ public partial class VoxelTests
 	}
 
 	[Fact]
-	public void AtlasUvsUseTheSelectedTilesExactBoundaries()
+	public void CubeUvsUseLocalBoundariesAndSelectedArrayLayer()
 	{
 		VoxelPaletteBuilder builder = new();
 		ushort material = builder.Add(new VoxelMaterial("Tile", VoxelRenderMode.Opaque, new VoxelFaceTiles(1)));
@@ -358,10 +358,11 @@ public partial class VoxelTests
 		float minV = mesh.OpaqueVertices.Min(vertex => vertex.TextureCoordinates.Y);
 		float maxV = mesh.OpaqueVertices.Max(vertex => vertex.TextureCoordinates.Y);
 
-		Assert.Equal(0.5f, minU, 6);
+		Assert.Equal(0, minU, 6);
 		Assert.Equal(1, maxU, 6);
-		Assert.Equal(0.5f, minV, 6);
+		Assert.Equal(0, minV, 6);
 		Assert.Equal(1, maxV, 6);
+		Assert.All(mesh.OpaqueVertices, vertex => Assert.Equal(1, vertex.TextureLayer));
 	}
 
 	[Fact]
@@ -416,8 +417,8 @@ public partial class VoxelTests
 
 		VoxelMeshData mesh = Build(world, palette, new ChunkCoordinate(0, 0, 0));
 		const float MinimumU = 0;
-		const float MaximumU = 0.5f;
-		const float MinimumV = 0.5f;
+		const float MaximumU = 1;
+		const float MinimumV = 0;
 		const float MaximumV = 1;
 		Vector2 topRight = new(MaximumU, MaximumV);
 		Vector2 topLeft = new(MinimumU, MaximumV);

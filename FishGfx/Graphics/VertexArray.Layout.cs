@@ -90,7 +90,8 @@ internal unsafe sealed partial class VertexArray
 			size,
 			attributeType,
 			normalized,
-			relativeOffset
+			relativeOffset,
+			false
 		);
 		attributeFormats[attributeIndex] = format;
 
@@ -118,6 +119,66 @@ internal unsafe sealed partial class VertexArray
 				relativeOffset
 			));
 
+			return;
+		}
+
+		TryConfigureClassicAttribute(attributeIndex);
+	}
+
+	internal void AttribIFormat(
+		uint attributeIndex,
+		int size = 1,
+		VertexElementType attributeType = VertexElementType.Int,
+		uint relativeOffset = 0
+	)
+	{
+		EnsureCurrentOwner();
+
+		if (size < 1 || size > 4)
+		{
+			throw new ArgumentOutOfRangeException(nameof(size));
+		}
+
+		if (attributeType is not (
+			VertexElementType.Byte
+			or VertexElementType.UnsignedByte
+			or VertexElementType.Short
+			or VertexElementType.UnsignedShort
+			or VertexElementType.Int
+			or VertexElementType.UnsignedInt))
+		{
+			throw new ArgumentOutOfRangeException(nameof(attributeType));
+		}
+
+		VertexAttributeFormat format = new(
+			size,
+			attributeType,
+			false,
+			relativeOffset,
+			true
+		);
+		attributeFormats[attributeIndex] = format;
+
+		if (Internal_OpenGL.Is45OrAbove)
+		{
+			Internal_OpenGL.GL.VertexArrayAttribIFormat(
+				Handle,
+				attributeIndex,
+				size,
+				(GLEnum)ToOpenGl(attributeType),
+				relativeOffset
+			);
+			return;
+		}
+
+		if (Owner.Capabilities.SupportsVertexAttributeBinding)
+		{
+			WithBound(() => Internal_OpenGL.GL.VertexAttribIFormat(
+				attributeIndex,
+				size,
+				(GLEnum)ToOpenGl(attributeType),
+				relativeOffset
+			));
 			return;
 		}
 
@@ -326,14 +387,27 @@ internal unsafe sealed partial class VertexArray
 
 			try
 			{
-				Internal_OpenGL.GL.VertexAttribPointer(
-					attributeIndex,
-					format.Size,
-					(GLEnum)ToOpenGl(format.Type),
-					format.Normalized,
-					(uint)binding.Stride,
-					(void*)(nint)offset
-				);
+				if (format.Integer)
+				{
+					Internal_OpenGL.GL.VertexAttribIPointer(
+						attributeIndex,
+						format.Size,
+						(GLEnum)ToOpenGl(format.Type),
+						(uint)binding.Stride,
+						(void*)(nint)offset
+					);
+				}
+				else
+				{
+					Internal_OpenGL.GL.VertexAttribPointer(
+						attributeIndex,
+						format.Size,
+						(GLEnum)ToOpenGl(format.Type),
+						format.Normalized,
+						(uint)binding.Stride,
+						(void*)(nint)offset
+					);
+				}
 			}
 			finally
 			{
@@ -381,6 +455,7 @@ internal unsafe sealed partial class VertexArray
 		int Size,
 		VertexElementType Type,
 		bool Normalized,
-		uint RelativeOffset
+		uint RelativeOffset,
+		bool Integer
 	);
 }

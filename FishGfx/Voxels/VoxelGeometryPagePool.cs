@@ -394,6 +394,8 @@ internal sealed class VoxelGeometryPage : IDisposable
 		array.AttribBinding(5, vertexBinding);
 		array.AttribFormat(6, 4, VertexElementType.UnsignedByte, true, 68);
 		array.AttribBinding(6, vertexBinding);
+		array.AttribIFormat(8, 1, VertexElementType.Int, 72);
+		array.AttribBinding(8, vertexBinding);
 
 		uint originBinding = array.BindVertexBuffer(
 			origins,

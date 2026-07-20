@@ -5,6 +5,7 @@ namespace FishGfx.Graphics;
 public enum TextureDimension
 {
 	Texture2D,
+	Texture2DArray,
 	Texture3D,
 	Cube,
 	Texture2DMultisample,
@@ -176,10 +177,11 @@ public readonly record struct TextureDescriptor
 		int samples = 1,
 		bool fixedSampleLocations = true,
 		TextureSamplingState sampling = default,
-		int depth = 1
+		int depth = 1,
+		int arrayLayers = 1
 	)
 	{
-		if (width <= 0 || height <= 0 || depth <= 0)
+		if (width <= 0 || height <= 0 || depth <= 0 || arrayLayers <= 0)
 		{
 			throw new ArgumentOutOfRangeException(
 				nameof(width),
@@ -215,6 +217,14 @@ public readonly record struct TextureDescriptor
 			);
 		}
 
+		if (dimension != TextureDimension.Texture2DArray && arrayLayers != 1)
+		{
+			throw new ArgumentException(
+				"Only two-dimensional array textures may have more than one array layer.",
+				nameof(arrayLayers)
+			);
+		}
+
 		if (dimension == TextureDimension.Texture3D
 			&& (usage & (TextureUsageFlags.ColorAttachment |
 				TextureUsageFlags.DepthStencilAttachment)) != 0)
@@ -244,6 +254,7 @@ public readonly record struct TextureDescriptor
 		Width = width;
 		Height = height;
 		Depth = depth;
+		ArrayLayers = arrayLayers;
 		Format = format;
 		Usage = usage;
 		Dimension = dimension;
@@ -258,6 +269,8 @@ public readonly record struct TextureDescriptor
 	public int Height { get; }
 
 	public int Depth { get; }
+
+	public int ArrayLayers { get; }
 
 	public TextureFormat Format { get; }
 
@@ -439,6 +452,48 @@ public readonly record struct TextureRegion3D
 	public int Height { get; }
 
 	public int Depth { get; }
+}
+
+public readonly record struct TextureArrayRegion
+{
+	public TextureArrayRegion(
+		int x,
+		int y,
+		int firstLayer,
+		int width,
+		int height,
+		int layerCount
+	)
+	{
+		if (x < 0 || y < 0 || firstLayer < 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(x));
+		}
+
+		if (width <= 0 || height <= 0 || layerCount <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(width));
+		}
+
+		X = x;
+		Y = y;
+		FirstLayer = firstLayer;
+		Width = width;
+		Height = height;
+		LayerCount = layerCount;
+	}
+
+	public int X { get; }
+
+	public int Y { get; }
+
+	public int FirstLayer { get; }
+
+	public int Width { get; }
+
+	public int Height { get; }
+
+	public int LayerCount { get; }
 }
 
 public readonly record struct TextureCopyRegion(

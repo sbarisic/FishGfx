@@ -70,7 +70,7 @@ internal static class VoxelTestCompatibilityAssets
 		};
 	}
 
-	internal static Texture CreateTexture(GraphicsContext graphics)
+	internal static VoxelSurfaceTextureSet CreateTextures(GraphicsContext graphics)
 	{
 		if (graphics == null)
 		{
@@ -78,7 +78,158 @@ internal static class VoxelTestCompatibilityAssets
 		}
 
 		using Bitmap composite = CreateBitmap();
-		return graphics.CreateTextureFromImage(composite);
+		Texture modelAtlas = graphics.CreateTextureFromImage(
+			composite,
+			new TextureLoadOptions
+			{
+				Format = TextureFormat.SRGB8Alpha8,
+				MipLevels = 1,
+				Sampling = TextureSamplingState.Default,
+			}
+		);
+		Texture cubeArray = null;
+		Texture normalArray = null;
+		Texture specularArray = null;
+		Texture roughnessArray = null;
+
+		try
+		{
+			cubeArray = CreateCubeArray(graphics, composite);
+			normalArray = CreateConstantCubeArray(graphics, 128, 128, 255, 255);
+			specularArray = CreateConstantCubeArray(graphics, 0, 0, 0, 255);
+			roughnessArray = CreateConstantCubeArray(graphics, 255, 255, 255, 255);
+			return new VoxelSurfaceTextureSet(
+				modelAtlas,
+				cubeArray,
+				normalArray,
+				specularArray,
+				roughnessArray
+			);
+		}
+		catch
+		{
+			roughnessArray?.Dispose();
+			specularArray?.Dispose();
+			normalArray?.Dispose();
+			cubeArray?.Dispose();
+			modelAtlas.Dispose();
+			throw;
+		}
+	}
+
+	private static Texture CreateConstantCubeArray(
+		GraphicsContext graphics,
+		byte red,
+		byte green,
+		byte blue,
+		byte alpha
+	)
+	{
+		VoxelAtlasLayout layout = AtlasLayout;
+		int mipLevels = 1 + (int)MathF.Floor(MathF.Log2(layout.TileWidth));
+		Texture texture = graphics.CreateTexture(new TextureDescriptor(
+			layout.TileWidth,
+			layout.TileHeight,
+			TextureFormat.RGBA8Unorm,
+			TextureUsageFlags.Sampled | TextureUsageFlags.TransferDestination,
+			TextureDimension.Texture2DArray,
+			mipLevels,
+			sampling: new TextureSamplingState(
+				TextureFilter.NearestMipmapLinear,
+				TextureFilter.Nearest,
+				TextureWrap.ClampToEdge,
+				TextureWrap.ClampToEdge
+			),
+			arrayLayers: layout.TileCount
+		));
+
+		try
+		{
+			byte[] pixels = new byte[
+				layout.TileWidth * layout.TileHeight * layout.TileCount * 4
+			];
+
+			for (int offset = 0; offset < pixels.Length; offset += 4)
+			{
+				pixels[offset] = red;
+				pixels[offset + 1] = green;
+				pixels[offset + 2] = blue;
+				pixels[offset + 3] = alpha;
+			}
+
+			texture.Write(pixels, TextureDataFormat.RGBA8Unorm);
+			texture.GenerateMipmaps();
+			return texture;
+		}
+		catch
+		{
+			texture.Dispose();
+			throw;
+		}
+	}
+
+	private static Texture CreateCubeArray(GraphicsContext graphics, Bitmap atlas)
+	{
+		VoxelAtlasLayout layout = AtlasLayout;
+		int tileWidth = layout.TileWidth;
+		int tileHeight = layout.TileHeight;
+		int mipLevels = 1 + (int)MathF.Floor(MathF.Log2(Math.Min(tileWidth, tileHeight)));
+		Texture texture = graphics.CreateTexture(new TextureDescriptor(
+			tileWidth,
+			tileHeight,
+			TextureFormat.SRGB8Alpha8,
+			TextureUsageFlags.Sampled | TextureUsageFlags.TransferDestination,
+			TextureDimension.Texture2DArray,
+			mipLevels,
+			sampling: new TextureSamplingState(
+				TextureFilter.NearestMipmapLinear,
+				TextureFilter.Nearest,
+				TextureWrap.ClampToEdge,
+				TextureWrap.ClampToEdge
+			),
+			arrayLayers: layout.TileCount
+		));
+
+		try
+		{
+			byte[] pixels = new byte[tileWidth * tileHeight * 4];
+
+			for (int layer = 0; layer < layout.TileCount; layer++)
+			{
+				int tileX = (layer % layout.Columns) * tileWidth;
+				int tileY = (layer / layout.Columns) * tileHeight;
+
+				for (int y = 0; y < tileHeight; y++)
+				{
+					for (int x = 0; x < tileWidth; x++)
+					{
+						System.Drawing.Color color = atlas.GetPixel(
+							tileX + x,
+							tileY + (tileHeight - 1 - y)
+						);
+						int offset = ((y * tileWidth) + x) * 4;
+						pixels[offset] = color.R;
+						pixels[offset + 1] = color.G;
+						pixels[offset + 2] = color.B;
+						pixels[offset + 3] = color.A;
+					}
+				}
+
+				texture.Write(
+					pixels,
+					TextureDataFormat.RGBA8Unorm,
+					new TextureArrayRegion(0, 0, layer, tileWidth, tileHeight, 1)
+				);
+			}
+
+			texture.GenerateMipmaps();
+			return texture;
+		}
+		catch
+		{
+			texture.Dispose();
+			throw;
+		}
 	}
 
 	internal static Bitmap CreateBitmap()

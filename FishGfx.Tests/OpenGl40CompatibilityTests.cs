@@ -152,6 +152,7 @@ public sealed class OpenGl40CompatibilityTests
 			1,
 			1,
 			1,
+			1,
 			1
 		);
 	}

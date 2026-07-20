@@ -99,7 +99,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		GraphicsContext graphics,
 		VoxelWorld world,
 		VoxelPalette palette,
-		Texture atlas,
+		VoxelSurfaceTextureSet textures,
 		VoxelAtlasLayout atlasLayout,
 		VoxelLighting lighting,
 		VoxelRendererOptions options = null
@@ -108,8 +108,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		Graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
 		this.world = world ?? throw new ArgumentNullException(nameof(world));
 		this.lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
-		atlasTexture = atlas ?? throw new ArgumentNullException(nameof(atlas));
-		surfaceTextures = new VoxelSurfaceTextureSet(atlasTexture);
+		surfaceTextures = textures ?? throw new ArgumentNullException(nameof(textures));
+		atlasTexture = surfaceTextures.ModelAtlas;
 		this.atlasLayout = atlasLayout;
 		this.options = options ?? new VoxelRendererOptions();
 		VoxelPalette resolvedPalette = palette ?? throw new ArgumentNullException(nameof(palette));
@@ -125,7 +125,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		sun = this.options.Sun;
-		atlasTexture.EnsureOwner(graphics);
+		surfaceTextures.EnsureOwner(graphics);
 
 		if (!lighting.IsCompatibleWith(world, resolvedPalette))
 		{
@@ -135,9 +135,21 @@ public sealed partial class VoxelRenderer : IDisposable
 			);
 		}
 
-		if (atlas.Width != atlasLayout.TextureWidth || atlas.Height != atlasLayout.TextureHeight)
+		if (atlasTexture.Width != atlasLayout.TextureWidth
+			|| atlasTexture.Height != atlasLayout.TextureHeight)
 		{
-			throw new ArgumentException("Voxel atlas layout dimensions must match the supplied texture.", nameof(atlasLayout));
+			throw new ArgumentException("Voxel atlas layout dimensions must match the model atlas.", nameof(atlasLayout));
+		}
+
+		if (surfaceTextures.CubeBaseColor.Width != atlasLayout.TileWidth
+			|| surfaceTextures.CubeBaseColor.Height != atlasLayout.TileHeight
+			|| surfaceTextures.CubeBaseColor.ArrayLayers != atlasLayout.TileCount
+			|| surfaceTextures.CubeBaseColor.MipLevels != ExpectedCubeMipLevels(atlasLayout))
+		{
+			throw new ArgumentException(
+				"Cube texture-array dimensions and layers must match the voxel atlas layout.",
+				nameof(textures)
+			);
 		}
 
 		scheduler = new VoxelMeshingScheduler(
@@ -219,32 +231,18 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	public VoxelSurfaceTextureSet SurfaceTextures => surfaceTextures;
 
-	public void SetAtlasTexture(Texture atlas)
-	{
-		ThrowIfDisposed();
-		ArgumentNullException.ThrowIfNull(atlas);
-		atlas.EnsureOwner(Graphics);
-		if (atlas.Width != atlasLayout.TextureWidth
-			|| atlas.Height != atlasLayout.TextureHeight)
-		{
-			throw new ArgumentException(
-				"Voxel atlas layout dimensions must match the supplied texture.",
-				nameof(atlas)
-			);
-		}
-
-		atlasTexture = atlas;
-		surfaceTextures = surfaceTextures.WithBaseColor(atlas);
-	}
-
 	public void SetSurfaceTextures(VoxelSurfaceTextureSet textures)
 	{
 		ThrowIfDisposed();
 		ArgumentNullException.ThrowIfNull(textures);
 		textures.EnsureOwner(Graphics);
 
-		if (textures.BaseColor.Width != atlasLayout.TextureWidth
-			|| textures.BaseColor.Height != atlasLayout.TextureHeight)
+		if (textures.ModelAtlas.Width != atlasLayout.TextureWidth
+			|| textures.ModelAtlas.Height != atlasLayout.TextureHeight
+			|| textures.CubeBaseColor.Width != atlasLayout.TileWidth
+			|| textures.CubeBaseColor.Height != atlasLayout.TileHeight
+			|| textures.CubeBaseColor.ArrayLayers != atlasLayout.TileCount
+			|| textures.CubeBaseColor.MipLevels != ExpectedCubeMipLevels(atlasLayout))
 		{
 			throw new ArgumentException(
 				"Voxel atlas layout dimensions must match the supplied texture set.",
@@ -253,7 +251,13 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		surfaceTextures = textures;
-		atlasTexture = textures.BaseColor;
+		atlasTexture = textures.ModelAtlas;
+	}
+
+	private static int ExpectedCubeMipLevels(VoxelAtlasLayout layout)
+	{
+		int maximumExtent = Math.Max(layout.TileWidth, layout.TileHeight);
+		return 1 + (int)MathF.Floor(MathF.Log2(maximumExtent));
 	}
 
 	public bool IsIdle => scheduler.PendingCount == 0

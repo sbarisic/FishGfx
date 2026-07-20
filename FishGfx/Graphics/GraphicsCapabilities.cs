@@ -68,6 +68,7 @@ public sealed class GraphicsCapabilities
 		IReadOnlyList<string> extensions,
 		int maximumTexture2DSize,
 		int maximumTexture3DSize,
+		int maximumTextureArrayLayers,
 		int maximumCubeTextureSize,
 		int maximumSamples,
 		int maximumColorAttachments,
@@ -88,6 +89,7 @@ public sealed class GraphicsCapabilities
 		Extensions = Array.AsReadOnly(extensionCopy);
 		MaximumTexture2DSize = maximumTexture2DSize;
 		MaximumTexture3DSize = maximumTexture3DSize;
+		MaximumTextureArrayLayers = maximumTextureArrayLayers;
 		MaximumCubeTextureSize = maximumCubeTextureSize;
 		MaximumSamples = Math.Max(1, maximumSamples);
 		MaximumColorAttachments = maximumColorAttachments;
@@ -119,6 +121,8 @@ public sealed class GraphicsCapabilities
 	public int MaximumTexture2DSize { get; }
 
 	public int MaximumTexture3DSize { get; }
+
+	public int MaximumTextureArrayLayers { get; }
 
 	public int MaximumCubeTextureSize { get; }
 

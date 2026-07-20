@@ -7,6 +7,7 @@ layout (location = 3) in vec3 Normal;
 layout (location = 4) in vec4 Tangent;
 layout (location = 5) in vec4 Wave;
 layout (location = 6) in vec4 Light;
+layout (location = 8) in int TextureLayer;
 
 out vec4 frag_Clr;
 out vec2 frag_UV;
@@ -15,6 +16,7 @@ out vec4 frag_Tangent;
 out vec3 frag_WorldPosition;
 out vec4 frag_Light;
 out float frag_WaveAmplitude;
+flat out int frag_TextureLayer;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -58,5 +60,6 @@ void main()
 	frag_WorldPosition = worldPosition.xyz;
 	frag_Light = Light;
 	frag_WaveAmplitude = Wave.x;
+	frag_TextureLayer = TextureLayer;
 	gl_Position = uProjection * uView * worldPosition;
 }

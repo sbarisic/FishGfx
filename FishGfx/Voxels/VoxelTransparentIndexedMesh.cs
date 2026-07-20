@@ -276,6 +276,8 @@ internal sealed class VoxelTransparentIndexSlot
 		array.AttribBinding(5, binding);
 		array.AttribFormat(6, 4, VertexElementType.UnsignedByte, true, 68);
 		array.AttribBinding(6, binding);
+		array.AttribIFormat(8, 1, VertexElementType.Int, 72);
+		array.AttribBinding(8, binding);
 		array.BindElementBuffer(indices);
 	}
 }

@@ -83,7 +83,7 @@ public sealed partial class VoxelRenderer
 		double cullingMilliseconds = Stopwatch.GetElapsedTime(cullingStart).TotalMilliseconds;
 		long commandBuildStart = Stopwatch.GetTimestamp();
 		using DrawVoxelShadowPagesCommand command = new(
-			atlasTexture,
+			surfaceTextures,
 			shadowOpaqueShader,
 			shadowAlphaShader,
 			indirectBuffer,

@@ -6,43 +6,52 @@ namespace FishGfx.Voxels;
 public sealed class VoxelSurfaceTextureSet
 {
 	public VoxelSurfaceTextureSet(
-		Texture baseColor,
-		Texture normal = null,
-		Texture specular = null,
-		Texture roughness = null
+		Texture modelAtlas,
+		Texture cubeBaseColor,
+		Texture normal,
+		Texture specular,
+		Texture roughness
 	)
 	{
-		BaseColor = baseColor ?? throw new ArgumentNullException(nameof(baseColor));
-		bool hasAnySurfaceMap = normal != null || specular != null || roughness != null;
-		bool hasEverySurfaceMap = normal != null && specular != null && roughness != null;
+		ModelAtlas = modelAtlas ?? throw new ArgumentNullException(nameof(modelAtlas));
+		CubeBaseColor = cubeBaseColor ?? throw new ArgumentNullException(nameof(cubeBaseColor));
+		Normal = normal ?? throw new ArgumentNullException(nameof(normal));
+		Specular = specular ?? throw new ArgumentNullException(nameof(specular));
+		Roughness = roughness ?? throw new ArgumentNullException(nameof(roughness));
+		ValidateModelAtlas(ModelAtlas, nameof(modelAtlas));
+		ValidateArray(CubeBaseColor, nameof(cubeBaseColor));
 
-		if (hasAnySurfaceMap && !hasEverySurfaceMap)
+		if (ModelAtlas.Format != TextureFormat.SRGB8Alpha8
+			|| ModelAtlas.MipLevels != 1)
 		{
 			throw new ArgumentException(
-				"Normal, specular, and roughness textures must be supplied together."
+				"The voxel model atlas must use SRGB8Alpha8 storage with one mip level.",
+				nameof(modelAtlas)
 			);
 		}
 
-		Normal = normal;
-		Specular = specular;
-		Roughness = roughness;
-		ValidateTexture(BaseColor, nameof(baseColor));
-
-		if (hasEverySurfaceMap)
+		if (CubeBaseColor.Format != TextureFormat.SRGB8Alpha8)
 		{
-			ValidateTexture(Normal, nameof(normal));
-			ValidateTexture(Specular, nameof(specular));
-			ValidateTexture(Roughness, nameof(roughness));
-			ValidateLinearSurfaceMap(Normal, nameof(normal));
-			ValidateLinearSurfaceMap(Specular, nameof(specular));
-			ValidateLinearSurfaceMap(Roughness, nameof(roughness));
-			ValidateDimensions(Normal, nameof(normal));
-			ValidateDimensions(Specular, nameof(specular));
-			ValidateDimensions(Roughness, nameof(roughness));
+			throw new ArgumentException(
+				"The cube base-color array must use SRGB8Alpha8 storage.",
+				nameof(cubeBaseColor)
+			);
 		}
+
+		ValidateArray(Normal, nameof(normal));
+		ValidateArray(Specular, nameof(specular));
+		ValidateArray(Roughness, nameof(roughness));
+		ValidateLinearSurfaceMap(Normal, nameof(normal));
+		ValidateLinearSurfaceMap(Specular, nameof(specular));
+		ValidateLinearSurfaceMap(Roughness, nameof(roughness));
+		ValidateDimensions(Normal, nameof(normal));
+		ValidateDimensions(Specular, nameof(specular));
+		ValidateDimensions(Roughness, nameof(roughness));
 	}
 
-	public Texture BaseColor { get; }
+	public Texture ModelAtlas { get; }
+
+	public Texture CubeBaseColor { get; }
 
 	public Texture Normal { get; }
 
@@ -50,42 +59,38 @@ public sealed class VoxelSurfaceTextureSet
 
 	public Texture Roughness { get; }
 
-	public bool HasSurfaceMaps => Normal != null;
-
-	internal VoxelSurfaceTextureSet WithBaseColor(Texture baseColor)
-	{
-		return new VoxelSurfaceTextureSet(baseColor, Normal, Specular, Roughness);
-	}
+	public bool HasSurfaceMaps => true;
 
 	internal void EnsureOwner(GraphicsContext graphics)
 	{
-		BaseColor.EnsureOwner(graphics);
-		Normal?.EnsureOwner(graphics);
-		Specular?.EnsureOwner(graphics);
-		Roughness?.EnsureOwner(graphics);
+		ModelAtlas.EnsureOwner(graphics);
+		CubeBaseColor.EnsureOwner(graphics);
+		Normal.EnsureOwner(graphics);
+		Specular.EnsureOwner(graphics);
+		Roughness.EnsureOwner(graphics);
 	}
 
 	internal IDisposable Bind(ShaderProgram shader)
 	{
 		ArgumentNullException.ThrowIfNull(shader);
-		shader.SetUniform("Texture0", 0);
-		shader.SetUniform("NormalTexture", 1);
-		shader.SetUniform("SpecularTexture", 2);
-		shader.SetUniform("RoughnessTexture", 3);
-		shader.SetUniform("SurfaceMapsEnabled", HasSurfaceMaps ? 1 : 0);
-		IDisposable[] bindings = new IDisposable[HasSurfaceMaps ? 4 : 1];
+		shader.SetUniform("CubeBaseColor", 0);
+		shader.SetUniform("CubeNormal", 1);
+		shader.SetUniform("CubeSpecular", 2);
+		shader.SetUniform("CubeRoughness", 3);
+		shader.SetUniform("ModelAtlas", 4);
+		shader.SetUniform("SurfaceMapsEnabled", 1);
+		IDisposable[] bindings = new IDisposable[5];
 		int bound = 0;
 
 		try
 		{
-			bindings[bound++] = BaseColor.Bind(0);
+			bindings[bound++] = CubeBaseColor.Bind(0);
 
-			if (HasSurfaceMaps)
-			{
-				bindings[bound++] = Normal.Bind(1);
-				bindings[bound++] = Specular.Bind(2);
-				bindings[bound++] = Roughness.Bind(3);
-			}
+			bindings[bound++] = Normal.Bind(1);
+			bindings[bound++] = Specular.Bind(2);
+			bindings[bound++] = Roughness.Bind(3);
+
+			bindings[bound++] = ModelAtlas.Bind(4);
 
 			return new BindingScope(bindings);
 		}
@@ -102,7 +107,10 @@ public sealed class VoxelSurfaceTextureSet
 
 	private void ValidateDimensions(Texture texture, string parameterName)
 	{
-		if (texture.Width != BaseColor.Width || texture.Height != BaseColor.Height)
+		if (texture.Width != CubeBaseColor.Width
+			|| texture.Height != CubeBaseColor.Height
+			|| texture.ArrayLayers != CubeBaseColor.ArrayLayers
+			|| texture.MipLevels != CubeBaseColor.MipLevels)
 		{
 			throw new ArgumentException(
 				"All voxel surface textures must have identical dimensions.",
@@ -111,15 +119,35 @@ public sealed class VoxelSurfaceTextureSet
 		}
 	}
 
-	private static void ValidateTexture(Texture texture, string parameterName)
+	private static void ValidateModelAtlas(Texture texture, string parameterName)
 	{
-		if (texture.Is3D
+		if (texture.Is2DArray
+			|| texture.Is3D
 			|| texture.IsCubeMap
 			|| texture.Multisampled
 			|| Texture.IsDepthFormat(texture.Format))
 		{
 			throw new ArgumentException(
-				"Voxel surface textures must be ordinary two-dimensional color textures.",
+				"The voxel model atlas must be an ordinary two-dimensional color texture.",
+				parameterName
+			);
+		}
+
+		if ((texture.Usage & TextureUsageFlags.Sampled) == 0)
+		{
+			throw new ArgumentException(
+				"Voxel surface maps require Sampled usage.",
+				parameterName
+			);
+		}
+	}
+
+	private static void ValidateArray(Texture texture, string parameterName)
+	{
+		if (!texture.Is2DArray || Texture.IsDepthFormat(texture.Format))
+		{
+			throw new ArgumentException(
+				"Cube voxel surface textures must be two-dimensional texture arrays.",
 				parameterName
 			);
 		}

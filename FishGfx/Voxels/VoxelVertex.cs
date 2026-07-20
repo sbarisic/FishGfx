@@ -24,6 +24,7 @@ public struct VoxelVertex
 		Tangent = Vector4.Zero;
 		WaveParameters = Vector4.Zero;
 		PackedLightChannels = new Color(0, 0, 0, byte.MaxValue);
+		TextureLayer = -1;
 	}
 
 	public Vector3 Position;
@@ -45,4 +46,9 @@ public struct VoxelVertex
 	/// Normalized red, green, blue, and sky light channels consumed by the voxel shaders.
 	/// </summary>
 	internal Color PackedLightChannels;
+
+	/// <summary>
+	/// Cube texture-array layer. A negative value selects the custom-model atlas.
+	/// </summary>
+	public int TextureLayer;
 }
