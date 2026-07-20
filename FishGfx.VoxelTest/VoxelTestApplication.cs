@@ -558,9 +558,7 @@ internal sealed partial class VoxelTestApplication
 			voxelUi.Dispose();
 			input.Dispose();
 			textures.CubeBaseColor.Dispose();
-			textures.Normal.Dispose();
-			textures.Specular.Dispose();
-			textures.Roughness.Dispose();
+			textures.PackedSurface.Dispose();
 			textures.ModelAtlas.Dispose();
 			window.Graphics.CollectGarbage();
 			window.Dispose();

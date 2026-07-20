@@ -12,8 +12,13 @@ public sealed class DirectionalShadowRenderer : IDisposable
 
 	private readonly GraphicsContext context;
 	private readonly List<int> cascadesNeedingRender = new();
+	private readonly List<int> dynamicCascadesNeedingRender = new();
+	private readonly List<AxisAlignedBoundingBox> staticInvalidations = new();
 	private CascadeSlot[] slots = Array.Empty<CascadeSlot>();
 	private DirectionalShadowCascade[] pending = Array.Empty<DirectionalShadowCascade>();
+	private Vector3[] pendingAnchors = Array.Empty<Vector3>();
+	private float[] pendingVerticalFovs = Array.Empty<float>();
+	private float[] pendingHorizontalFovs = Array.Empty<float>();
 	private DirectionalShadowGpuTimer[] gpuTimers = Array.Empty<DirectionalShadowGpuTimer>();
 	private DirectionalShadowFrame.Snapshot currentSnapshot;
 	private DirectionalShadowOptions options;
@@ -37,6 +42,8 @@ public sealed class DirectionalShadowRenderer : IDisposable
 	}
 
 	public IReadOnlyList<int> CascadesNeedingRender => cascadesNeedingRender;
+
+	public IReadOnlyList<int> DynamicCascadesNeedingRender => dynamicCascadesNeedingRender;
 
 	public DirectionalShadowFrame CurrentFrame => CreateCurrentFrame();
 
@@ -84,6 +91,19 @@ public sealed class DirectionalShadowRenderer : IDisposable
 	{
 		ObjectDisposedException.ThrowIf(disposed, this);
 		geometryRevision++;
+		for (int index = 0; index < slots.Length; index++)
+		{
+			slots[index].StaticDirty = true;
+		}
+	}
+
+	public void InvalidateStaticCaster(in AxisAlignedBoundingBox bounds)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		if (!bounds.IsEmpty)
+		{
+			staticInvalidations.Add(bounds);
+		}
 	}
 
 	public void NotifyDynamicActorsChanged()
@@ -99,10 +119,12 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		currentStrength = 0;
 		qualityChanged = true;
 		cascadesNeedingRender.Clear();
+		dynamicCascadesNeedingRender.Clear();
 
 		for (int index = 0; index < slots.Length; index++)
 		{
 			slots[index].Valid = false;
+			slots[index].DynamicValid = false;
 			slots[index].PendingDirtyReasons = DirectionalShadowDirtyReason.None;
 		}
 
@@ -130,6 +152,7 @@ public sealed class DirectionalShadowRenderer : IDisposable
 
 		this.frameIndex = frameIndex;
 		cascadesNeedingRender.Clear();
+		dynamicCascadesNeedingRender.Clear();
 		frameDirtyReasons = DirectionalShadowDirtyReason.None;
 		strength = Math.Clamp(strength, 0, 1);
 
@@ -163,11 +186,32 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		bool teleport = wasEnabled
 			&& Vector3.Distance(viewCamera.Position, previousViewPosition) > options.MaximumDistance * 0.5f;
 		float[] splits = CalculateSplits(viewCamera.Near, options.MaximumDistance, options.CascadeCount, options.SplitLambda);
+		for (int invalidationIndex = 0; invalidationIndex < staticInvalidations.Count; invalidationIndex++)
+		{
+			AxisAlignedBoundingBox dirty = staticInvalidations[invalidationIndex];
+			for (int cascadeIndex = 0; cascadeIndex < options.CascadeCount; cascadeIndex++)
+			{
+				float radius = CalculateClipmapExtent(viewCamera, splits[cascadeIndex]);
+				AxisAlignedBoundingBox bounds = AxisAlignedBoundingBox.FromPositionAndSize(
+					viewCamera.Position - new Vector3(radius),
+					new Vector3(radius * 2));
+				if (bounds.Intersects(dirty))
+				{
+					slots[cascadeIndex].StaticDirty = true;
+				}
+			}
+		}
+		staticInvalidations.Clear();
+		int ordinaryRefreshBudget = 1;
+		int dynamicRefreshBudget = 2;
 
 		for (int index = 0; index < options.CascadeCount; index++)
 		{
 			float nearDistance = index == 0 ? Math.Max(0.01f, viewCamera.Near) : splits[index - 1];
 			pending[index] = BuildCascade(viewCamera, lightDirection, nearDistance, splits[index], index);
+			pendingAnchors[index] = viewCamera.Position;
+			pendingVerticalFovs[index] = viewCamera.VerticalFOV;
+			pendingHorizontalFovs[index] = viewCamera.HorizontalFOV;
 			CascadeSlot slot = slots[index];
 			DirectionalShadowDirtyReason reason = DirectionalShadowDirtyReason.None;
 
@@ -197,17 +241,18 @@ public sealed class DirectionalShadowRenderer : IDisposable
 				reason |= DirectionalShadowDirtyReason.Sun;
 			}
 
-			if (slot.GeometryRevision != geometryRevision)
+			if (slot.StaticDirty)
 			{
 				reason |= DirectionalShadowDirtyReason.VoxelGeometry;
 			}
 
-			if (dynamicActorsChanged)
-			{
-				reason |= DirectionalShadowDirtyReason.DynamicActor;
-			}
-
-			if (!MatricesNearlyEqual(slot.Cascade.ViewProjection, pending[index].ViewProjection))
+			float anchorThreshold = Math.Max(0.5f, splits[index] * 0.05f);
+			bool projectionChanged = slot.Valid
+				&& (MathF.Abs(slot.VerticalFov - viewCamera.VerticalFOV) > 1e-5f
+					|| MathF.Abs(slot.HorizontalFov - viewCamera.HorizontalFOV) > 1e-5f);
+			if (!slot.Valid
+				|| projectionChanged
+				|| Vector3.Distance(slot.AnchorPosition, viewCamera.Position) >= anchorThreshold)
 			{
 				reason |= DirectionalShadowDirtyReason.Camera;
 			}
@@ -218,11 +263,61 @@ public sealed class DirectionalShadowRenderer : IDisposable
 				| DirectionalShadowDirtyReason.Sunrise)) != 0;
 			bool due = forceAll || frameIndex - slot.LastRenderedFrame >= options.GetUpdateInterval(index);
 
-			if (reason != DirectionalShadowDirtyReason.None && due)
+			bool scheduled = reason != DirectionalShadowDirtyReason.None
+				&& due
+				&& (forceAll || ordinaryRefreshBudget > 0);
+			if (scheduled)
 			{
 				slot.PendingDirtyReasons = reason;
 				cascadesNeedingRender.Add(index);
 				frameDirtyReasons |= reason;
+				if (!forceAll)
+				{
+					ordinaryRefreshBudget--;
+				}
+			}
+
+			DirectionalShadowDirtyReason dynamicReason = DirectionalShadowDirtyReason.None;
+			if (!slot.DynamicValid)
+			{
+				dynamicReason |= DirectionalShadowDirtyReason.FirstUse;
+			}
+			if (qualityChanged)
+			{
+				dynamicReason |= DirectionalShadowDirtyReason.Quality;
+			}
+			if (sunrise)
+			{
+				dynamicReason |= DirectionalShadowDirtyReason.Sunrise;
+			}
+			if (teleport)
+			{
+				dynamicReason |= DirectionalShadowDirtyReason.Teleport;
+			}
+			if (dynamicActorsChanged)
+			{
+				dynamicReason |= DirectionalShadowDirtyReason.DynamicActor;
+			}
+			if (scheduled)
+			{
+				dynamicReason |= reason & ~DirectionalShadowDirtyReason.VoxelGeometry;
+			}
+
+			bool forceDynamic = (dynamicReason & (DirectionalShadowDirtyReason.FirstUse
+				| DirectionalShadowDirtyReason.Quality
+				| DirectionalShadowDirtyReason.Teleport
+				| DirectionalShadowDirtyReason.Sunrise)) != 0;
+			bool dynamicDue = forceDynamic
+				|| frameIndex - slot.DynamicLastRenderedFrame >= options.GetUpdateInterval(index);
+			if (dynamicReason != DirectionalShadowDirtyReason.None
+				&& dynamicDue
+				&& (forceDynamic || dynamicRefreshBudget > 0))
+			{
+				dynamicCascadesNeedingRender.Add(index);
+				if (!forceDynamic)
+				{
+					dynamicRefreshBudget--;
+				}
 			}
 		}
 
@@ -245,6 +340,17 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		}
 
 		return pending[index];
+	}
+
+	public DirectionalShadowCascade GetDynamicCascade(int index)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		if (!dynamicCascadesNeedingRender.Contains(index))
+		{
+			throw new InvalidOperationException($"Dynamic cascade {index} is not pending rendering.");
+		}
+
+		return cascadesNeedingRender.Contains(index) ? pending[index] : slots[index].Cascade;
 	}
 
 	public RenderPass BeginCascadePass(RenderFrame frame, int index)
@@ -275,6 +381,40 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		);
 	}
 
+	public RenderPass BeginDynamicCascadePass(RenderFrame frame, int index)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		ArgumentNullException.ThrowIfNull(frame);
+		if (!dynamicCascadesNeedingRender.Contains(index))
+		{
+			throw new InvalidOperationException($"Dynamic cascade {index} is not pending rendering.");
+		}
+
+		DirectionalShadowCascade cascade = cascadesNeedingRender.Contains(index)
+			? pending[index]
+			: slots[index].Cascade;
+		RenderState state = RenderState.Default with
+		{
+			BlendEnabled = false,
+			ColorWriteMask = ColorWriteMask.None,
+			CullMode = CullMode.Back,
+			Winding = Winding.CounterClockwise,
+			DepthBiasSlope = options.RasterSlopeBias,
+			DepthBiasConstant = options.RasterConstantBias,
+		};
+
+		return frame.BeginPass(
+			slots[index].DynamicTarget,
+			new RenderPassDescriptor
+			{
+				View = new RenderView(cascade.Camera),
+				State = state,
+				ColorLoadAction = RenderLoadAction.DontCare,
+				DepthLoadAction = RenderLoadAction.Clear,
+				ClearDepth = 1,
+			});
+	}
+
 	public IDisposable BeginCascadeTiming(RenderPass pass, int index)
 	{
 		ObjectDisposedException.ThrowIf(disposed, this);
@@ -298,9 +438,26 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		slot.LastRenderedFrame = frameIndex;
 		slot.LastDirtyReasons = slot.PendingDirtyReasons;
 		slot.GeometryRevision = geometryRevision;
+		slot.StaticDirty = false;
 		slot.LightDirection = previousLightDirection;
+		slot.AnchorPosition = pendingAnchors[index];
+		slot.VerticalFov = pendingVerticalFovs[index];
+		slot.HorizontalFov = pendingHorizontalFovs[index];
 		slot.PendingDirtyReasons = DirectionalShadowDirtyReason.None;
 		slot.Valid = true;
+	}
+
+	public void CompleteDynamicCascade(int index)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		if (!dynamicCascadesNeedingRender.Contains(index))
+		{
+			throw new InvalidOperationException($"Dynamic cascade {index} is not pending rendering.");
+		}
+
+		CascadeSlot slot = slots[index];
+		slot.DynamicLastRenderedFrame = frameIndex;
+		slot.DynamicValid = slot.Valid;
 	}
 
 	public void Dispose()
@@ -315,13 +472,18 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		for (int index = 0; index < slots.Length; index++)
 		{
 			slots[index].Target.Dispose();
+			slots[index].DynamicTarget.Dispose();
 			gpuTimers[index].Dispose();
 		}
 
 		slots = Array.Empty<CascadeSlot>();
 		pending = Array.Empty<DirectionalShadowCascade>();
+		pendingAnchors = Array.Empty<Vector3>();
+		pendingVerticalFovs = Array.Empty<float>();
+		pendingHorizontalFovs = Array.Empty<float>();
 		gpuTimers = Array.Empty<DirectionalShadowGpuTimer>();
 		cascadesNeedingRender.Clear();
+		dynamicCascadesNeedingRender.Clear();
 	}
 
 	public static float[] CalculateSplits(float nearDistance, float farDistance, int count, float lambda)
@@ -355,42 +517,74 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		float farDistance,
 		int index)
 	{
-		Span<Vector3> corners = stackalloc Vector3[8];
-		BuildFrustumSliceCorners(viewCamera, nearDistance, farDistance, corners);
-		Vector3 center = Vector3.Zero;
+		return BuildStableClipmap(
+			viewCamera,
+			lightDirection,
+			nearDistance,
+			farDistance,
+			index,
+			options.Resolution,
+			options.MaximumDistance
+		);
+	}
 
-		for (int cornerIndex = 0; cornerIndex < corners.Length; cornerIndex++)
+	private static float CalculateClipmapExtent(Camera viewCamera, float farDistance)
+	{
+		float verticalTangent = MathF.Tan(viewCamera.VerticalFOV * 0.5f);
+		float horizontalTangent = MathF.Tan(viewCamera.HorizontalFOV * 0.5f);
+		float radius = farDistance * MathF.Sqrt(
+			1 + verticalTangent * verticalTangent
+				+ horizontalTangent * horizontalTangent);
+		return MathF.Ceiling(radius * 16) / 16 + ReceiverExpansion;
+	}
+
+	internal static DirectionalShadowCascade BuildStableClipmap(
+		Camera viewCamera,
+		Vector3 lightDirection,
+		float nearDistance,
+		float farDistance,
+		int index,
+		int resolution,
+		float maximumDistance)
+	{
+		ArgumentNullException.ThrowIfNull(viewCamera);
+		if (resolution <= 0)
 		{
-			center += corners[cornerIndex];
+			throw new ArgumentOutOfRangeException(nameof(resolution));
+		}
+		if (!float.IsFinite(maximumDistance) || maximumDistance <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(maximumDistance));
 		}
 
-		center /= corners.Length;
-		float radius = 0;
-
-		for (int cornerIndex = 0; cornerIndex < corners.Length; cornerIndex++)
-		{
-			radius = Math.Max(radius, Vector3.Distance(center, corners[cornerIndex]));
-		}
-
+		// A camera-position-centred sphere makes the clipmap independent of view
+		// yaw and pitch. Rotation therefore never changes its matrix or dirties it.
+		float verticalTangent = MathF.Tan(viewCamera.VerticalFOV * 0.5f);
+		float horizontalTangent = MathF.Tan(viewCamera.HorizontalFOV * 0.5f);
+		float radius = farDistance * MathF.Sqrt(
+			1 + verticalTangent * verticalTangent
+				+ horizontalTangent * horizontalTangent
+		);
 		radius = MathF.Ceiling(radius * 16) / 16;
 		float extent = radius + ReceiverExpansion;
+		Vector3 center = viewCamera.Position;
 		Vector3 up = MathF.Abs(Vector3.Dot(lightDirection, Vector3.UnitY)) > 0.98f
 			? Vector3.UnitZ
 			: Vector3.UnitY;
 		Vector3 right = Vector3.Normalize(Vector3.Cross(lightDirection, up));
 		Vector3 lightUp = Vector3.Normalize(Vector3.Cross(right, lightDirection));
-		float texelSize = extent * 2 / options.Resolution;
+		float texelSize = extent * 2 / resolution;
 		float rightCoordinate = Vector3.Dot(center, right);
 		float upCoordinate = Vector3.Dot(center, lightUp);
 		float snappedRight = MathF.Round(rightCoordinate / texelSize) * texelSize;
 		float snappedUp = MathF.Round(upCoordinate / texelSize) * texelSize;
 		center += right * (snappedRight - rightCoordinate);
 		center += lightUp * (snappedUp - upCoordinate);
-		float casterDepth = options.MaximumDistance + radius * 2;
+		float casterDepth = maximumDistance + radius * 2;
 		Camera camera = new Camera
 		{
 			CameraUpNormal = up,
-			Position = center - lightDirection * (options.MaximumDistance + radius),
+			Position = center - lightDirection * (maximumDistance + radius),
 		};
 
 		camera.LookAt(center);
@@ -406,34 +600,6 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		);
 	}
 
-	private static void BuildFrustumSliceCorners(
-		Camera camera,
-		float nearDistance,
-		float farDistance,
-		Span<Vector3> corners)
-	{
-		Vector3 forward = camera.WorldForwardNormal;
-		Vector3 right = camera.WorldRightNormal;
-		Vector3 up = camera.WorldUpNormal;
-		float verticalTangent = MathF.Tan(camera.VerticalFOV * 0.5f);
-		float horizontalTangent = MathF.Tan(camera.HorizontalFOV * 0.5f);
-		Vector3 nearCenter = camera.Position + forward * nearDistance;
-		Vector3 farCenter = camera.Position + forward * farDistance;
-		float nearHalfHeight = verticalTangent * nearDistance;
-		float nearHalfWidth = horizontalTangent * nearDistance;
-		float farHalfHeight = verticalTangent * farDistance;
-		float farHalfWidth = horizontalTangent * farDistance;
-
-		corners[0] = nearCenter - right * nearHalfWidth - up * nearHalfHeight;
-		corners[1] = nearCenter + right * nearHalfWidth - up * nearHalfHeight;
-		corners[2] = nearCenter - right * nearHalfWidth + up * nearHalfHeight;
-		corners[3] = nearCenter + right * nearHalfWidth + up * nearHalfHeight;
-		corners[4] = farCenter - right * farHalfWidth - up * farHalfHeight;
-		corners[5] = farCenter + right * farHalfWidth - up * farHalfHeight;
-		corners[6] = farCenter - right * farHalfWidth + up * farHalfHeight;
-		corners[7] = farCenter + right * farHalfWidth + up * farHalfHeight;
-	}
-
 	private DirectionalShadowFrame CreateCurrentFrame()
 	{
 		if (!wasEnabled || options.CascadeCount == 0 || currentSnapshot == null)
@@ -445,12 +611,13 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		{
 			CascadeSlot slot = slots[index];
 
-			if (!slot.Valid)
+			if (!slot.Valid || !slot.DynamicValid)
 			{
 				return default;
 			}
 
 			currentSnapshot.DepthTextures[index] = slot.Target.DepthStencilAttachment;
+			currentSnapshot.DynamicDepthTextures[index] = slot.DynamicTarget.DepthStencilAttachment;
 			currentSnapshot.Matrices[index] = slot.Cascade.ViewProjection;
 			currentSnapshot.Splits[index] = slot.Cascade.FarDistance;
 			currentSnapshot.DepthRanges[index] = slot.Cascade.FarDistance - slot.Cascade.NearDistance;
@@ -472,11 +639,15 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		for (int index = 0; index < slots.Length; index++)
 		{
 			slots[index].Target.Dispose();
+			slots[index].DynamicTarget.Dispose();
 			gpuTimers[index].Dispose();
 		}
 
 		slots = new CascadeSlot[options.CascadeCount];
 		pending = new DirectionalShadowCascade[options.CascadeCount];
+		pendingAnchors = new Vector3[options.CascadeCount];
+		pendingVerticalFovs = new float[options.CascadeCount];
+		pendingHorizontalFovs = new float[options.CascadeCount];
 		gpuTimers = new DirectionalShadowGpuTimer[options.CascadeCount];
 		currentSnapshot = options.CascadeCount == 0
 			? null
@@ -487,6 +658,7 @@ public sealed class DirectionalShadowRenderer : IDisposable
 				BlendFraction = options.CascadeBlendFraction,
 				Filter = options.Filter,
 				DepthTextures = new Texture[options.CascadeCount],
+				DynamicDepthTextures = new Texture[options.CascadeCount],
 				Matrices = new Matrix4x4[options.CascadeCount],
 				Splits = new float[options.CascadeCount],
 				DepthRanges = new float[options.CascadeCount],
@@ -497,16 +669,30 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		for (int index = 0; index < slots.Length; index++)
 		{
 			gpuTimers[index] = new DirectionalShadowGpuTimer(context);
+			RenderTarget staticTarget = context.CreateRenderTarget(
+				new RenderTargetDescriptor(
+					options.Resolution,
+					options.Resolution,
+					Array.Empty<TextureFormat>(),
+					TextureFormat.Depth24Unorm));
+			RenderTarget dynamicTarget = context.CreateRenderTarget(
+				new RenderTargetDescriptor(
+					Math.Max(1, options.Resolution / 2),
+					Math.Max(1, options.Resolution / 2),
+					Array.Empty<TextureFormat>(),
+					TextureFormat.Depth24Unorm));
+			TextureSamplingState shadowSampling = new(
+				TextureFilter.Linear,
+				TextureFilter.Linear,
+				TextureWrap.ClampToEdge,
+				TextureWrap.ClampToEdge,
+				comparison: TextureComparison.LessOrEqual);
+			staticTarget.DepthStencilAttachment.SetSampling(shadowSampling);
+			dynamicTarget.DepthStencilAttachment.SetSampling(shadowSampling);
 			slots[index] = new CascadeSlot
 			{
-				Target = context.CreateRenderTarget(
-					new RenderTargetDescriptor(
-						options.Resolution,
-						options.Resolution,
-						Array.Empty<TextureFormat>(),
-						TextureFormat.Depth24Unorm
-					)
-				),
+				Target = staticTarget,
+				DynamicTarget = dynamicTarget,
 			};
 		}
 	}
@@ -581,6 +767,8 @@ public sealed class DirectionalShadowRenderer : IDisposable
 	{
 		public required RenderTarget Target { get; init; }
 
+		public required RenderTarget DynamicTarget { get; init; }
+
 		public DirectionalShadowCascade Cascade { get; set; }
 
 		public long LastRenderedFrame { get; set; }
@@ -591,8 +779,20 @@ public sealed class DirectionalShadowRenderer : IDisposable
 
 		public bool Valid { get; set; }
 
+		public bool DynamicValid { get; set; }
+
+		public long DynamicLastRenderedFrame { get; set; }
+
 		public long GeometryRevision { get; set; } = long.MinValue;
 
+		public bool StaticDirty { get; set; }
+
 		public Vector3 LightDirection { get; set; }
+
+		public Vector3 AnchorPosition { get; set; }
+
+		public float VerticalFov { get; set; }
+
+		public float HorizontalFov { get; set; }
 	}
 }

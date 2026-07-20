@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using FishGfx.Graphics;
 using FishGfx.Voxels;
 
@@ -88,29 +89,22 @@ internal static class VoxelTestCompatibilityAssets
 			}
 		);
 		Texture cubeArray = null;
-		Texture normalArray = null;
-		Texture specularArray = null;
-		Texture roughnessArray = null;
+		Texture packedSurfaceArray = null;
 
 		try
 		{
 			cubeArray = CreateCubeArray(graphics, composite);
-			normalArray = CreateConstantCubeArray(graphics, 128, 128, 255, 255);
-			specularArray = CreateConstantCubeArray(graphics, 0, 0, 0, 255);
-			roughnessArray = CreateConstantCubeArray(graphics, 255, 255, 255, 255);
+			packedSurfaceArray = CreateConstantCubeArray(graphics, 128, 128, 0, 255);
 			return new VoxelSurfaceTextureSet(
 				modelAtlas,
 				cubeArray,
-				normalArray,
-				specularArray,
-				roughnessArray
+				packedSurfaceArray,
+				Enumerable.Repeat(3, AtlasLayout.TileCount).ToArray()
 			);
 		}
 		catch
 		{
-			roughnessArray?.Dispose();
-			specularArray?.Dispose();
-			normalArray?.Dispose();
+			packedSurfaceArray?.Dispose();
 			cubeArray?.Dispose();
 			modelAtlas.Dispose();
 			throw;

@@ -100,7 +100,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		double commandBuildMilliseconds = Stopwatch.GetElapsedTime(commandStart).TotalMilliseconds;
 		bool transparentHasPendingRequest = transparentOrdering.HasPending;
 		bool transparentWorkerRunning = transparentOrdering.IsRunning;
-		bool transparentPending = transparentHasPendingRequest || transparentWorkerRunning;
+		bool transparentPending = transparentHasPendingRequest
+			|| transparentWorkerRunning
+			|| transparentIndexUploadJob != null;
 		bool transparentCacheHit = !transparentPending
 			&& transparentSourceBuildMilliseconds == 0
 			&& transparentIndexUploadMilliseconds == 0
@@ -169,7 +171,7 @@ public sealed partial class VoxelRenderer : IDisposable
 			transparentGpuTimer.LastMilliseconds,
 			transparentMainThreadAllocatedBytes,
 			transparentWorkerAllocatedBytes,
-			transparentHasPendingRequest,
+			transparentHasPendingRequest || transparentIndexUploadJob != null,
 			transparentWorkerRunning,
 			transparentOrdering.CoalescedRequests,
 			transparentStaleResults,
@@ -178,7 +180,20 @@ public sealed partial class VoxelRenderer : IDisposable
 			transparentOrderingAgeSeconds,
 			transparentCameraDistanceDelta,
 			transparentCameraAngleDelta,
-			transparentSnapshot?.Reason ?? VoxelTransparentInvalidationReason.None
+			transparentSnapshot?.Reason ?? VoxelTransparentInvalidationReason.None,
+			activeSetRefreshMilliseconds,
+			activeSetAllocatedBytes,
+			activeSetVisitedColumns,
+			activeSetTestedChunks,
+			activeSetAdditions,
+			activeSetRemovals,
+			activeSetRefreshReason,
+			meshUploadBytes,
+			meshUploadSlices,
+			oldestMeshUploadJobAgeSeconds,
+			completedUploadJobs,
+			discardedUploadJobs,
+			CalculateQueuedUploadBytes()
 		);
 		ResetTransparentFrameWorkDiagnostics();
 	}

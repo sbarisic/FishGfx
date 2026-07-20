@@ -57,7 +57,20 @@ public readonly struct VoxelRendererFrameDiagnostics
 		double transparentOrderingAgeSeconds,
 		float transparentOrderingCameraDistanceDelta,
 		float transparentOrderingCameraAngleDeltaDegrees,
-		VoxelTransparentInvalidationReason transparentOrderingReason
+		VoxelTransparentInvalidationReason transparentOrderingReason,
+		double activeSetRefreshMilliseconds,
+		int activeSetAllocatedBytes,
+		int activeSetVisitedColumns,
+		int activeSetTestedChunks,
+		int activeSetAdditions,
+		int activeSetRemovals,
+		VoxelActiveSetRefreshReason activeSetRefreshReason,
+		long meshUploadBytes,
+		int meshUploadSlices,
+		double oldestMeshUploadJobAgeSeconds,
+		int completedUploadJobs,
+		int discardedUploadJobs,
+		long queuedMeshUploadBytes
 	)
 	{
 		CullingMilliseconds = cullingMilliseconds;
@@ -105,6 +118,19 @@ public readonly struct VoxelRendererFrameDiagnostics
 		TransparentOrderingCameraDistanceDelta = transparentOrderingCameraDistanceDelta;
 		TransparentOrderingCameraAngleDeltaDegrees = transparentOrderingCameraAngleDeltaDegrees;
 		TransparentOrderingReason = transparentOrderingReason;
+		ActiveSetRefreshMilliseconds = activeSetRefreshMilliseconds;
+		ActiveSetAllocatedBytes = activeSetAllocatedBytes;
+		ActiveSetVisitedColumns = activeSetVisitedColumns;
+		ActiveSetTestedChunks = activeSetTestedChunks;
+		ActiveSetAdditions = activeSetAdditions;
+		ActiveSetRemovals = activeSetRemovals;
+		ActiveSetRefreshReason = activeSetRefreshReason;
+		MeshUploadBytes = meshUploadBytes;
+		MeshUploadSlices = meshUploadSlices;
+		OldestMeshUploadJobAgeSeconds = oldestMeshUploadJobAgeSeconds;
+		CompletedUploadJobs = completedUploadJobs;
+		DiscardedUploadJobs = discardedUploadJobs;
+		QueuedMeshUploadBytes = queuedMeshUploadBytes;
 	}
 
 	public double CullingMilliseconds { get; }
@@ -161,4 +187,17 @@ public readonly struct VoxelRendererFrameDiagnostics
 	public float TransparentOrderingCameraDistanceDelta { get; }
 	public float TransparentOrderingCameraAngleDeltaDegrees { get; }
 	public VoxelTransparentInvalidationReason TransparentOrderingReason { get; }
+	public double ActiveSetRefreshMilliseconds { get; }
+	public int ActiveSetAllocatedBytes { get; }
+	public int ActiveSetVisitedColumns { get; }
+	public int ActiveSetTestedChunks { get; }
+	public int ActiveSetAdditions { get; }
+	public int ActiveSetRemovals { get; }
+	public VoxelActiveSetRefreshReason ActiveSetRefreshReason { get; }
+	public long MeshUploadBytes { get; }
+	public int MeshUploadSlices { get; }
+	public double OldestMeshUploadJobAgeSeconds { get; }
+	public int CompletedUploadJobs { get; }
+	public int DiscardedUploadJobs { get; }
+	public long QueuedMeshUploadBytes { get; }
 }

@@ -22,6 +22,21 @@ public sealed class VoxelRendererOptimizationTests
 	}
 
 	[Fact]
+	public void PreparedVoxelChunkTransfersCompleteStorageOnce()
+	{
+		VoxelCell[] cells = new VoxelCell[VoxelWorld.ChunkVolume];
+		cells[17] = new VoxelCell(3);
+		PreparedVoxelChunk prepared = PreparedVoxelChunk.TakeOwnership(cells);
+		VoxelWorld world = new();
+		ChunkCoordinate coordinate = new(-2, 4, 3);
+
+		Assert.True(world.SetPreparedChunk(coordinate, prepared));
+
+		Assert.Equal(new VoxelCell(3), world.GetVoxel(-31, 65, 48));
+		Assert.Throws<ObjectDisposedException>(() => world.SetPreparedChunk(coordinate, prepared));
+	}
+
+	[Fact]
 	public void MeshingFocusSuppressesChunksOutsideTheInactiveMargin()
 	{
 		Camera camera = new()

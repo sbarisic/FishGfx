@@ -83,6 +83,12 @@ public enum TextureFilter
 	LinearMipmapLinear,
 }
 
+public enum TextureComparison
+{
+	None,
+	LessOrEqual,
+}
+
 public enum CubeFace
 {
 	PositiveX,
@@ -101,7 +107,8 @@ public readonly record struct TextureSamplingState
 		TextureWrap wrapU = TextureWrap.ClampToEdge,
 		TextureWrap wrapV = TextureWrap.ClampToEdge,
 		TextureWrap wrapW = TextureWrap.ClampToEdge,
-		float anisotropy = 1
+		float anisotropy = 1,
+		TextureComparison comparison = TextureComparison.None
 	)
 	{
 		if (!Enum.IsDefined(minFilter))
@@ -126,12 +133,18 @@ public readonly record struct TextureSamplingState
 			throw new ArgumentOutOfRangeException(nameof(anisotropy));
 		}
 
+		if (!Enum.IsDefined(comparison))
+		{
+			throw new ArgumentOutOfRangeException(nameof(comparison));
+		}
+
 		MinFilter = minFilter;
 		MagFilter = magFilter;
 		WrapU = wrapU;
 		WrapV = wrapV;
 		WrapW = wrapW;
 		Anisotropy = anisotropy;
+		Comparison = comparison;
 	}
 
 	public TextureFilter MinFilter { get; }
@@ -145,6 +158,8 @@ public readonly record struct TextureSamplingState
 	public TextureWrap WrapW { get; }
 
 	public float Anisotropy { get; }
+
+	public TextureComparison Comparison { get; }
 
 	public static TextureSamplingState Default => new(TextureFilter.Nearest);
 

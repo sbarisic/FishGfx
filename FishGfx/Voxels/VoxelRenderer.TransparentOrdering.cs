@@ -25,6 +25,13 @@ public sealed partial class VoxelRenderer
 		{
 			RebuildTransparentOrderingSource();
 		}
+		if (transparentIndexUploadJob != null
+			&& !IsTransparentResultCurrent(transparentIndexUploadJob.OrderingResult))
+		{
+			transparentStaleResults++;
+			transparentIndexUploadJob.Dispose();
+			transparentIndexUploadJob = null;
+		}
 
 		while (transparentOrdering.TryTakeCompleted(out VoxelTransparentOrderingResult completed))
 		{
@@ -37,7 +44,7 @@ public sealed partial class VoxelRenderer
 				continue;
 			}
 
-			ApplyTransparentOrdering(completed);
+			QueueTransparentOrdering(completed);
 		}
 
 		Vector3 cameraForward = camera.WorldForwardNormal;
@@ -48,7 +55,7 @@ public sealed partial class VoxelRenderer
 			cameraForward
 		);
 
-		if (transparentSnapshot == null)
+		if (transparentSnapshot == null && transparentIndexUploadJob == null)
 		{
 			VoxelTransparentOrderingRequest initial = CreateTransparentOrderingRequest(
 				camera,
@@ -56,7 +63,7 @@ public sealed partial class VoxelRenderer
 				VoxelTransparentInvalidationReason.FirstFrame
 			);
 			VoxelTransparentOrderingResult result = transparentOrdering.BuildSynchronously(initial);
-			ApplyTransparentOrdering(result);
+			QueueTransparentOrdering(result);
 			SetTransparentRequestKey(camera.Position, cameraForward);
 			transparentLastRequestReason = VoxelTransparentInvalidationReason.FirstFrame;
 		}
@@ -71,6 +78,8 @@ public sealed partial class VoxelRenderer
 			SetTransparentRequestKey(camera.Position, cameraForward);
 			transparentLastRequestReason = reason;
 		}
+
+		ProcessTransparentIndexUpload();
 
 		transparentMainThreadAllocatedBytes = checked(
 			transparentMainThreadAllocatedBytes
@@ -145,40 +154,69 @@ public sealed partial class VoxelRenderer
 		);
 	}
 
-	private void ApplyTransparentOrdering(VoxelTransparentOrderingResult result)
+	private void QueueTransparentOrdering(VoxelTransparentOrderingResult result)
 	{
 		long applyStart = Stopwatch.GetTimestamp();
 
 		try
 		{
-			long uploadStart = Stopwatch.GetTimestamp();
-			VoxelTransparentDrawSnapshot replacement = transparentIndexRing.Upload(
+			transparentIndexUploadJob?.Dispose();
+			transparentIndexUploadJob = transparentIndexRing.BeginUpload(
 				transparentGeometry.Generation,
 				result
 			);
-			transparentIndexUploadMilliseconds += Stopwatch.GetElapsedTime(
-				uploadStart
-			).TotalMilliseconds;
-			transparentIndexUploadBytes = checked(
-				transparentIndexUploadBytes + result.IndexCount * sizeof(uint)
-			);
-			VoxelTransparentDrawSnapshot previous = transparentSnapshot;
-			transparentSnapshot = replacement;
-			previous?.Dispose();
-			visibleTransparentFaces = result.FaceCount;
-			visibleTransparentVertices = result.IndexCount;
 			transparentSortMilliseconds = result.SortMilliseconds;
 			transparentWorkerAllocatedBytes = checked(
 				transparentWorkerAllocatedBytes + result.WorkerAllocatedBytes
 			);
 		}
-		finally
+		catch
 		{
 			result.Dispose();
-			transparentResultApplyMilliseconds += Stopwatch.GetElapsedTime(
-				applyStart
-			).TotalMilliseconds;
+			throw;
 		}
+		transparentResultApplyMilliseconds += Stopwatch.GetElapsedTime(
+			applyStart
+		).TotalMilliseconds;
+	}
+
+	private void ProcessTransparentIndexUpload()
+	{
+		if (transparentIndexUploadJob == null)
+			return;
+		int remainingBudget = options.MeshUploadByteBudget
+			- checked((int)Math.Min(meshUploadBytes, int.MaxValue));
+		if (remainingBudget <= 0
+			|| meshUploadMilliseconds >= options.MeshUploadTimeBudgetMilliseconds)
+		{
+			return;
+		}
+
+		long uploadStart = Stopwatch.GetTimestamp();
+		int bytes = transparentIndexUploadJob.UploadNextSlice(
+			Math.Min(options.MeshUploadSliceBytes, remainingBudget)
+		);
+		transparentIndexUploadMilliseconds += Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds;
+		transparentIndexUploadBytes = checked(transparentIndexUploadBytes + bytes);
+		if (!transparentIndexUploadJob.IsComplete)
+			return;
+
+		VoxelTransparentOrderingResult result = transparentIndexUploadJob.OrderingResult;
+		VoxelTransparentDrawSnapshot replacement = transparentIndexUploadJob.Complete();
+		VoxelTransparentDrawSnapshot previous = transparentSnapshot;
+		transparentSnapshot = replacement;
+		previous?.Dispose();
+		visibleTransparentFaces = result.FaceCount;
+		visibleTransparentVertices = result.IndexCount;
+		transparentIndexUploadJob.Dispose();
+		transparentIndexUploadJob = null;
+	}
+
+	private bool IsTransparentResultCurrent(VoxelTransparentOrderingResult result)
+	{
+		return ReferenceEquals(result.Source, transparentSource)
+			&& result.Source.GeometryRevision == transparentGeometryRevision
+			&& result.Source.ActiveSetGeneration == activeSetGeneration;
 	}
 
 	private void ResetTransparentFrameWorkDiagnostics()

@@ -14,6 +14,10 @@ public sealed class VoxelRendererOptions
 
 	public double MeshUploadTimeBudgetMilliseconds { get; set; } = double.PositiveInfinity;
 
+	public int MeshUploadByteBudget { get; set; } = 1 * 1024 * 1024;
+
+	public int MeshUploadSliceBytes { get; set; } = 256 * 1024;
+
 	public float MaxRenderDistance { get; set; } = 256;
 
 	public float AlphaCutoff { get; set; } = DefaultAlphaCutoff;

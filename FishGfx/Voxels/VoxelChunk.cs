@@ -153,6 +153,22 @@ public sealed class VoxelChunk
 		return true;
 	}
 
+	internal void AdoptPreparedUnchecked(
+		VoxelCell[] preparedCells,
+		VoxelMaterialRun[] preparedRuns,
+		int preparedNonAirCount)
+	{
+		ArgumentNullException.ThrowIfNull(preparedCells);
+		if (preparedCells.Length != VoxelWorld.ChunkVolume)
+		{
+			throw new ArgumentException("Prepared storage must contain one complete chunk.", nameof(preparedCells));
+		}
+
+		System.Threading.Volatile.Write(ref cells, preparedCells);
+		NonAirCount = Math.Clamp(preparedNonAirCount, 0, preparedCells.Length);
+		materialRuns = preparedRuns;
+	}
+
 	private static bool TryAddMaterialRun(
 		List<VoxelMaterialRun> runs,
 		ushort materialId,

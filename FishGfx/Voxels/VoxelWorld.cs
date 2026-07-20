@@ -172,6 +172,36 @@ public sealed class VoxelWorld
 		return true;
 	}
 
+	public bool SetPreparedChunk(
+		ChunkCoordinate coordinate,
+		PreparedVoxelChunk prepared)
+	{
+		ArgumentNullException.ThrowIfNull(prepared);
+		if (prepared.NonAirCount == 0)
+		{
+			prepared.Dispose();
+			return RemoveChunk(coordinate);
+		}
+
+		(VoxelCell[] cells, VoxelMaterialRun[] runs) = prepared.Consume();
+		List<(ChunkCoordinate Coordinate, long Revision)> invalidated;
+		lock (sync)
+		{
+			if (!chunks.TryGetValue(coordinate, out VoxelChunk chunk))
+			{
+				chunk = CreateChunk(coordinate);
+				chunks.Add(coordinate, chunk);
+			}
+
+			chunk.AdoptPreparedUnchecked(cells, runs, prepared.NonAirCount);
+			invalidated = InvalidateAllNeighbors(coordinate, includeCenter: true);
+		}
+
+		RaiseInvalidated(invalidated);
+		ContentChanged?.Invoke(VoxelWorldContentChange.Bulk(coordinate));
+		return true;
+	}
+
 	public bool RemoveChunk(ChunkCoordinate coordinate)
 	{
 		List<(ChunkCoordinate Coordinate, long Revision)> invalidated;

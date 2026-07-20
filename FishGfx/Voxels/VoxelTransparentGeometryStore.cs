@@ -129,6 +129,40 @@ internal sealed class VoxelTransparentGeometryStore : IDisposable
 		return replacement;
 	}
 
+	internal VoxelTransparentAllocation Reserve(int vertexCount)
+	{
+		ThrowIfDisposed();
+		return vertexCount == 0 ? null : Allocate(vertexCount);
+	}
+
+	internal void WriteSlice(
+		VoxelTransparentAllocation allocation,
+		ReadOnlySpan<VoxelVertex> vertices,
+		int destinationVertexOffset)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(allocation);
+		if (destinationVertexOffset < 0
+			|| destinationVertexOffset + vertices.Length > allocation.Capacity)
+		{
+			throw new ArgumentOutOfRangeException(nameof(destinationVertexOffset));
+		}
+		generation.Buffer.Write(
+			vertices,
+			checked((allocation.FirstVertex + destinationVertexOffset)
+				* Marshal.SizeOf<VoxelVertex>())
+		);
+	}
+
+	internal static void Complete(
+		VoxelTransparentAllocation allocation,
+		int vertexCount,
+		VoxelTransparentFaceRecord[] records)
+	{
+		if (allocation != null)
+			allocation.SetGeometry(vertexCount, records);
+	}
+
 	public void Dispose()
 	{
 		if (disposed)

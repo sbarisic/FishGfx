@@ -101,6 +101,12 @@ public unsafe sealed partial class Texture : GraphicsResource
 
 		sampling = NormalizeSampling(sampling);
 		GraphicsCapabilities capabilities = Owner.Capabilities;
+		if (sampling.Comparison != TextureComparison.None && !IsDepthFormat(Format))
+		{
+			throw new ArgumentException(
+				"Texture comparison sampling requires a depth format.",
+				nameof(sampling));
+		}
 
 		if (sampling.Anisotropy > 1 && !capabilities.SupportsAnisotropy)
 		{
@@ -138,6 +144,13 @@ public unsafe sealed partial class Texture : GraphicsResource
 			TextureParameterName.TextureWrapR,
 			(int)ToGlWrap(sampling.WrapW)
 		);
+		SetParameter(
+			(TextureParameterName)0x884C,
+			sampling.Comparison == TextureComparison.None ? 0 : 0x884E);
+		if (sampling.Comparison != TextureComparison.None)
+		{
+			SetParameter((TextureParameterName)0x884D, 0x0203);
+		}
 
 		if (capabilities.SupportsAnisotropy)
 		{
@@ -790,7 +803,8 @@ public unsafe sealed partial class Texture : GraphicsResource
 			sampling.WrapU,
 			sampling.WrapV,
 			sampling.WrapW,
-			sampling.Anisotropy
+			sampling.Anisotropy,
+			sampling.Comparison
 		);
 	}
 }

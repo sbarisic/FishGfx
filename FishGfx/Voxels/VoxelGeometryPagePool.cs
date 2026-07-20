@@ -86,6 +86,40 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 		return replacement;
 	}
 
+	internal VoxelGeometryAllocation Reserve(int vertexCount, Vector3 origin)
+	{
+		ThrowIfDisposed();
+		if (vertexCount == 0)
+			return null;
+		VoxelGeometryAllocation allocation = Allocate(vertexCount);
+		try
+		{
+			allocation.Page.WriteOrigin(allocation, origin);
+		}
+		catch
+		{
+			allocation.ReleaseOwner();
+			throw;
+		}
+		return allocation;
+	}
+
+	internal static void WriteSlice(
+		VoxelGeometryAllocation allocation,
+		ReadOnlySpan<VoxelVertex> vertices,
+		int destinationVertexOffset)
+	{
+		if (allocation == null)
+			throw new ArgumentNullException(nameof(allocation));
+		allocation.Page.WriteSlice(allocation, vertices, destinationVertexOffset);
+	}
+
+	internal static void Complete(VoxelGeometryAllocation allocation, int vertexCount)
+	{
+		if (allocation != null)
+			allocation.VertexCount = vertexCount;
+	}
+
 	public void Dispose()
 	{
 		if (disposed)
@@ -286,6 +320,36 @@ internal sealed class VoxelGeometryPage : IDisposable
 		originValue[0] = origin;
 		originBuffer.Write(originValue, checked(allocation.OriginIndex * Marshal.SizeOf<Vector3>()));
 		allocation.VertexCount = vertices.Length;
+	}
+
+	internal void WriteOrigin(VoxelGeometryAllocation allocation, Vector3 origin)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		if (!ReferenceEquals(allocation.Page, this))
+			throw new ArgumentException("The allocation belongs to another geometry page.", nameof(allocation));
+		Span<Vector3> originValue = stackalloc Vector3[1];
+		originValue[0] = origin;
+		originBuffer.Write(originValue, checked(allocation.OriginIndex * Marshal.SizeOf<Vector3>()));
+	}
+
+	internal void WriteSlice(
+		VoxelGeometryAllocation allocation,
+		ReadOnlySpan<VoxelVertex> vertices,
+		int destinationVertexOffset)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		if (!ReferenceEquals(allocation.Page, this))
+			throw new ArgumentException("The allocation belongs to another geometry page.", nameof(allocation));
+		if (destinationVertexOffset < 0
+			|| destinationVertexOffset + vertices.Length > allocation.Capacity)
+		{
+			throw new ArgumentOutOfRangeException(nameof(destinationVertexOffset));
+		}
+		int stride = Marshal.SizeOf<VoxelVertex>();
+		vertexBuffer.Write(
+			vertices,
+			checked((allocation.FirstVertex + destinationVertexOffset) * stride)
+		);
 	}
 
 	internal void Draw(GraphicsBuffer indirectBuffer, int drawCount)

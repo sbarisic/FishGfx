@@ -1,3 +1,4 @@
+using System.Numerics;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Shadows;
 using FishGfx.Voxels;
@@ -16,6 +17,40 @@ public sealed class DirectionalShadowTests
 		Assert.True(splits[0] > 0.05f);
 		Assert.True(splits[1] > splits[0]);
 		Assert.Equal(128, splits[2]);
+	}
+
+	[Fact]
+	public void StableClipmapDoesNotChangeWhenViewCameraRotates()
+	{
+		Camera camera = new()
+		{
+			Position = new Vector3(123.25f, 64, -91.5f),
+		};
+		camera.SetPerspective(1920, 1080, MathF.PI / 3, 0.1f, 512);
+		camera.LookAt(camera.Position - Vector3.UnitZ);
+		DirectionalShadowCascade first = DirectionalShadowRenderer.BuildStableClipmap(
+			camera,
+			Vector3.Normalize(new Vector3(-0.4f, -1, -0.2f)),
+			0.1f,
+			128,
+			0,
+			2048,
+			128
+		);
+
+		camera.LookAt(camera.Position + Vector3.UnitX);
+		DirectionalShadowCascade rotated = DirectionalShadowRenderer.BuildStableClipmap(
+			camera,
+			Vector3.Normalize(new Vector3(-0.4f, -1, -0.2f)),
+			0.1f,
+			128,
+			0,
+			2048,
+			128
+		);
+
+		Assert.Equal(first.ViewProjection, rotated.ViewProjection);
+		Assert.Equal(first.TexelWorldSize, rotated.TexelWorldSize);
 	}
 
 	[Fact]

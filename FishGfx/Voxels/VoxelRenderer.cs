@@ -19,17 +19,22 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly VoxelRendererOptions options;
 	private readonly VoxelMeshingScheduler scheduler;
 	private readonly Dictionary<ChunkCoordinate, GpuChunk> gpuChunks = new Dictionary<ChunkCoordinate, GpuChunk>();
+	private readonly Dictionary<GpuColumnCoordinate, List<GpuChunk>> gpuChunkColumns =
+		new Dictionary<GpuColumnCoordinate, List<GpuChunk>>();
 	private readonly Dictionary<ChunkCoordinate, CompletedEmptyChunk> completedEmptyChunks =
 		new Dictionary<ChunkCoordinate, CompletedEmptyChunk>();
 	private readonly List<GpuChunk> orderedGpuChunks = new List<GpuChunk>();
-	private readonly List<GpuChunk> activeGpuChunks = new List<GpuChunk>();
-	private readonly HashSet<ChunkCoordinate> activeCoordinates = new HashSet<ChunkCoordinate>();
+	private List<GpuChunk> activeGpuChunks = new List<GpuChunk>();
+	private List<GpuChunk> nextActiveGpuChunks = new List<GpuChunk>();
+	private HashSet<ChunkCoordinate> activeCoordinates = new HashSet<ChunkCoordinate>();
+	private HashSet<ChunkCoordinate> nextActiveCoordinates = new HashSet<ChunkCoordinate>();
 	private readonly List<VoxelPassEntry> visibleOpaque = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> visibleCutout = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> shadowOpaque = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> shadowCutout = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> shadowAlpha = new List<VoxelPassEntry>();
 	private readonly List<VoxelMeshData> pendingUploads = new List<VoxelMeshData>();
+	private VoxelUploadJob currentUploadJob;
 	private readonly ConcurrentQueue<ChunkCoordinate> removedChunks = new ConcurrentQueue<ChunkCoordinate>();
 	private readonly ShaderProgram voxelShader;
 	private readonly ShaderProgram waveShader;
@@ -61,10 +66,13 @@ public sealed partial class VoxelRenderer : IDisposable
 	private int opaqueVertices;
 	private int cutoutVertices;
 	private long transparentGeometryRevision;
+	private long shadowGeometryRevision;
+	private readonly Queue<AxisAlignedBoundingBox> shadowDirtyBounds = new();
 	private long activeSetGeneration;
 	private long transparentRequestSequence;
 	private VoxelTransparentOrderingSource transparentSource;
 	private VoxelTransparentDrawSnapshot transparentSnapshot;
+	private VoxelTransparentIndexUpload transparentIndexUploadJob;
 	private VoxelTransparentCacheKey transparentRequestKey;
 	private bool hasTransparentRequestKey;
 	private bool transparentSourceDirty = true;
@@ -82,6 +90,11 @@ public sealed partial class VoxelRenderer : IDisposable
 	private double meshUploadMilliseconds;
 	private int scheduledMeshes;
 	private int uploadedMeshes;
+	private long meshUploadBytes;
+	private int meshUploadSlices;
+	private double oldestMeshUploadJobAgeSeconds;
+	private int completedUploadJobs;
+	private int discardedUploadJobs;
 	private int fastCompletedMeshes;
 	private bool cullingEnabled = true;
 	private VoxelFogSettings fog = VoxelFogSettings.Disabled;
@@ -92,6 +105,13 @@ public sealed partial class VoxelRenderer : IDisposable
 	private float activeSetRenderDistance;
 	private int candidateChunks;
 	private int inactiveCachedChunks;
+	private int activeSetVisitedColumns;
+	private int activeSetTestedChunks;
+	private int activeSetAdditions;
+	private int activeSetRemovals;
+	private double activeSetRefreshMilliseconds;
+	private int activeSetAllocatedBytes;
+	private VoxelActiveSetRefreshReason activeSetRefreshReason;
 	private double lastSubmissionMilliseconds;
 	private int lastSubmissionAllocatedBytes;
 
@@ -262,6 +282,8 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	public bool IsIdle => scheduler.PendingCount == 0
 		&& pendingUploads.Count == 0
+		&& currentUploadJob == null
+		&& transparentIndexUploadJob == null
 		&& transparentOrdering.IsIdle;
 
 	public bool IsCullingEnabled
@@ -315,7 +337,42 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	public VoxelRendererFrameDiagnostics FrameDiagnostics => frameDiagnostics;
 
-	public long GeometryRevision => transparentGeometryRevision;
+	/// <summary>
+	/// Revision of geometry that can cast directional shadows. Lighting-only
+	/// mesh replacements and transparent non-casters do not advance it.
+	/// </summary>
+	public long GeometryRevision => shadowGeometryRevision;
+
+	public void DrainShadowInvalidations(ICollection<AxisAlignedBoundingBox> destination)
+	{
+		ObjectDisposedException.ThrowIf(disposed, this);
+		ArgumentNullException.ThrowIfNull(destination);
+		while (shadowDirtyBounds.Count > 0)
+		{
+			destination.Add(shadowDirtyBounds.Dequeue());
+		}
+	}
+
+	private void EnqueueShadowInvalidation(in AxisAlignedBoundingBox bounds)
+	{
+		const int maximumRegions = 256;
+		if (bounds.IsEmpty)
+		{
+			return;
+		}
+		if (shadowDirtyBounds.Count < maximumRegions)
+		{
+			shadowDirtyBounds.Enqueue(bounds);
+			return;
+		}
+
+		AxisAlignedBoundingBox combined = bounds;
+		while (shadowDirtyBounds.Count > 0)
+		{
+			combined = combined.Union(shadowDirtyBounds.Dequeue());
+		}
+		shadowDirtyBounds.Enqueue(combined);
+	}
 
 	public bool GpuProfilingEnabled
 	{
@@ -333,7 +390,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		world.LoadedChunkCount,
 		gpuChunks.Count,
 		visibleChunks,
-		scheduler.PendingCount + pendingUploads.Count,
+		scheduler.PendingCount + pendingUploads.Count + (currentUploadJob == null ? 0 : 1),
 		acceptedMeshes,
 		discardedMeshes,
 		opaqueVertices,
@@ -463,39 +520,83 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		double timeBudget = options.MeshUploadTimeBudgetMilliseconds;
+		int byteBudget = options.MeshUploadByteBudget;
 		long uploadStart = Stopwatch.GetTimestamp();
 		int uploaded = 0;
+		int bytesUploaded = 0;
+		int slicesUploaded = 0;
 
-		while (uploaded < budget && uploaded < pendingUploads.Count)
+		while (uploaded < budget)
 		{
-			if (uploaded > 0
-				&& Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds >= timeBudget)
-			{
+			if (Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds >= timeBudget
+				|| bytesUploaded >= byteBudget)
 				break;
-			}
 
-			VoxelMeshData result = pendingUploads[uploaded];
-
-			try
+			if (currentUploadJob == null)
 			{
-				Upload(result);
-			}
-			finally
-			{
-				result.ReleasePooledVertexBuffers();
+				if (pendingUploads.Count == 0)
+					break;
+				VoxelMeshData next = pendingUploads[0];
+				pendingUploads.RemoveAt(0);
+				if (!world.TryGetChunk(next.Coordinate, out VoxelChunk nextChunk)
+					|| !IsMeshCurrent(next, nextChunk, lighting))
+				{
+					discardedMeshes++;
+					discardedUploadJobs++;
+					next.ReleasePooledVertexBuffers();
+					if (nextChunk != null)
+						scheduler.MarkDirty(next.Coordinate);
+					continue;
+				}
+				currentUploadJob = new VoxelUploadJob(
+					next,
+					opaqueGeometry,
+					cutoutGeometry,
+					alphaShadowGeometry,
+					transparentGeometry,
+					options.MeshUploadSliceBytes
+				);
 			}
 
+			VoxelMeshData result = currentUploadJob.Result;
+			if (!world.TryGetChunk(result.Coordinate, out VoxelChunk chunk)
+				|| !IsMeshCurrent(result, chunk, lighting))
+			{
+				discardedMeshes++;
+				discardedUploadJobs++;
+				currentUploadJob.Dispose();
+				currentUploadJob = null;
+				if (chunk != null)
+					scheduler.MarkDirty(result.Coordinate);
+				continue;
+			}
+
+			int remainingBytes = byteBudget - bytesUploaded;
+			int sliceBytes = currentUploadJob.UploadNextSlice(
+				Math.Min(options.MeshUploadSliceBytes, remainingBytes)
+			);
+			bytesUploaded += sliceBytes;
+			if (sliceBytes > 0)
+				slicesUploaded++;
+
+			if (!currentUploadJob.IsComplete)
+				continue;
+
+			PublishUpload(currentUploadJob);
+			currentUploadJob.Dispose();
+			currentUploadJob = null;
 			acceptedMeshes++;
+			completedUploadJobs++;
 			uploaded++;
-		}
-
-		if (uploaded > 0)
-		{
-			pendingUploads.RemoveRange(0, uploaded);
 		}
 
 		meshUploadMilliseconds = Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds;
 		uploadedMeshes = uploaded;
+		meshUploadBytes = bytesUploaded;
+		meshUploadSlices = slicesUploaded;
+		oldestMeshUploadJobAgeSeconds = currentUploadJob == null
+			? 0
+			: Stopwatch.GetElapsedTime(currentUploadJob.StartedTimestamp).TotalSeconds;
 
 		if (scheduler.TryDequeueFailure(out failure))
 		{
@@ -584,6 +685,21 @@ public sealed partial class VoxelRenderer : IDisposable
 		return comparison != 0
 			? comparison
 			: right.Revision.CompareTo(left.Revision);
+	}
+
+	private long CalculateQueuedUploadBytes()
+	{
+		long bytes = currentUploadJob?.RemainingBytes ?? 0;
+		int stride = System.Runtime.InteropServices.Marshal.SizeOf<VoxelVertex>();
+		foreach (VoxelMeshData pending in pendingUploads)
+		{
+			bytes = checked(bytes + (long)(
+				pending.OpaqueVertexCount
+				+ pending.CutoutVertexCount
+				+ pending.AlphaShadowVertexCount
+				+ pending.TransparentVertexCount) * stride);
+		}
+		return bytes;
 	}
 
 	internal static bool IsMeshCurrent(

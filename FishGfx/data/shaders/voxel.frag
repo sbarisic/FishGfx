@@ -12,11 +12,10 @@ flat in int frag_TextureLayer;
 layout (location = 0) out vec4 OutColor;
 
 uniform sampler2DArray CubeBaseColor;
-uniform sampler2DArray CubeNormal;
-uniform sampler2DArray CubeSpecular;
-uniform sampler2DArray CubeRoughness;
+uniform sampler2DArray CubeSurface;
 uniform sampler2D ModelAtlas;
 uniform int SurfaceMapsEnabled;
+uniform int uVoxelLayerInfo[256];
 uniform vec3 LightDirection;
 uniform float AmbientLight;
 uniform vec3 SunColor;
@@ -38,7 +37,8 @@ uniform float uShadowSplits[4];
 uniform float uShadowDepthRanges[4];
 uniform float uShadowMapDepthRanges[4];
 uniform float uShadowWorldTexelSizes[4];
-uniform sampler2D uShadowMaps[4];
+uniform sampler2DShadow uShadowMaps[4];
+uniform sampler2DShadow uDynamicShadowMaps[4];
 
 vec3 SafeNormalize(vec3 value, vec3 fallback)
 {
@@ -121,26 +121,36 @@ float SampleShadowCascade(int cascade, vec3 worldPosition, vec3 normal, float nD
 	vec2 texel = 1.0 / vec2(textureSize(uShadowMaps[cascade], 0));
 	vec2 minimumUv = texel * 0.5;
 	vec2 maximumUv = vec2(1.0) - minimumUv;
-	float visible = 0.0;
-	float samples = 0.0;
-
-	for (int y = -uShadowFilterRadius; y <= uShadowFilterRadius; y++)
+	float comparisonDepth = receiverDepth - bias;
+	float staticVisibility = 0.0;
+	if (uShadowFilterRadius <= 1)
 	{
-		for (int x = -uShadowFilterRadius; x <= uShadowFilterRadius; x++)
+		const vec2 offsets[4] = vec2[4](
+			vec2(-0.5, -0.5), vec2(0.5, -0.5),
+			vec2(-0.5, 0.5), vec2(0.5, 0.5));
+		for (int sampleIndex = 0; sampleIndex < 4; sampleIndex++)
 		{
-			vec2 sampleUv = clamp(
-				uv + vec2(x, y) * texel,
-				minimumUv,
-				maximumUv
-			);
-			float storedDepth = texture(uShadowMaps[cascade], sampleUv).r;
-			visible += receiverDepth - bias <= storedDepth ? 1.0 : 0.0;
-
-			samples += 1.0;
+			vec2 sampleUv = clamp(uv + offsets[sampleIndex] * texel, minimumUv, maximumUv);
+			staticVisibility += texture(uShadowMaps[cascade], vec3(sampleUv, comparisonDepth));
 		}
+		staticVisibility *= 0.25;
 	}
-
-	return visible / samples;
+	else
+	{
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				vec2 sampleUv = clamp(uv + vec2(x, y) * texel * 1.5, minimumUv, maximumUv);
+				staticVisibility += texture(uShadowMaps[cascade], vec3(sampleUv, comparisonDepth));
+			}
+		}
+		staticVisibility /= 9.0;
+	}
+	float dynamicVisibility = texture(
+		uDynamicShadowMaps[cascade],
+		vec3(clamp(uv, minimumUv, maximumUv), comparisonDepth));
+	return min(staticVisibility, dynamicVisibility);
 }
 
 float SampleSunVisibility(vec3 worldPosition, vec3 normal, float nDotL)
@@ -196,10 +206,17 @@ void main()
 	vec3 geometricNormal = SafeNormalize(frag_Normal, vec3(0.0, 1.0, 0.0));
 	vec3 normal = geometricNormal;
 	float tangentLengthSquared = dot(frag_Tangent.xyz, frag_Tangent.xyz);
-	bool useSurfaceMaps = SurfaceMapsEnabled != 0
+	int layerInfo = cubeSurface ? uVoxelLayerInfo[frag_TextureLayer] : 3;
+	bool surfaceEligible = SurfaceMapsEnabled != 0
 		&& cubeSurface
 		&& abs(frag_Tangent.w) > 0.5
 		&& tangentLengthSquared > 0.0000001;
+	bool useSurfaceMaps = surfaceEligible && (layerInfo & 1) == 0;
+	bool useSpecularMap = surfaceEligible && (layerInfo & 2) == 0;
+
+	vec4 packedSurface = useSurfaceMaps || useSpecularMap
+		? texture(CubeSurface, cubeCoordinate)
+		: vec4(0.5, 0.5, 0.0, 1.0);
 
 	if (useSurfaceMaps)
 	{
@@ -219,7 +236,11 @@ void main()
 			cross(geometricNormal, tangent),
 			vec3(0.0)
 		) * handedness;
-		vec3 tangentNormal = texture(CubeNormal, cubeCoordinate).xyz * 2.0 - 1.0;
+		vec2 tangentXY = packedSurface.rg * 2.0 - 1.0;
+		vec3 tangentNormal = vec3(
+			tangentXY,
+			sqrt(max(1.0 - dot(tangentXY, tangentXY), 0.0))
+		);
 		tangentNormal = SafeNormalize(tangentNormal, vec3(0.0, 0.0, 1.0));
 		if (useSurfaceMaps)
 		{
@@ -245,10 +266,10 @@ void main()
 	vec3 lighting = max(frag_Light.rgb, skyLight);
 	vec3 litColor = sampled.rgb * lighting * LightMultiplier;
 
-	if (useSurfaceMaps && diffuse > 0.0)
+	if (useSpecularMap && diffuse > 0.0)
 	{
-		float specularIntensity = texture(CubeSpecular, cubeCoordinate).r;
-		float roughness = texture(CubeRoughness, cubeCoordinate).r;
+		float specularIntensity = packedSurface.b;
+		float roughness = packedSurface.a;
 		float exponent = exp2(mix(8.0, 2.0, roughness));
 		vec3 viewDirection = SafeNormalize(
 			uViewPosition - frag_WorldPosition,

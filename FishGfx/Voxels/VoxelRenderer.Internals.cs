@@ -17,6 +17,12 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	private void RemoveGpuChunk(ChunkCoordinate coordinate)
 	{
+		if (currentUploadJob?.Result.Coordinate == coordinate)
+		{
+			currentUploadJob.Dispose();
+			currentUploadJob = null;
+			discardedUploadJobs++;
+		}
 		completedEmptyChunks.Remove(coordinate);
 		if (!gpuChunks.Remove(coordinate, out GpuChunk chunk))
 		{
@@ -25,10 +31,17 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		opaqueVertices -= chunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices -= chunk.Cutout?.VertexCount ?? 0;
+		bool castShadow = HasShadowCasterGeometry(chunk);
 		orderedGpuChunks.Remove(chunk);
+		RemoveFromGpuColumn(chunk);
 		activeCoordinates.Remove(coordinate);
 		activeGpuChunks.Remove(chunk);
 		activeSetDirty = true;
+		if (castShadow)
+		{
+			shadowGeometryRevision++;
+			EnqueueShadowInvalidation(chunk.Bounds);
+		}
 		transparentGeometryRevision++;
 		transparentSourceDirty = true;
 		chunk.Dispose();
@@ -142,6 +155,46 @@ public sealed partial class VoxelRenderer : IDisposable
 		orderedGpuChunks.Insert(index, chunk);
 	}
 
+	private static bool HasShadowCasterGeometry(GpuChunk chunk) =>
+		chunk.Opaque?.VertexCount > 0
+		|| chunk.Cutout?.VertexCount > 0
+		|| chunk.AlphaShadow?.VertexCount > 0;
+
+	private void AddToGpuColumn(GpuChunk chunk)
+	{
+		GpuColumnCoordinate coordinate = new(chunk.Coordinate.X, chunk.Coordinate.Z);
+		if (!gpuChunkColumns.TryGetValue(coordinate, out List<GpuChunk> chunks))
+		{
+			chunks = new List<GpuChunk>();
+			gpuChunkColumns.Add(coordinate, chunks);
+		}
+
+		if (options.MeshUploadByteBudget <= 0)
+			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadByteBudget));
+		if (options.MeshUploadSliceBytes <= 0
+			|| options.MeshUploadSliceBytes > options.MeshUploadByteBudget)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadSliceBytes));
+		}
+
+		chunks.Add(chunk);
+	}
+
+	private void RemoveFromGpuColumn(GpuChunk chunk)
+	{
+		GpuColumnCoordinate coordinate = new(chunk.Coordinate.X, chunk.Coordinate.Z);
+		if (!gpuChunkColumns.TryGetValue(coordinate, out List<GpuChunk> chunks))
+		{
+			return;
+		}
+
+		chunks.Remove(chunk);
+		if (chunks.Count == 0)
+		{
+			gpuChunkColumns.Remove(coordinate);
+		}
+	}
+
 	internal static int ComparePassEntries(VoxelPassEntry left, VoxelPassEntry right)
 	{
 		int result = left.Depth.CompareTo(right.Depth);
@@ -206,6 +259,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		long WorldRevision,
 		long LightGeneration,
 		long LightRevision);
+
+	private readonly record struct GpuColumnCoordinate(int X, int Z);
 
 	private sealed class GpuChunkComparer : IComparer<GpuChunk>
 	{

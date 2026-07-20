@@ -79,6 +79,55 @@ internal sealed class VoxelTransparentIndexRing : IDisposable
 		}
 	}
 
+	internal VoxelTransparentIndexUpload BeginUpload(
+		VoxelTransparentBufferGeneration generation,
+		VoxelTransparentOrderingResult result)
+	{
+		ThrowIfDisposed();
+		ArgumentNullException.ThrowIfNull(generation);
+		ArgumentNullException.ThrowIfNull(result);
+		VoxelTransparentIndexSlot slot = AcquireSlot(generation);
+		try
+		{
+			slot.PrepareUpload(result.IndexCount);
+			return new VoxelTransparentIndexUpload(slot, result);
+		}
+		catch
+		{
+			slot.ReleaseRetained();
+			throw;
+		}
+	}
+
+	private VoxelTransparentIndexSlot AcquireSlot(
+		VoxelTransparentBufferGeneration generation)
+	{
+		CleanupOldSlots(generation);
+		VoxelTransparentIndexSlot slot = null;
+		int matchingSlots = 0;
+		for (int index = 0; index < slots.Count; index++)
+		{
+			VoxelTransparentIndexSlot candidate = slots[index];
+			if (!ReferenceEquals(candidate.Generation, generation))
+				continue;
+			matchingSlots++;
+			if (candidate.TryAcquire())
+			{
+				slot = candidate;
+				break;
+			}
+		}
+		if (slot != null)
+			return slot;
+		if (matchingSlots >= PreferredSlotCount)
+			throw new InvalidOperationException("All transparent index-buffer slots are retained by deferred frames.");
+		slot = new VoxelTransparentIndexSlot(graphics, generation);
+		slots.Add(slot);
+		if (!slot.TryAcquire())
+			throw new InvalidOperationException("A new transparent index slot could not be acquired.");
+		return slot;
+	}
+
 	public void Dispose()
 	{
 		if (disposed)
@@ -203,6 +252,27 @@ internal sealed class VoxelTransparentIndexSlot
 		}
 	}
 
+	internal void PrepareUpload(int indexCount)
+	{
+		int requiredBytes = checked(indexCount * sizeof(uint));
+		if (requiredBytes > indexBuffer.SizeInBytes)
+		{
+			int capacity = indexBuffer.SizeInBytes;
+			while (capacity < requiredBytes)
+				capacity = checked(capacity * 2);
+			indexBuffer.ResizeDiscard(capacity);
+		}
+		else
+		{
+			indexBuffer.DiscardContents();
+		}
+	}
+
+	internal void WriteIndices(ReadOnlySpan<uint> indices, int destinationIndexOffset)
+	{
+		indexBuffer.Write(indices, checked(destinationIndexOffset * sizeof(uint)));
+	}
+
 	internal void Draw(int indexCount)
 	{
 		if (Volatile.Read(ref disposed) != 0)
@@ -279,6 +349,65 @@ internal sealed class VoxelTransparentIndexSlot
 		array.AttribIFormat(8, 1, VertexElementType.Int, 72);
 		array.AttribBinding(8, binding);
 		array.BindElementBuffer(indices);
+	}
+}
+
+internal sealed class VoxelTransparentIndexUpload : IDisposable
+{
+	private readonly VoxelTransparentIndexSlot slot;
+	private VoxelTransparentOrderingResult result;
+	private int uploadedIndices;
+	private bool completed;
+
+	internal VoxelTransparentIndexUpload(
+		VoxelTransparentIndexSlot slot,
+		VoxelTransparentOrderingResult result)
+	{
+		this.slot = slot;
+		this.result = result;
+	}
+
+	internal int RemainingBytes => checked(
+		(result.IndexCount - uploadedIndices) * sizeof(uint)
+	);
+
+	internal VoxelTransparentOrderingResult OrderingResult => result
+		?? throw new ObjectDisposedException(nameof(VoxelTransparentIndexUpload));
+
+	internal int UploadNextSlice(int maximumBytes)
+	{
+		if (result == null)
+			throw new ObjectDisposedException(nameof(VoxelTransparentIndexUpload));
+		int count = Math.Min(
+			result.IndexCount - uploadedIndices,
+			Math.Max(1, maximumBytes / sizeof(uint))
+		);
+		if (count <= 0)
+			return 0;
+		slot.WriteIndices(result.Indices.Slice(uploadedIndices, count), uploadedIndices);
+		uploadedIndices += count;
+		return checked(count * sizeof(uint));
+	}
+
+	internal bool IsComplete => result != null && uploadedIndices == result.IndexCount;
+
+	internal VoxelTransparentDrawSnapshot Complete()
+	{
+		if (!IsComplete)
+			throw new InvalidOperationException("The transparent index upload is incomplete.");
+		VoxelTransparentDrawSnapshot snapshot = new(slot, result);
+		completed = true;
+		return snapshot;
+	}
+
+	public void Dispose()
+	{
+		if (result == null)
+			return;
+		result.Dispose();
+		result = null;
+		if (!completed)
+			slot.ReleaseRetained();
 	}
 }
 

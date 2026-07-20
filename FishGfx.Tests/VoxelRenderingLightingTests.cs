@@ -152,9 +152,10 @@ public partial class VoxelRenderingLightingTests
 		));
 
 		Assert.Contains("uniform sampler2DArray CubeBaseColor;", fragment);
-		Assert.Contains("uniform sampler2DArray CubeNormal;", fragment);
-		Assert.Contains("uniform sampler2DArray CubeSpecular;", fragment);
-		Assert.Contains("uniform sampler2DArray CubeRoughness;", fragment);
+		Assert.Contains("uniform sampler2DArray CubeSurface;", fragment);
+		Assert.DoesNotContain("uniform sampler2DArray CubeNormal;", fragment);
+		Assert.DoesNotContain("uniform sampler2DArray CubeSpecular;", fragment);
+		Assert.DoesNotContain("uniform sampler2DArray CubeRoughness;", fragment);
 		Assert.Contains("uniform sampler2D ModelAtlas;", fragment);
 		Assert.Contains("exp2(mix(8.0, 2.0, roughness))", fragment);
 		Assert.Contains("geometricNormal,", fragment);
@@ -163,6 +164,7 @@ public partial class VoxelRenderingLightingTests
 		Assert.Contains("SafeNormalize", fragment);
 		Assert.Contains("TryBuildDerivativeTangent", fragment);
 		Assert.Contains("frag_WaveAmplitude > 0.0", fragment);
+		Assert.Contains("sqrt(max(1.0 - dot(tangentXY, tangentXY), 0.0))", fragment);
 	}
 
 	[Fact]

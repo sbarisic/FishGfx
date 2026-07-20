@@ -91,7 +91,7 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 		using IDisposable alphaStateScope = pass.PushState(alphaState);
 		alphaShader.SetUniform("AlphaCutoff", cutoutAlphaCutoff);
 		alphaShader.SetUniform("CubeBaseColor", 0);
-		alphaShader.SetUniform("ModelAtlas", 4);
+		alphaShader.SetUniform("ModelAtlas", 2);
 		alphaShader.Bind(pass.Uniforms);
 		IDisposable cubeBinding = null;
 		IDisposable modelBinding = null;
@@ -99,7 +99,7 @@ internal sealed class DrawVoxelShadowPagesCommand : IDisposable
 		try
 		{
 			cubeBinding = textures.CubeBaseColor.Bind(0);
-			modelBinding = textures.ModelAtlas.Bind(4);
+			modelBinding = textures.ModelAtlas.Bind(2);
 
 			if (cutoutGroups.Length > 0)
 			{

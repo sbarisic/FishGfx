@@ -127,7 +127,7 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
 			shader.SetUniform("AlphaCutoff", -1f);
 			shader.SetUniform("uShadowEnabled", 0);
-			shadowBindings = shadows?.Bind(shader, 5);
+			shadowBindings = shadows?.Bind(shader, 3);
 			textureBindings = textures.Bind(shader);
 			shader.Bind(pass.Uniforms);
 			shaderBound = true;

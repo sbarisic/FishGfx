@@ -1,23 +1,29 @@
 using System;
+using System.Collections.Generic;
 using FishGfx.Graphics;
 
 namespace FishGfx.Voxels;
 
 public sealed class VoxelSurfaceTextureSet
 {
+	private readonly int[] layerInfo;
 	public VoxelSurfaceTextureSet(
 		Texture modelAtlas,
 		Texture cubeBaseColor,
-		Texture normal,
-		Texture specular,
-		Texture roughness
+		Texture packedSurface,
+		ReadOnlySpan<int> layerInfo
 	)
 	{
 		ModelAtlas = modelAtlas ?? throw new ArgumentNullException(nameof(modelAtlas));
 		CubeBaseColor = cubeBaseColor ?? throw new ArgumentNullException(nameof(cubeBaseColor));
-		Normal = normal ?? throw new ArgumentNullException(nameof(normal));
-		Specular = specular ?? throw new ArgumentNullException(nameof(specular));
-		Roughness = roughness ?? throw new ArgumentNullException(nameof(roughness));
+		PackedSurface = packedSurface ?? throw new ArgumentNullException(nameof(packedSurface));
+		if (layerInfo.Length != CubeBaseColor.ArrayLayers)
+		{
+			throw new ArgumentException(
+				"Voxel layer-info count must match the cube texture-array layers.",
+				nameof(layerInfo));
+		}
+		this.layerInfo = layerInfo.ToArray();
 		ValidateModelAtlas(ModelAtlas, nameof(modelAtlas));
 		ValidateArray(CubeBaseColor, nameof(cubeBaseColor));
 
@@ -38,26 +44,18 @@ public sealed class VoxelSurfaceTextureSet
 			);
 		}
 
-		ValidateArray(Normal, nameof(normal));
-		ValidateArray(Specular, nameof(specular));
-		ValidateArray(Roughness, nameof(roughness));
-		ValidateLinearSurfaceMap(Normal, nameof(normal));
-		ValidateLinearSurfaceMap(Specular, nameof(specular));
-		ValidateLinearSurfaceMap(Roughness, nameof(roughness));
-		ValidateDimensions(Normal, nameof(normal));
-		ValidateDimensions(Specular, nameof(specular));
-		ValidateDimensions(Roughness, nameof(roughness));
+		ValidateArray(PackedSurface, nameof(packedSurface));
+		ValidateLinearSurfaceMap(PackedSurface, nameof(packedSurface));
+		ValidateDimensions(PackedSurface, nameof(packedSurface));
 	}
 
 	public Texture ModelAtlas { get; }
 
 	public Texture CubeBaseColor { get; }
 
-	public Texture Normal { get; }
+	public Texture PackedSurface { get; }
 
-	public Texture Specular { get; }
-
-	public Texture Roughness { get; }
+	public IReadOnlyList<int> LayerInfo => layerInfo;
 
 	public bool HasSurfaceMaps => true;
 
@@ -65,32 +63,26 @@ public sealed class VoxelSurfaceTextureSet
 	{
 		ModelAtlas.EnsureOwner(graphics);
 		CubeBaseColor.EnsureOwner(graphics);
-		Normal.EnsureOwner(graphics);
-		Specular.EnsureOwner(graphics);
-		Roughness.EnsureOwner(graphics);
+		PackedSurface.EnsureOwner(graphics);
 	}
 
 	internal IDisposable Bind(ShaderProgram shader)
 	{
 		ArgumentNullException.ThrowIfNull(shader);
 		shader.SetUniform("CubeBaseColor", 0);
-		shader.SetUniform("CubeNormal", 1);
-		shader.SetUniform("CubeSpecular", 2);
-		shader.SetUniform("CubeRoughness", 3);
-		shader.SetUniform("ModelAtlas", 4);
+		shader.SetUniform("CubeSurface", 1);
+		shader.SetUniform("ModelAtlas", 2);
 		shader.SetUniform("SurfaceMapsEnabled", 1);
-		IDisposable[] bindings = new IDisposable[5];
+		shader.SetUniform("uVoxelLayerInfo", layerInfo);
+		IDisposable[] bindings = new IDisposable[3];
 		int bound = 0;
 
 		try
 		{
 			bindings[bound++] = CubeBaseColor.Bind(0);
 
-			bindings[bound++] = Normal.Bind(1);
-			bindings[bound++] = Specular.Bind(2);
-			bindings[bound++] = Roughness.Bind(3);
-
-			bindings[bound++] = ModelAtlas.Bind(4);
+			bindings[bound++] = PackedSurface.Bind(1);
+			bindings[bound++] = ModelAtlas.Bind(2);
 
 			return new BindingScope(bindings);
 		}

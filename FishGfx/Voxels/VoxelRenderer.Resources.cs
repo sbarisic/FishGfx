@@ -18,6 +18,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		transparentOrdering.Dispose();
 		transparentSnapshot?.Dispose();
 		transparentSnapshot = null;
+		transparentIndexUploadJob?.Dispose();
+		transparentIndexUploadJob = null;
 		transparentSource?.ReleaseOwner();
 		transparentSource = null;
 
@@ -27,6 +29,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		pendingUploads.Clear();
+		currentUploadJob?.Dispose();
+		currentUploadJob = null;
 		completedEmptyChunks.Clear();
 
 		foreach (GpuChunk chunk in gpuChunks.Values)
@@ -35,9 +39,12 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		gpuChunks.Clear();
+		gpuChunkColumns.Clear();
 		orderedGpuChunks.Clear();
 		activeGpuChunks.Clear();
+		nextActiveGpuChunks.Clear();
 		activeCoordinates.Clear();
+		nextActiveCoordinates.Clear();
 		transparentIndexRing.Dispose();
 		transparentGeometry.Dispose();
 		transparentGpuTimer.Dispose();
@@ -58,8 +65,9 @@ public sealed partial class VoxelRenderer : IDisposable
 		shadowVertexShader.Dispose();
 	}
 
-	private void Upload(VoxelMeshData result)
+	private void PublishUpload(VoxelUploadJob job)
 	{
+		VoxelMeshData result = job.Result;
 		if (
 			result.OpaqueVertexCount == 0
 			&& result.CutoutVertexCount == 0
@@ -78,12 +86,20 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		completedEmptyChunks.Remove(result.Coordinate);
 
-		if (!gpuChunks.TryGetValue(result.Coordinate, out GpuChunk gpuChunk))
+		bool existed = gpuChunks.TryGetValue(result.Coordinate, out GpuChunk gpuChunk);
+		if (!existed)
 		{
 			gpuChunk = new GpuChunk(result.Coordinate);
 			gpuChunks.Add(result.Coordinate, gpuChunk);
 			InsertOrderedGpuChunk(gpuChunk);
+			AddToGpuColumn(gpuChunk);
 		}
+
+		bool previousShadowCaster = HasShadowCasterGeometry(gpuChunk);
+		AxisAlignedBoundingBox previousBounds = gpuChunk.Bounds;
+		bool shadowGeometryChanged = !existed
+			|| gpuChunk.WorldGeneration != result.WorldGeneration
+			|| gpuChunk.Revision != result.Revision;
 
 		opaqueVertices -= gpuChunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices -= gpuChunk.Cutout?.VertexCount ?? 0;
@@ -93,29 +109,27 @@ public sealed partial class VoxelRenderer : IDisposable
 		gpuChunk.LightGeneration = result.LightGeneration;
 		gpuChunk.LightRevision = result.LightRevision;
 		gpuChunk.Bounds = result.Bounds;
-		gpuChunk.Opaque = opaqueGeometry.Update(
-			gpuChunk.Opaque,
-			result.OpaqueVertexSpan,
-			result.Coordinate.WorldOrigin
-		);
-		gpuChunk.Cutout = cutoutGeometry.Update(
-			gpuChunk.Cutout,
-			result.CutoutVertexSpan,
-			result.Coordinate.WorldOrigin
-		);
-		gpuChunk.AlphaShadow = alphaShadowGeometry.Update(
-			gpuChunk.AlphaShadow,
-			result.AlphaShadowVertexSpan,
-			result.Coordinate.WorldOrigin
-		);
-		gpuChunk.Transparent = transparentGeometry.Update(
-			gpuChunk.Transparent,
-			result.TransparentFaces,
-			result.Coordinate,
-			result.Coordinate.WorldOrigin
-		);
+		VoxelGeometryAllocation previousOpaque = gpuChunk.Opaque;
+		VoxelGeometryAllocation previousCutout = gpuChunk.Cutout;
+		VoxelGeometryAllocation previousAlphaShadow = gpuChunk.AlphaShadow;
+		VoxelTransparentAllocation previousTransparent = gpuChunk.Transparent;
+		gpuChunk.Opaque = job.Opaque;
+		gpuChunk.Cutout = job.Cutout;
+		gpuChunk.AlphaShadow = job.AlphaShadow;
+		gpuChunk.Transparent = job.Transparent;
+		job.DetachAllocations();
+		previousOpaque?.ReleaseOwner();
+		previousCutout?.ReleaseOwner();
+		previousAlphaShadow?.ReleaseOwner();
+		previousTransparent?.ReleaseOwner();
 		opaqueVertices += gpuChunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices += gpuChunk.Cutout?.VertexCount ?? 0;
+		if (shadowGeometryChanged
+			&& (previousShadowCaster || HasShadowCasterGeometry(gpuChunk)))
+		{
+			shadowGeometryRevision++;
+			EnqueueShadowInvalidation(previousBounds.Union(gpuChunk.Bounds));
+		}
 		transparentGeometryRevision++;
 		transparentSourceDirty = true;
 		activeSetDirty = true;

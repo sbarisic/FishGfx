@@ -31,13 +31,14 @@ public readonly struct DirectionalShadowFrame
 			return EmptyScope.Instance;
 		}
 
-		if (firstTextureUnit > uint.MaxValue - (uint)snapshot.CascadeCount)
+		if (firstTextureUnit > uint.MaxValue - (uint)(snapshot.CascadeCount * 2))
 		{
 			throw new ArgumentOutOfRangeException(nameof(firstTextureUnit));
 		}
 
-		IDisposable[] bindings = new IDisposable[snapshot.CascadeCount];
+		IDisposable[] bindings = new IDisposable[snapshot.CascadeCount * 2];
 		int[] textureUnits = new int[snapshot.CascadeCount];
+		int[] dynamicTextureUnits = new int[snapshot.CascadeCount];
 
 		try
 		{
@@ -46,6 +47,9 @@ public readonly struct DirectionalShadowFrame
 				uint unit = firstTextureUnit + (uint)index;
 				bindings[index] = snapshot.DepthTextures[index].Bind(unit);
 				textureUnits[index] = checked((int)unit);
+				uint dynamicUnit = firstTextureUnit + (uint)snapshot.CascadeCount + (uint)index;
+				bindings[snapshot.CascadeCount + index] = snapshot.DynamicDepthTextures[index].Bind(dynamicUnit);
+				dynamicTextureUnits[index] = checked((int)dynamicUnit);
 			}
 
 			shader.SetUniform("uShadowEnabled", 1);
@@ -59,6 +63,7 @@ public readonly struct DirectionalShadowFrame
 			shader.SetUniform("uShadowMapDepthRanges", snapshot.MapDepthRanges);
 			shader.SetUniform("uShadowWorldTexelSizes", snapshot.WorldTexelSizes);
 			shader.SetUniform("uShadowMaps", textureUnits);
+			shader.SetUniform("uDynamicShadowMaps", dynamicTextureUnits);
 
 			return new BindingScope(bindings);
 		}
@@ -81,6 +86,8 @@ public readonly struct DirectionalShadowFrame
 		public DirectionalShadowFilter Filter { get; set; }
 
 		public required Texture[] DepthTextures { get; init; }
+
+		public required Texture[] DynamicDepthTextures { get; init; }
 
 		public required Matrix4x4[] Matrices { get; init; }
 
