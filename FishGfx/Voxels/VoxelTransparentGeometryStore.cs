@@ -48,6 +48,22 @@ internal sealed class VoxelTransparentGeometryStore : IDisposable
 
 	internal int AllocationCount => ranges.AllocationCount;
 
+	internal bool HasCapacityFor(int vertexCount)
+	{
+		ThrowIfDisposed();
+		return vertexCount == 0
+			|| ranges.CanAllocate(AlignUp(vertexCount, VertexAlignment));
+	}
+
+	internal bool EnsureCapacityFor(int vertexCount)
+	{
+		ThrowIfDisposed();
+		if (HasCapacityFor(vertexCount))
+			return false;
+		Grow(AlignUp(vertexCount, VertexAlignment));
+		return true;
+	}
+
 	internal VoxelTransparentAllocation Update(
 		VoxelTransparentAllocation current,
 		VoxelTransparentFace[] faces,
@@ -477,6 +493,21 @@ internal sealed class VoxelVertexRangeAllocator
 
 			AllocationCount++;
 			return true;
+		}
+	}
+
+	internal bool CanAllocate(int count)
+	{
+		if (count <= 0 || count % alignment != 0)
+			throw new ArgumentOutOfRangeException(nameof(count));
+		lock (sync)
+		{
+			foreach (Range range in freeRanges)
+			{
+				if (range.Count >= count)
+					return true;
+			}
+			return false;
 		}
 	}
 

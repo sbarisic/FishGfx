@@ -210,6 +210,19 @@ public sealed partial class VoxelLighting : IDisposable
 		}
 	}
 
+	public void MarkChunkDirty(ChunkCoordinate coordinate)
+	{
+		lock (sync)
+		{
+			ThrowIfDisposed();
+			if (residents.ContainsKey(coordinate))
+			{
+				dirtyWorldChunks.Add(coordinate);
+				dirtyWorldCells.Remove(coordinate);
+			}
+		}
+	}
+
 	public int Update(int? budget = null)
 	{
 		int actualBudget = budget ?? updateBudget;
@@ -289,6 +302,20 @@ public sealed partial class VoxelLighting : IDisposable
 				source = null;
 				return false;
 			}
+			for (int offsetZ = -1; offsetZ <= 1; offsetZ++)
+			for (int offsetY = -1; offsetY <= 1; offsetY++)
+			for (int offsetX = -1; offsetX <= 1; offsetX++)
+			{
+				ChunkCoordinate sample = coordinate + new ChunkCoordinate(
+					offsetX,
+					offsetY,
+					offsetZ);
+				if (IsLightingPending(sample))
+				{
+					source = null;
+					return false;
+				}
+			}
 
 			VoxelLightSnapshotContent[] contents = new VoxelLightSnapshotContent[27];
 
@@ -317,6 +344,16 @@ public sealed partial class VoxelLighting : IDisposable
 			);
 			return true;
 		}
+	}
+
+	private bool IsLightingPending(ChunkCoordinate coordinate)
+	{
+		return dirtyWorldChunks.Contains(coordinate)
+			|| dirtyWorldCells.ContainsKey(coordinate)
+			|| addedChunks.Contains(coordinate)
+			|| skyChangedChunks.Contains(coordinate)
+			|| transaction?.Lookup.ContainsKey(coordinate) == true
+			|| incrementalTransaction?.Chunks.ContainsKey(coordinate) == true;
 	}
 
 	private VoxelLightSnapshotContent CapturePublishedLightContent(

@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace FishGfx.Voxels;
 
@@ -109,6 +110,11 @@ public sealed class VoxelMeshData
 	internal int OpaqueVertexCount => opaqueVertexCount;
 	internal int CutoutVertexCount => cutoutVertexCount;
 	internal int AlphaShadowVertexCount => alphaShadowVertexCount;
+	internal long EstimatedByteSize => checked((long)(
+		opaqueVertexCount
+		+ cutoutVertexCount
+		+ alphaShadowVertexCount
+		+ TransparentVertexCount) * Marshal.SizeOf<VoxelVertex>());
 	internal ReadOnlySpan<VoxelVertex> OpaqueVertexSpan =>
 		opaqueVertices.AsSpan(0, opaqueVertexCount);
 	internal ReadOnlySpan<VoxelVertex> CutoutVertexSpan =>

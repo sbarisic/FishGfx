@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using FishGfx.Graphics;
 using FishGfx.Voxels;
@@ -8,6 +9,97 @@ namespace FishGfx.Tests;
 
 public sealed class VoxelRendererOptimizationTests
 {
+	[Fact]
+	public void TransparentRangeCapacityCanBePreflightedWithoutAllocating()
+	{
+		VoxelVertexRangeAllocator ranges = new(capacity: 12, alignment: 6);
+
+		Assert.True(ranges.CanAllocate(12));
+		Assert.Equal(0, ranges.AllocationCount);
+		Assert.True(ranges.TryAllocate(12, out int first));
+		Assert.Equal(0, first);
+		Assert.False(ranges.CanAllocate(6));
+		ranges.Free(first, 12);
+		Assert.True(ranges.CanAllocate(6));
+	}
+
+	[Fact]
+	public void MeshBackpressureUsesHighAndLowWatermarks()
+	{
+		VoxelRendererOptions options = new()
+		{
+			MaximumReadyMeshJobs = 128,
+			MaximumReadyMeshBytes = 32 * 1024 * 1024,
+			ResumeReadyMeshJobs = 64,
+			ResumeReadyMeshBytes = 16 * 1024 * 1024,
+		};
+
+		Assert.True(VoxelRenderer.EvaluateMeshBackpressure(
+			false, 128, 0, options));
+		Assert.True(VoxelRenderer.EvaluateMeshBackpressure(
+			false, 0, 32 * 1024 * 1024, options));
+		Assert.True(VoxelRenderer.EvaluateMeshBackpressure(
+			true, 65, 16 * 1024 * 1024, options));
+		Assert.True(VoxelRenderer.EvaluateMeshBackpressure(
+			true, 64, 16 * 1024 * 1024 + 1, options));
+		Assert.False(VoxelRenderer.EvaluateMeshBackpressure(
+			true, 64, 16 * 1024 * 1024, options));
+	}
+
+	[Fact]
+	public void ColumnUpdatePublishesAtomicallyAndDeduplicatesInvalidations()
+	{
+		VoxelWorld world = new();
+		ChunkCoordinate lower = new(2, 0, -3);
+		ChunkCoordinate upper = new(2, 1, -3);
+		world.SetVoxel(32, 1, -48, new VoxelCell(1));
+		world.SetVoxel(32, 17, -48, new VoxelCell(1));
+		HashSet<ChunkCoordinate> invalidated = new();
+		int invalidationEvents = 0;
+		world.ChunkInvalidated += (coordinate, _) =>
+		{
+			invalidated.Add(coordinate);
+			invalidationEvents++;
+		};
+
+		using VoxelColumnUpdate update = world.BeginColumnUpdate(2, -3, revision: 7);
+		VoxelCell[] replacement = new VoxelCell[VoxelWorld.ChunkVolume];
+		replacement[0] = new VoxelCell(2);
+		world.InstallPreparedChunk(
+			update,
+			lower,
+			PreparedVoxelChunk.TakeOwnership(replacement));
+
+		Assert.Equal((ushort)1, world.GetVoxel(32, 1, -48).MaterialId);
+		Assert.True(world.TryGetChunk(upper, out _));
+		Assert.Empty(invalidated);
+
+		world.CompleteColumnUpdate(update);
+
+		Assert.Equal((ushort)2, world.GetVoxel(32, 0, -48).MaterialId);
+		Assert.False(world.TryGetChunk(upper, out _));
+		Assert.Equal(invalidated.Count, invalidationEvents);
+	}
+
+	[Fact]
+	public void DisposedColumnUpdateLeavesTheWorldUnchanged()
+	{
+		VoxelWorld world = new();
+		world.SetVoxel(0, 0, 0, new VoxelCell(1));
+		VoxelColumnUpdate update = world.BeginColumnUpdate(0, 0, revision: 2);
+		VoxelCell[] replacement = new VoxelCell[VoxelWorld.ChunkVolume];
+		replacement[0] = new VoxelCell(2);
+		world.InstallPreparedChunk(
+			update,
+			default,
+			PreparedVoxelChunk.TakeOwnership(replacement));
+
+		update.Dispose();
+
+		Assert.Equal((ushort)1, world.GetVoxel(0, 0, 0).MaterialId);
+		using VoxelColumnUpdate retry = world.BeginColumnUpdate(0, 0, revision: 3);
+	}
+
 	[Fact]
 	public void IndirectBufferFlagIsAcceptedAndPreserved()
 	{

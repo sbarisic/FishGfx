@@ -32,6 +32,8 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 	}
 
 	internal int PageCount => pages.Count;
+	internal bool HasActivePage => pages.Exists(static page => page.AllocationCount > 0);
+	internal bool HasSparePage => pages.Exists(static page => page.AllocationCount == 0);
 
 	internal int AllocationCount
 	{
@@ -84,6 +86,40 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 
 		current?.ReleaseOwner();
 		return replacement;
+	}
+
+	internal bool HasCapacityFor(int vertexCount)
+	{
+		ThrowIfDisposed();
+		if (vertexCount == 0)
+			return true;
+		int capacity = AlignUp(vertexCount, VertexAlignment);
+		foreach (VoxelGeometryPage page in pages)
+		{
+			if (page.FindBestRange(capacity) >= capacity)
+				return true;
+		}
+		return false;
+	}
+
+	internal bool EnsureCapacityFor(int vertexCount)
+	{
+		ThrowIfDisposed();
+		if (HasCapacityFor(vertexCount))
+			return false;
+		int capacity = AlignUp(vertexCount, VertexAlignment);
+		int pageCapacity = Math.Max(pageVertexCapacity, capacity);
+		pages.Add(new VoxelGeometryPage(graphics, pages.Count, pageCapacity));
+		return true;
+	}
+
+	internal bool EnsureSparePage()
+	{
+		ThrowIfDisposed();
+		if (!HasActivePage || HasSparePage)
+			return false;
+		pages.Add(new VoxelGeometryPage(graphics, pages.Count, pageVertexCapacity));
+		return true;
 	}
 
 	internal VoxelGeometryAllocation Reserve(int vertexCount, Vector3 origin)
@@ -156,9 +192,8 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 
 		if (bestPage == null)
 		{
-			int pageCapacity = Math.Max(pageVertexCapacity, capacity);
-			bestPage = new VoxelGeometryPage(graphics, pages.Count, pageCapacity);
-			pages.Add(bestPage);
+			EnsureCapacityFor(vertexCount);
+			bestPage = pages[^1];
 		}
 
 		return bestPage.Allocate(capacity, vertexCount);

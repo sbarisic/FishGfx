@@ -26,10 +26,15 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 	private readonly ConcurrentQueue<MeshJob> jobs = new ConcurrentQueue<MeshJob>();
 	private readonly ConcurrentQueue<VoxelMeshData> completed = new ConcurrentQueue<VoxelMeshData>();
 	private readonly ConcurrentQueue<Exception> failures = new ConcurrentQueue<Exception>();
+	private readonly List<MeshJob> capturedScratch = new List<MeshJob>();
+	private readonly List<ChunkCoordinate> selectionScratch = new List<ChunkCoordinate>();
+	private readonly PriorityQueue<ChunkCoordinate, VoxelMeshingPriority> selectionQueue =
+		new PriorityQueue<ChunkCoordinate, VoxelMeshingPriority>(WorstPriorityFirst);
 	private readonly SemaphoreSlim jobSignal = new SemaphoreSlim(0);
 	private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
 	private readonly Task[] workers;
 	private bool disposed;
+	private long completedBytes;
 
 	public VoxelMeshingScheduler(
 		VoxelWorld world,
@@ -142,6 +147,21 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 		}
 	}
 
+	public int DirtyCount
+	{
+		get
+		{
+			lock (sync)
+			{
+				return dirty.Count;
+			}
+		}
+	}
+
+	public int CompletedCount => completed.Count;
+
+	public long CompletedBytes => Interlocked.Read(ref completedBytes);
+
 	internal int LastSelectionCount { get; private set; }
 	internal int LastCaptureCount { get; private set; }
 
@@ -162,12 +182,23 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 
 	internal int SchedulePending(VoxelMeshingFocus? focus)
 	{
+		return SchedulePending(focus, int.MaxValue);
+	}
+
+	internal int SchedulePending(VoxelMeshingFocus? focus, int maximumNewJobs)
+	{
 		ThrowIfDisposed();
-		List<MeshJob> captured = new List<MeshJob>();
+		if (maximumNewJobs <= 0)
+		{
+			LastSelectionCount = 0;
+			LastCaptureCount = 0;
+			return 0;
+		}
+		capturedScratch.Clear();
 
 		lock (sync)
 		{
-			int available = maxWorkers - inFlight.Count;
+			int available = Math.Min(maxWorkers - inFlight.Count, maximumNewJobs);
 			LastSelectionCount = 0;
 			LastCaptureCount = 0;
 
@@ -177,10 +208,10 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 			}
 
 			int selectionLimit = Math.Max(64, available * 4);
-			ChunkCoordinate[] pending = SelectPending(dirty, focus, selectionLimit);
-			LastSelectionCount = pending.Length;
+			SelectPending(dirty, focus, selectionLimit, selectionQueue, selectionScratch);
+			LastSelectionCount = selectionScratch.Count;
 
-			foreach (ChunkCoordinate coordinate in pending)
+			foreach (ChunkCoordinate coordinate in selectionScratch)
 			{
 				if (available == 0)
 				{
@@ -222,26 +253,29 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 				MeshJob job = new MeshJob(worldSource, lightSource);
 				dirty.Remove(coordinate);
 				inFlight.Add(coordinate, job.Revision);
-				captured.Add(job);
+				capturedScratch.Add(job);
 				available--;
 			}
 
-			LastCaptureCount = captured.Count;
+			LastCaptureCount = capturedScratch.Count;
 		}
 
-		foreach (MeshJob job in captured)
+		foreach (MeshJob job in capturedScratch)
 		{
 			jobs.Enqueue(job);
 			jobSignal.Release();
 		}
 
-		return captured.Count;
+		return capturedScratch.Count;
 	}
 
 	public bool TryDequeue(out VoxelMeshData meshData)
 	{
 		ThrowIfDisposed();
-		return completed.TryDequeue(out meshData);
+		if (!completed.TryDequeue(out meshData))
+			return false;
+		Interlocked.Add(ref completedBytes, -meshData.EstimatedByteSize);
+		return true;
 	}
 
 	public bool TryDequeueFailure(out Exception exception)
@@ -280,6 +314,7 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 		{
 			result.ReleasePooledVertexBuffers();
 		}
+		Interlocked.Exchange(ref completedBytes, 0);
 
 		jobSignal.Dispose();
 		cancellation.Dispose();
@@ -371,6 +406,7 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 			}
 
 			token.ThrowIfCancellationRequested();
+			Interlocked.Add(ref completedBytes, result.EstimatedByteSize);
 			completed.Enqueue(result);
 		}
 		catch (OperationCanceledException) when (token.IsCancellationRequested)

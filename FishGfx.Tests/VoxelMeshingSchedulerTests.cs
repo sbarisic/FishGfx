@@ -101,6 +101,44 @@ public partial class VoxelTests
 	}
 
 	[Fact]
+	public void SchedulerHonorsReadyQueueAdmissionCapacity()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+		world.SetVoxel(17, 1, 1, new VoxelCell(opaque));
+		using VoxelMeshingScheduler scheduler = new(
+			world,
+			palette,
+			new VoxelAtlasLayout(2, 2, 32, 32),
+			maxWorkers: 2
+		);
+
+		Assert.Equal(0, scheduler.SchedulePending(focus: null, maximumNewJobs: 0));
+		Assert.Equal(1, scheduler.SchedulePending(focus: null, maximumNewJobs: 1));
+		Assert.InRange(scheduler.InFlightCount, 0, 1);
+	}
+
+	[Fact]
+	public void SchedulerTracksCompletedMeshBytesUntilDequeued()
+	{
+		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();
+		world.SetVoxel(1, 1, 1, new VoxelCell(opaque));
+		using VoxelMeshingScheduler scheduler = new(
+			world,
+			palette,
+			new VoxelAtlasLayout(2, 2, 32, 32),
+			maxWorkers: 1
+		);
+
+		Assert.Equal(1, scheduler.SchedulePending());
+		Assert.True(SpinWait.SpinUntil(() => scheduler.CompletedCount == 1, 5000));
+		Assert.True(scheduler.CompletedBytes > 0);
+		Assert.True(scheduler.TryDequeue(out VoxelMeshData result));
+		Assert.Equal(0, scheduler.CompletedBytes);
+		result.ReleasePooledVertexBuffers();
+	}
+
+	[Fact]
 	public void SchedulerDropsDirtyCoordinatesAfterWorldRemoval()
 	{
 		(VoxelWorld world, VoxelPalette palette, ushort opaque, _, _) = CreateWorldAndPalette();

@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace FishGfx.Voxels;
 
-public sealed class VoxelWorld
+public sealed partial class VoxelWorld
 {
 	public const int ChunkSize = 16;
 	public const int ChunkVolume = ChunkSize * ChunkSize * ChunkSize;
@@ -15,6 +15,7 @@ public sealed class VoxelWorld
 	private readonly object sync = new object();
 	private readonly Dictionary<ChunkCoordinate, VoxelChunk> chunks =
 		new Dictionary<ChunkCoordinate, VoxelChunk>();
+	private readonly HashSet<(int X, int Z)> activeColumnUpdates = new();
 	private long nextChunkGeneration;
 
 	public event Action<ChunkCoordinate, long> ChunkInvalidated;

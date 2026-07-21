@@ -4,7 +4,7 @@ using System.Numerics;
 
 namespace FishGfx.Graphics.Shadows;
 
-public sealed class DirectionalShadowRenderer : IDisposable
+public sealed partial class DirectionalShadowRenderer : IDisposable
 {
 	private const float MinimumStrength = 0.01f;
 	private const float SunDirectionThresholdRadians = 0.05f * MathF.PI / 180;
@@ -19,6 +19,11 @@ public sealed class DirectionalShadowRenderer : IDisposable
 	private Vector3[] pendingAnchors = Array.Empty<Vector3>();
 	private float[] pendingVerticalFovs = Array.Empty<float>();
 	private float[] pendingHorizontalFovs = Array.Empty<float>();
+	private float[] splitScratch = Array.Empty<float>();
+	private DirectionalShadowCascadeDiagnostics[] diagnosticsScratch =
+		Array.Empty<DirectionalShadowCascadeDiagnostics>();
+	private DirectionalShadowCascadeDiagnostics[] diagnosticsPublished =
+		Array.Empty<DirectionalShadowCascadeDiagnostics>();
 	private DirectionalShadowGpuTimer[] gpuTimers = Array.Empty<DirectionalShadowGpuTimer>();
 	private DirectionalShadowFrame.Snapshot currentSnapshot;
 	private DirectionalShadowOptions options;
@@ -185,7 +190,13 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		bool sunrise = !wasEnabled;
 		bool teleport = wasEnabled
 			&& Vector3.Distance(viewCamera.Position, previousViewPosition) > options.MaximumDistance * 0.5f;
-		float[] splits = CalculateSplits(viewCamera.Near, options.MaximumDistance, options.CascadeCount, options.SplitLambda);
+		FillSplits(
+			viewCamera.Near,
+			options.MaximumDistance,
+			options.CascadeCount,
+			options.SplitLambda,
+			splitScratch);
+		float[] splits = splitScratch;
 		for (int invalidationIndex = 0; invalidationIndex < staticInvalidations.Count; invalidationIndex++)
 		{
 			AxisAlignedBoundingBox dirty = staticInvalidations[invalidationIndex];
@@ -481,123 +492,12 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		pendingAnchors = Array.Empty<Vector3>();
 		pendingVerticalFovs = Array.Empty<float>();
 		pendingHorizontalFovs = Array.Empty<float>();
+		splitScratch = Array.Empty<float>();
+		diagnosticsScratch = Array.Empty<DirectionalShadowCascadeDiagnostics>();
+		diagnosticsPublished = Array.Empty<DirectionalShadowCascadeDiagnostics>();
 		gpuTimers = Array.Empty<DirectionalShadowGpuTimer>();
 		cascadesNeedingRender.Clear();
 		dynamicCascadesNeedingRender.Clear();
-	}
-
-	public static float[] CalculateSplits(float nearDistance, float farDistance, int count, float lambda)
-	{
-		if (count <= 0)
-		{
-			return Array.Empty<float>();
-		}
-
-		nearDistance = Math.Max(0.01f, nearDistance);
-		farDistance = Math.Max(nearDistance + 0.01f, farDistance);
-		float[] splits = new float[count];
-
-		for (int index = 1; index <= count; index++)
-		{
-			float ratio = (float)index / count;
-			float logarithmic = nearDistance * MathF.Pow(farDistance / nearDistance, ratio);
-			float uniform = nearDistance + (farDistance - nearDistance) * ratio;
-			splits[index - 1] = uniform + (logarithmic - uniform) * lambda;
-		}
-
-		splits[^1] = farDistance;
-
-		return splits;
-	}
-
-	private DirectionalShadowCascade BuildCascade(
-		Camera viewCamera,
-		Vector3 lightDirection,
-		float nearDistance,
-		float farDistance,
-		int index)
-	{
-		return BuildStableClipmap(
-			viewCamera,
-			lightDirection,
-			nearDistance,
-			farDistance,
-			index,
-			options.Resolution,
-			options.MaximumDistance
-		);
-	}
-
-	private static float CalculateClipmapExtent(Camera viewCamera, float farDistance)
-	{
-		float verticalTangent = MathF.Tan(viewCamera.VerticalFOV * 0.5f);
-		float horizontalTangent = MathF.Tan(viewCamera.HorizontalFOV * 0.5f);
-		float radius = farDistance * MathF.Sqrt(
-			1 + verticalTangent * verticalTangent
-				+ horizontalTangent * horizontalTangent);
-		return MathF.Ceiling(radius * 16) / 16 + ReceiverExpansion;
-	}
-
-	internal static DirectionalShadowCascade BuildStableClipmap(
-		Camera viewCamera,
-		Vector3 lightDirection,
-		float nearDistance,
-		float farDistance,
-		int index,
-		int resolution,
-		float maximumDistance)
-	{
-		ArgumentNullException.ThrowIfNull(viewCamera);
-		if (resolution <= 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(resolution));
-		}
-		if (!float.IsFinite(maximumDistance) || maximumDistance <= 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(maximumDistance));
-		}
-
-		// A camera-position-centred sphere makes the clipmap independent of view
-		// yaw and pitch. Rotation therefore never changes its matrix or dirties it.
-		float verticalTangent = MathF.Tan(viewCamera.VerticalFOV * 0.5f);
-		float horizontalTangent = MathF.Tan(viewCamera.HorizontalFOV * 0.5f);
-		float radius = farDistance * MathF.Sqrt(
-			1 + verticalTangent * verticalTangent
-				+ horizontalTangent * horizontalTangent
-		);
-		radius = MathF.Ceiling(radius * 16) / 16;
-		float extent = radius + ReceiverExpansion;
-		Vector3 center = viewCamera.Position;
-		Vector3 up = MathF.Abs(Vector3.Dot(lightDirection, Vector3.UnitY)) > 0.98f
-			? Vector3.UnitZ
-			: Vector3.UnitY;
-		Vector3 right = Vector3.Normalize(Vector3.Cross(lightDirection, up));
-		Vector3 lightUp = Vector3.Normalize(Vector3.Cross(right, lightDirection));
-		float texelSize = extent * 2 / resolution;
-		float rightCoordinate = Vector3.Dot(center, right);
-		float upCoordinate = Vector3.Dot(center, lightUp);
-		float snappedRight = MathF.Round(rightCoordinate / texelSize) * texelSize;
-		float snappedUp = MathF.Round(upCoordinate / texelSize) * texelSize;
-		center += right * (snappedRight - rightCoordinate);
-		center += lightUp * (snappedUp - upCoordinate);
-		float casterDepth = maximumDistance + radius * 2;
-		Camera camera = new Camera
-		{
-			CameraUpNormal = up,
-			Position = center - lightDirection * (maximumDistance + radius),
-		};
-
-		camera.LookAt(center);
-		camera.SetOrthogonal(-extent, -extent, extent, extent, 0.1f, casterDepth);
-
-		return new DirectionalShadowCascade(
-			index,
-			camera,
-			camera.View * camera.Projection,
-			nearDistance,
-			farDistance,
-			new Vector2(texelSize)
-		);
 	}
 
 	private DirectionalShadowFrame CreateCurrentFrame()
@@ -648,6 +548,9 @@ public sealed class DirectionalShadowRenderer : IDisposable
 		pendingAnchors = new Vector3[options.CascadeCount];
 		pendingVerticalFovs = new float[options.CascadeCount];
 		pendingHorizontalFovs = new float[options.CascadeCount];
+		splitScratch = new float[options.CascadeCount];
+		diagnosticsScratch = new DirectionalShadowCascadeDiagnostics[options.CascadeCount];
+		diagnosticsPublished = new DirectionalShadowCascadeDiagnostics[options.CascadeCount];
 		gpuTimers = new DirectionalShadowGpuTimer[options.CascadeCount];
 		currentSnapshot = options.CascadeCount == 0
 			? null
@@ -699,7 +602,7 @@ public sealed class DirectionalShadowRenderer : IDisposable
 
 	private void RefreshDiagnostics(float strength)
 	{
-		DirectionalShadowCascadeDiagnostics[] cascadeDiagnostics = new DirectionalShadowCascadeDiagnostics[options.CascadeCount];
+		DirectionalShadowCascadeDiagnostics[] cascadeDiagnostics = diagnosticsScratch;
 
 		for (int index = 0; index < options.CascadeCount; index++)
 		{
@@ -718,6 +621,7 @@ public sealed class DirectionalShadowRenderer : IDisposable
 			);
 		}
 
+		(diagnosticsPublished, diagnosticsScratch) = (diagnosticsScratch, diagnosticsPublished);
 		Diagnostics = new DirectionalShadowDiagnostics(
 			strength > MinimumStrength,
 			options.MaximumDistance,
@@ -728,7 +632,7 @@ public sealed class DirectionalShadowRenderer : IDisposable
 			0,
 			0,
 			0,
-			cascadeDiagnostics
+			diagnosticsPublished
 		);
 	}
 

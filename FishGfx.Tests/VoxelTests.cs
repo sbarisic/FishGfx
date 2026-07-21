@@ -330,6 +330,11 @@ public partial class VoxelTests
 		VoxelRendererOptions options = new();
 
 		Assert.True(options.WorkerCount > 0);
+		Assert.Equal(4, options.MaximumMeshingWorkers);
+		Assert.Equal(128, options.MaximumReadyMeshJobs);
+		Assert.Equal(32L * 1024 * 1024, options.MaximumReadyMeshBytes);
+		Assert.Equal(64, options.ResumeReadyMeshJobs);
+		Assert.Equal(16L * 1024 * 1024, options.ResumeReadyMeshBytes);
 		Assert.True(options.MeshUploadBudget >= 0);
 		Assert.True(options.MaxRenderDistance > 0);
 		Assert.Equal(64 * 1024 * 1024, options.GeometryPageSizeBytes);

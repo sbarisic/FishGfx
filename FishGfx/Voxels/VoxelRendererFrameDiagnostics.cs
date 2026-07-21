@@ -67,10 +67,13 @@ public readonly struct VoxelRendererFrameDiagnostics
 		VoxelActiveSetRefreshReason activeSetRefreshReason,
 		long meshUploadBytes,
 		int meshUploadSlices,
+		double meshUploadPreparationMilliseconds,
+		int meshUploadStorageGrowths,
 		double oldestMeshUploadJobAgeSeconds,
 		int completedUploadJobs,
 		int discardedUploadJobs,
-		long queuedMeshUploadBytes
+		long queuedMeshUploadBytes,
+		VoxelRendererWorkload workload
 	)
 	{
 		CullingMilliseconds = cullingMilliseconds;
@@ -127,10 +130,13 @@ public readonly struct VoxelRendererFrameDiagnostics
 		ActiveSetRefreshReason = activeSetRefreshReason;
 		MeshUploadBytes = meshUploadBytes;
 		MeshUploadSlices = meshUploadSlices;
+		MeshUploadPreparationMilliseconds = meshUploadPreparationMilliseconds;
+		MeshUploadStorageGrowths = meshUploadStorageGrowths;
 		OldestMeshUploadJobAgeSeconds = oldestMeshUploadJobAgeSeconds;
 		CompletedUploadJobs = completedUploadJobs;
 		DiscardedUploadJobs = discardedUploadJobs;
 		QueuedMeshUploadBytes = queuedMeshUploadBytes;
+		Workload = workload;
 	}
 
 	public double CullingMilliseconds { get; }
@@ -196,8 +202,11 @@ public readonly struct VoxelRendererFrameDiagnostics
 	public VoxelActiveSetRefreshReason ActiveSetRefreshReason { get; }
 	public long MeshUploadBytes { get; }
 	public int MeshUploadSlices { get; }
+	public double MeshUploadPreparationMilliseconds { get; }
+	public int MeshUploadStorageGrowths { get; }
 	public double OldestMeshUploadJobAgeSeconds { get; }
 	public int CompletedUploadJobs { get; }
 	public int DiscardedUploadJobs { get; }
 	public long QueuedMeshUploadBytes { get; }
+	public VoxelRendererWorkload Workload { get; }
 }

@@ -164,8 +164,11 @@ public sealed class VoxelChunk
 			throw new ArgumentException("Prepared storage must contain one complete chunk.", nameof(preparedCells));
 		}
 
+		if (preparedNonAirCount < 0 || preparedNonAirCount > preparedCells.Length)
+			throw new ArgumentOutOfRangeException(nameof(preparedNonAirCount));
+
 		System.Threading.Volatile.Write(ref cells, preparedCells);
-		NonAirCount = Math.Clamp(preparedNonAirCount, 0, preparedCells.Length);
+		NonAirCount = preparedNonAirCount;
 		materialRuns = preparedRuns;
 	}
 

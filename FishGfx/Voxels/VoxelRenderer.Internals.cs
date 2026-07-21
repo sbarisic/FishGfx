@@ -32,6 +32,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		opaqueVertices -= chunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices -= chunk.Cutout?.VertexCount ?? 0;
 		bool castShadow = HasShadowCasterGeometry(chunk);
+		bool affectedActiveOrdering = activeCoordinates.Contains(coordinate)
+			&& HasTransparentGeometry(chunk.Transparent);
 		orderedGpuChunks.Remove(chunk);
 		RemoveFromGpuColumn(chunk);
 		activeCoordinates.Remove(coordinate);
@@ -42,8 +44,11 @@ public sealed partial class VoxelRenderer : IDisposable
 			shadowGeometryRevision++;
 			EnqueueShadowInvalidation(chunk.Bounds);
 		}
-		transparentGeometryRevision++;
-		transparentSourceDirty = true;
+		if (affectedActiveOrdering)
+		{
+			transparentGeometryRevision++;
+			transparentSourceDirty = true;
+		}
 		chunk.Dispose();
 	}
 
@@ -76,6 +81,30 @@ public sealed partial class VoxelRenderer : IDisposable
 		if (options.MeshUploadBudget < 0)
 		{
 			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadBudget));
+		}
+
+		if (options.MaximumMeshingWorkers <= 0)
+			throw new ArgumentOutOfRangeException(nameof(options.MaximumMeshingWorkers));
+		if (options.MaximumReadyMeshJobs <= 0)
+			throw new ArgumentOutOfRangeException(nameof(options.MaximumReadyMeshJobs));
+		if (options.ResumeReadyMeshJobs < 0
+			|| options.ResumeReadyMeshJobs >= options.MaximumReadyMeshJobs)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options.ResumeReadyMeshJobs));
+		}
+		if (options.MaximumReadyMeshBytes <= 0)
+			throw new ArgumentOutOfRangeException(nameof(options.MaximumReadyMeshBytes));
+		if (options.ResumeReadyMeshBytes < 0
+			|| options.ResumeReadyMeshBytes >= options.MaximumReadyMeshBytes)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options.ResumeReadyMeshBytes));
+		}
+		if (options.MeshUploadByteBudget <= 0)
+			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadByteBudget));
+		if (options.MeshUploadSliceBytes <= 0
+			|| options.MeshUploadSliceBytes > options.MeshUploadByteBudget)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadSliceBytes));
 		}
 
 		if (double.IsNaN(options.MeshUploadTimeBudgetMilliseconds)
@@ -168,15 +197,6 @@ public sealed partial class VoxelRenderer : IDisposable
 			chunks = new List<GpuChunk>();
 			gpuChunkColumns.Add(coordinate, chunks);
 		}
-
-		if (options.MeshUploadByteBudget <= 0)
-			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadByteBudget));
-		if (options.MeshUploadSliceBytes <= 0
-			|| options.MeshUploadSliceBytes > options.MeshUploadByteBudget)
-		{
-			throw new ArgumentOutOfRangeException(nameof(options.MeshUploadSliceBytes));
-		}
-
 		chunks.Add(chunk);
 	}
 

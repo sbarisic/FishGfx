@@ -35,7 +35,7 @@ public partial class VoxelRenderingLightingTests
 	}
 
 	[Fact]
-	public void SchedulerPublishesCurrentGeometryBeforeCompletedRelightingThenRemeshes()
+	public void SchedulerWaitsForCompletedRelightingBeforePublishingChangedGeometry()
 	{
 		VoxelPaletteBuilder builder = new();
 		ushort dark = builder.Add(
@@ -71,18 +71,13 @@ public partial class VoxelRenderingLightingTests
 		WaitForWorker(scheduler);
 		world.SetVoxel(1, 1, 1, new VoxelCell(emitting));
 
-		Assert.Equal(1, scheduler.SchedulePending());
-		VoxelMeshData immediate = WaitForResult(scheduler);
-		WaitForWorker(scheduler);
-		Assert.True(immediate.Revision > baseline.Revision);
-		Assert.Equal(baseline.LightRevision, immediate.LightRevision);
-
+		Assert.Equal(0, scheduler.SchedulePending());
 		Drain(lighting);
 		Assert.Equal(1, scheduler.SchedulePending());
 		VoxelMeshData relit = WaitForResult(scheduler);
 
-		Assert.Equal(immediate.Revision, relit.Revision);
-		Assert.True(relit.LightRevision > immediate.LightRevision);
+		Assert.True(relit.Revision > baseline.Revision);
+		Assert.True(relit.LightRevision > baseline.LightRevision);
 	}
 
 	[Fact]

@@ -25,6 +25,7 @@ public sealed partial class VoxelRenderer
 		{
 			RebuildTransparentOrderingSource();
 		}
+		DiscardStalePendingTransparentOrdering();
 		if (transparentIndexUploadJob != null
 			&& !IsTransparentResultCurrent(transparentIndexUploadJob.OrderingResult))
 		{
@@ -37,7 +38,7 @@ public sealed partial class VoxelRenderer
 		{
 			if (!ReferenceEquals(completed.Source, transparentSource)
 				|| completed.Source.GeometryRevision != transparentGeometryRevision
-				|| completed.Source.ActiveSetGeneration != activeSetGeneration)
+				|| completed.Source.ActiveSetGeneration != transparentActiveSetGeneration)
 			{
 				transparentStaleResults++;
 				completed.Dispose();
@@ -50,7 +51,7 @@ public sealed partial class VoxelRenderer
 		Vector3 cameraForward = camera.WorldForwardNormal;
 		VoxelTransparentInvalidationReason reason = GetTransparentInvalidationReason(
 			transparentGeometryRevision,
-			activeSetGeneration,
+			transparentActiveSetGeneration,
 			camera.Position,
 			cameraForward
 		);
@@ -122,7 +123,7 @@ public sealed partial class VoxelRenderer
 		VoxelTransparentOrderingSource replacement = new(
 			chunks,
 			transparentGeometryRevision,
-			activeSetGeneration
+			transparentActiveSetGeneration
 		);
 		VoxelTransparentOrderingSource previous = transparentSource;
 		transparentSource = replacement;
@@ -156,11 +157,21 @@ public sealed partial class VoxelRenderer
 
 	private void QueueTransparentOrdering(VoxelTransparentOrderingResult result)
 	{
+		ArgumentNullException.ThrowIfNull(result);
+
+		if (transparentIndexUploadJob != null)
+		{
+			// Do not restart a partially uploaded index buffer when a moving camera
+			// produces a newer ordering. Finish publishing the current snapshot and
+			// retain only the newest replacement behind it.
+			KeepLatestPendingTransparentOrdering(result);
+			return;
+		}
+
 		long applyStart = Stopwatch.GetTimestamp();
 
 		try
 		{
-			transparentIndexUploadJob?.Dispose();
 			transparentIndexUploadJob = transparentIndexRing.BeginUpload(
 				transparentGeometry.Generation,
 				result
@@ -180,6 +191,44 @@ public sealed partial class VoxelRenderer
 		).TotalMilliseconds;
 	}
 
+	private void KeepLatestPendingTransparentOrdering(
+		VoxelTransparentOrderingResult result)
+	{
+		if (pendingTransparentOrderingResult != null
+			&& pendingTransparentOrderingResult.RequestSequence >= result.RequestSequence)
+		{
+			result.Dispose();
+			return;
+		}
+
+		pendingTransparentOrderingResult?.Dispose();
+		pendingTransparentOrderingResult = result;
+	}
+
+	private void DiscardStalePendingTransparentOrdering()
+	{
+		if (pendingTransparentOrderingResult == null
+			|| IsTransparentResultCurrent(pendingTransparentOrderingResult))
+		{
+			return;
+		}
+
+		transparentStaleResults++;
+		pendingTransparentOrderingResult.Dispose();
+		pendingTransparentOrderingResult = null;
+	}
+
+	private void QueuePendingTransparentOrdering()
+	{
+		DiscardStalePendingTransparentOrdering();
+		if (pendingTransparentOrderingResult == null)
+			return;
+
+		VoxelTransparentOrderingResult pending = pendingTransparentOrderingResult;
+		pendingTransparentOrderingResult = null;
+		QueueTransparentOrdering(pending);
+	}
+
 	private void ProcessTransparentIndexUpload()
 	{
 		if (transparentIndexUploadJob == null)
@@ -187,7 +236,8 @@ public sealed partial class VoxelRenderer
 		int remainingBudget = options.MeshUploadByteBudget
 			- checked((int)Math.Min(meshUploadBytes, int.MaxValue));
 		if (remainingBudget <= 0
-			|| meshUploadMilliseconds >= options.MeshUploadTimeBudgetMilliseconds)
+			|| (meshUploadMilliseconds >= options.MeshUploadTimeBudgetMilliseconds
+				&& meshUploadBytes > 0))
 		{
 			return;
 		}
@@ -210,13 +260,14 @@ public sealed partial class VoxelRenderer
 		visibleTransparentVertices = result.IndexCount;
 		transparentIndexUploadJob.Dispose();
 		transparentIndexUploadJob = null;
+		QueuePendingTransparentOrdering();
 	}
 
 	private bool IsTransparentResultCurrent(VoxelTransparentOrderingResult result)
 	{
 		return ReferenceEquals(result.Source, transparentSource)
 			&& result.Source.GeometryRevision == transparentGeometryRevision
-			&& result.Source.ActiveSetGeneration == activeSetGeneration;
+			&& result.Source.ActiveSetGeneration == transparentActiveSetGeneration;
 	}
 
 	private void ResetTransparentFrameWorkDiagnostics()
@@ -233,7 +284,7 @@ public sealed partial class VoxelRenderer
 	{
 		transparentRequestKey = new VoxelTransparentCacheKey(
 			transparentGeometryRevision,
-			activeSetGeneration,
+			transparentActiveSetGeneration,
 			cameraPosition,
 			cameraForward
 		);

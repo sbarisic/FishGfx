@@ -130,8 +130,11 @@ public sealed partial class VoxelRenderer
 		inactiveCachedChunks = gpuChunks.Count - activeGpuChunks.Count;
 		if (membershipChanged)
 		{
-			activeSetGeneration++;
-			transparentSourceDirty |= transparentMembershipChanged;
+			if (transparentMembershipChanged)
+			{
+				transparentActiveSetGeneration++;
+				transparentSourceDirty = true;
+			}
 		}
 
 		activeSetRefreshReason = firstUse

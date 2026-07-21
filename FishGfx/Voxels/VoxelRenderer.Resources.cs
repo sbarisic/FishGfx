@@ -20,6 +20,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		transparentSnapshot = null;
 		transparentIndexUploadJob?.Dispose();
 		transparentIndexUploadJob = null;
+		pendingTransparentOrderingResult?.Dispose();
+		pendingTransparentOrderingResult = null;
 		transparentSource?.ReleaseOwner();
 		transparentSource = null;
 
@@ -96,6 +98,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		bool previousShadowCaster = HasShadowCasterGeometry(gpuChunk);
+		bool previousTransparentGeometry = HasTransparentGeometry(gpuChunk.Transparent);
+		bool affectedActiveOrdering = activeCoordinates.Contains(result.Coordinate);
 		AxisAlignedBoundingBox previousBounds = gpuChunk.Bounds;
 		bool shadowGeometryChanged = !existed
 			|| gpuChunk.WorldGeneration != result.WorldGeneration
@@ -124,15 +128,21 @@ public sealed partial class VoxelRenderer : IDisposable
 		previousTransparent?.ReleaseOwner();
 		opaqueVertices += gpuChunk.Opaque?.VertexCount ?? 0;
 		cutoutVertices += gpuChunk.Cutout?.VertexCount ?? 0;
+		bool currentTransparentGeometry = HasTransparentGeometry(gpuChunk.Transparent);
 		if (shadowGeometryChanged
 			&& (previousShadowCaster || HasShadowCasterGeometry(gpuChunk)))
 		{
 			shadowGeometryRevision++;
 			EnqueueShadowInvalidation(previousBounds.Union(gpuChunk.Bounds));
 		}
-		transparentGeometryRevision++;
-		transparentSourceDirty = true;
-		activeSetDirty = true;
+		if (affectedActiveOrdering
+			&& (previousTransparentGeometry || currentTransparentGeometry))
+		{
+			transparentGeometryRevision++;
+			transparentSourceDirty = true;
+		}
+		if (!existed)
+			activeSetDirty = true;
 	}
 
 }

@@ -123,8 +123,15 @@ public partial class Camera
 
 	public void LookAtFitToScreen(Vector3 target, float radius)
 	{
-		Vector3 toEye = Vector3.Normalize(Position - target);
+		if (!float.IsFinite(radius) || radius <= 0)
+			throw new ArgumentOutOfRangeException(nameof(radius));
+		Vector3 eyeOffset = Position - target;
+		Vector3 toEye = eyeOffset.LengthSquared() > 1e-12f
+			? Vector3.Normalize(eyeOffset)
+			: -WorldForwardNormal;
 		float tangent = MathF.Tan(Math.Min(HorizontalFOV, VerticalFOV) * 0.5f);
+		if (!float.IsFinite(tangent) || tangent <= 0)
+			throw new InvalidOperationException("The camera field of view cannot fit a target on screen.");
 		float distance = radius / tangent;
 		Position = target + distance * toEye;
 		LookAt(target);

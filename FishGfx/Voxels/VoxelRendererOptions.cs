@@ -10,6 +10,16 @@ public sealed class VoxelRendererOptions
 
 	public int WorkerCount { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
 
+	public int MaximumMeshingWorkers { get; set; } = 4;
+
+	public int MaximumReadyMeshJobs { get; set; } = 128;
+
+	public long MaximumReadyMeshBytes { get; set; } = 32L * 1024 * 1024;
+
+	public int ResumeReadyMeshJobs { get; set; } = 64;
+
+	public long ResumeReadyMeshBytes { get; set; } = 16L * 1024 * 1024;
+
 	public int MeshUploadBudget { get; set; } = 4;
 
 	public double MeshUploadTimeBudgetMilliseconds { get; set; } = double.PositiveInfinity;

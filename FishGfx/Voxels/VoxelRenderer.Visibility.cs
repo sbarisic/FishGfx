@@ -108,7 +108,7 @@ public sealed partial class VoxelRenderer : IDisposable
 			&& transparentIndexUploadMilliseconds == 0
 			&& GetTransparentInvalidationReason(
 				transparentGeometryRevision,
-				activeSetGeneration,
+				transparentActiveSetGeneration,
 				camera.Position,
 				cameraForward
 			) == VoxelTransparentInvalidationReason.None;
@@ -190,10 +190,13 @@ public sealed partial class VoxelRenderer : IDisposable
 			activeSetRefreshReason,
 			meshUploadBytes,
 			meshUploadSlices,
+			meshUploadPreparationMilliseconds,
+			meshUploadStorageGrowths,
 			oldestMeshUploadJobAgeSeconds,
 			completedUploadJobs,
 			discardedUploadJobs,
-			CalculateQueuedUploadBytes()
+			CalculateQueuedUploadBytes(),
+			CaptureWorkload()
 		);
 		ResetTransparentFrameWorkDiagnostics();
 	}

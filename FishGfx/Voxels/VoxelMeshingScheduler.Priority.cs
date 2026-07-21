@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using FishGfx.Graphics;
 
@@ -11,14 +10,16 @@ public sealed partial class VoxelMeshingScheduler
 	private static readonly IComparer<VoxelMeshingPriority> WorstPriorityFirst =
 		Comparer<VoxelMeshingPriority>.Create((left, right) => right.CompareTo(left));
 
-	private static ChunkCoordinate[] SelectPending(
+	private static void SelectPending(
 		IEnumerable<ChunkCoordinate> coordinates,
 		VoxelMeshingFocus? focus,
-		int limit
+		int limit,
+		PriorityQueue<ChunkCoordinate, VoxelMeshingPriority> selected,
+		List<ChunkCoordinate> destination
 	)
 	{
-		PriorityQueue<ChunkCoordinate, VoxelMeshingPriority> selected =
-			new PriorityQueue<ChunkCoordinate, VoxelMeshingPriority>(WorstPriorityFirst);
+		selected.Clear();
+		destination.Clear();
 
 		foreach (ChunkCoordinate coordinate in coordinates)
 		{
@@ -45,10 +46,9 @@ public sealed partial class VoxelMeshingScheduler
 			}
 		}
 
-		return selected.UnorderedItems
-			.OrderBy(item => item.Priority)
-			.Select(item => item.Element)
-			.ToArray();
+		while (selected.TryDequeue(out ChunkCoordinate coordinate, out _))
+			destination.Add(coordinate);
+		destination.Reverse();
 	}
 }
 

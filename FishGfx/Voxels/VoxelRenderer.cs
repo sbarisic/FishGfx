@@ -34,6 +34,7 @@ public sealed partial class VoxelRenderer : IDisposable
 	private readonly List<VoxelPassEntry> shadowCutout = new List<VoxelPassEntry>();
 	private readonly List<VoxelPassEntry> shadowAlpha = new List<VoxelPassEntry>();
 	private readonly List<VoxelMeshData> pendingUploads = new List<VoxelMeshData>();
+	private readonly ReadyMeshComparer readyMeshComparer = new ReadyMeshComparer();
 	private VoxelUploadJob currentUploadJob;
 	private readonly ConcurrentQueue<ChunkCoordinate> removedChunks = new ConcurrentQueue<ChunkCoordinate>();
 	private readonly ShaderProgram voxelShader;
@@ -68,11 +69,12 @@ public sealed partial class VoxelRenderer : IDisposable
 	private long transparentGeometryRevision;
 	private long shadowGeometryRevision;
 	private readonly Queue<AxisAlignedBoundingBox> shadowDirtyBounds = new();
-	private long activeSetGeneration;
+	private long transparentActiveSetGeneration;
 	private long transparentRequestSequence;
 	private VoxelTransparentOrderingSource transparentSource;
 	private VoxelTransparentDrawSnapshot transparentSnapshot;
 	private VoxelTransparentIndexUpload transparentIndexUploadJob;
+	private VoxelTransparentOrderingResult pendingTransparentOrderingResult;
 	private VoxelTransparentCacheKey transparentRequestKey;
 	private bool hasTransparentRequestKey;
 	private bool transparentSourceDirty = true;
@@ -88,10 +90,12 @@ public sealed partial class VoxelRenderer : IDisposable
 	private VoxelRendererFrameDiagnostics frameDiagnostics;
 	private double meshSchedulingMilliseconds;
 	private double meshUploadMilliseconds;
+	private double meshUploadPreparationMilliseconds;
 	private int scheduledMeshes;
 	private int uploadedMeshes;
 	private long meshUploadBytes;
 	private int meshUploadSlices;
+	private int meshUploadStorageGrowths;
 	private double oldestMeshUploadJobAgeSeconds;
 	private int completedUploadJobs;
 	private int discardedUploadJobs;
@@ -114,6 +118,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	private VoxelActiveSetRefreshReason activeSetRefreshReason;
 	private double lastSubmissionMilliseconds;
 	private int lastSubmissionAllocatedBytes;
+	private bool meshBackpressured;
+	private int sparePageStreamCursor;
 
 	public VoxelRenderer(
 		GraphicsContext graphics,
@@ -177,7 +183,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		resolvedPalette,
 		atlasLayout,
 		this.options.Meshing,
-		this.options.WorkerCount,
+			Math.Min(this.options.WorkerCount, this.options.MaximumMeshingWorkers),
 		lighting,
 		poolMeshVertexBuffers: true
 	);
@@ -284,6 +290,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		&& pendingUploads.Count == 0
 		&& currentUploadJob == null
 		&& transparentIndexUploadJob == null
+		&& pendingTransparentOrderingResult == null
 		&& transparentOrdering.IsIdle;
 
 	public bool IsCullingEnabled
@@ -336,6 +343,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	}
 
 	public VoxelRendererFrameDiagnostics FrameDiagnostics => frameDiagnostics;
+
+	public VoxelRendererWorkload Workload => CaptureWorkload();
 
 	/// <summary>
 	/// Revision of geometry that can cast directional shadows. Lighting-only
@@ -409,7 +418,7 @@ public sealed partial class VoxelRenderer : IDisposable
 		transparentSnapshot?.GeometryRevision ?? 0,
 		transparentGeometryRevision,
 		transparentSnapshot?.ActiveSetGeneration ?? 0,
-		activeSetGeneration);
+		transparentActiveSetGeneration);
 
 	internal static bool IsTransparentOrderingCurrent(
 		bool hasSnapshot,
@@ -489,8 +498,16 @@ public sealed partial class VoxelRenderer : IDisposable
 	{
 		ThrowIfDisposed();
 		ProcessRemovedChunks();
+		UpdateMeshBackpressure();
+		VoxelRendererWorkload workloadBeforeScheduling = CaptureWorkload();
+		int readyJobs = workloadBeforeScheduling.CompletedMeshes
+			+ workloadBeforeScheduling.PendingUploadJobs
+			+ workloadBeforeScheduling.InFlightMeshes;
+		int schedulingCapacity = meshBackpressured
+			? 0
+			: Math.Max(0, options.MaximumReadyMeshJobs - readyJobs);
 		long schedulingStart = Stopwatch.GetTimestamp();
-		scheduledMeshes = scheduler.SchedulePending(focus);
+		scheduledMeshes = scheduler.SchedulePending(focus, schedulingCapacity);
 		meshSchedulingMilliseconds = Stopwatch.GetElapsedTime(
 			schedulingStart
 		).TotalMilliseconds;
@@ -516,7 +533,8 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		if (focus.HasValue && pendingUploads.Count > 1)
 		{
-			pendingUploads.Sort((left, right) => CompareReady(left, right, focus.Value));
+			readyMeshComparer.Focus = focus.Value;
+			pendingUploads.Sort(readyMeshComparer);
 		}
 
 		double timeBudget = options.MeshUploadTimeBudgetMilliseconds;
@@ -525,6 +543,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		int uploaded = 0;
 		int bytesUploaded = 0;
 		int slicesUploaded = 0;
+		int storageGrowths = 0;
+		double preparationMilliseconds = 0;
 
 		while (uploaded < budget)
 		{
@@ -547,6 +567,16 @@ public sealed partial class VoxelRenderer : IDisposable
 					if (nextChunk != null)
 						scheduler.MarkDirty(next.Coordinate);
 					continue;
+				}
+				long preparationStart = Stopwatch.GetTimestamp();
+				bool storageReady = PrepareUploadStorage(next, storageGrowths == 0, out bool grewStorage);
+				preparationMilliseconds += Stopwatch.GetElapsedTime(preparationStart).TotalMilliseconds;
+				if (grewStorage)
+					storageGrowths++;
+				if (!storageReady)
+				{
+					pendingUploads.Insert(0, next);
+					break;
 				}
 				currentUploadJob = new VoxelUploadJob(
 					next,
@@ -572,6 +602,8 @@ public sealed partial class VoxelRenderer : IDisposable
 			}
 
 			int remainingBytes = byteBudget - bytesUploaded;
+			if (remainingBytes < System.Runtime.InteropServices.Marshal.SizeOf<VoxelVertex>())
+				break;
 			int sliceBytes = currentUploadJob.UploadNextSlice(
 				Math.Min(options.MeshUploadSliceBytes, remainingBytes)
 			);
@@ -589,11 +621,25 @@ public sealed partial class VoxelRenderer : IDisposable
 			completedUploadJobs++;
 			uploaded++;
 		}
+		if (storageGrowths == 0
+			&& Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds < Math.Min(4, timeBudget))
+		{
+			long sparePreparationStart = Stopwatch.GetTimestamp();
+			bool preparedSpare = TryPrepareSpareGeometryPage();
+			preparationMilliseconds += Stopwatch.GetElapsedTime(
+				sparePreparationStart).TotalMilliseconds;
+			if (preparedSpare)
+				storageGrowths++;
+		}
+		UpdateMeshBackpressure();
 
 		meshUploadMilliseconds = Stopwatch.GetElapsedTime(uploadStart).TotalMilliseconds;
+		meshUploadPreparationMilliseconds = preparationMilliseconds;
 		uploadedMeshes = uploaded;
 		meshUploadBytes = bytesUploaded;
 		meshUploadSlices = slicesUploaded;
+		meshUploadStorageGrowths = storageGrowths;
+		UpdateMeshBackpressure();
 		oldestMeshUploadJobAgeSeconds = currentUploadJob == null
 			? 0
 			: Stopwatch.GetElapsedTime(currentUploadJob.StartedTimestamp).TotalSeconds;
@@ -604,6 +650,65 @@ public sealed partial class VoxelRenderer : IDisposable
 		}
 
 		return uploaded;
+	}
+
+	private bool PrepareUploadStorage(
+		VoxelMeshData result,
+		bool mayGrow,
+		out bool grewStorage)
+	{
+		grewStorage = false;
+		if (!PrepareGeometryStorage(opaqueGeometry, result.OpaqueVertexCount, mayGrow, ref grewStorage))
+			return false;
+		mayGrow &= !grewStorage;
+		if (!PrepareGeometryStorage(cutoutGeometry, result.CutoutVertexCount, mayGrow, ref grewStorage))
+			return false;
+		mayGrow &= !grewStorage;
+		if (!PrepareGeometryStorage(alphaShadowGeometry, result.AlphaShadowVertexCount, mayGrow, ref grewStorage))
+			return false;
+		mayGrow &= !grewStorage;
+		if (transparentGeometry.HasCapacityFor(result.TransparentVertexCount))
+			return true;
+		if (!mayGrow)
+			return false;
+		transparentGeometry.EnsureCapacityFor(result.TransparentVertexCount);
+		grewStorage = true;
+		return true;
+	}
+
+	private bool TryPrepareSpareGeometryPage()
+	{
+		const int streamCount = 3;
+		for (int offset = 0; offset < streamCount; offset++)
+		{
+			int index = (sparePageStreamCursor + offset) % streamCount;
+			VoxelGeometryPagePool stream = index switch
+			{
+				0 => opaqueGeometry,
+				1 => cutoutGeometry,
+				_ => alphaShadowGeometry,
+			};
+			if (!stream.EnsureSparePage())
+				continue;
+			sparePageStreamCursor = (index + 1) % streamCount;
+			return true;
+		}
+		return false;
+	}
+
+	private static bool PrepareGeometryStorage(
+		VoxelGeometryPagePool pool,
+		int vertexCount,
+		bool mayGrow,
+		ref bool grewStorage)
+	{
+		if (pool.HasCapacityFor(vertexCount))
+			return true;
+		if (!mayGrow)
+			return false;
+		pool.EnsureCapacityFor(vertexCount);
+		grewStorage = true;
+		return true;
 	}
 
 	internal void RecordPageSubmission(
@@ -687,6 +792,14 @@ public sealed partial class VoxelRenderer : IDisposable
 			: right.Revision.CompareTo(left.Revision);
 	}
 
+	private sealed class ReadyMeshComparer : IComparer<VoxelMeshData>
+	{
+		internal VoxelMeshingFocus Focus { get; set; }
+
+		public int Compare(VoxelMeshData left, VoxelMeshData right) =>
+			CompareReady(left, right, Focus);
+	}
+
 	private long CalculateQueuedUploadBytes()
 	{
 		long bytes = currentUploadJob?.RemainingBytes ?? 0;
@@ -700,6 +813,47 @@ public sealed partial class VoxelRenderer : IDisposable
 				+ pending.TransparentVertexCount) * stride);
 		}
 		return bytes;
+	}
+
+	private VoxelRendererWorkload CaptureWorkload()
+	{
+		long bytes = checked(scheduler.CompletedBytes + CalculateQueuedUploadBytes());
+		return new VoxelRendererWorkload(
+			scheduler.DirtyCount,
+			scheduler.InFlightCount,
+			scheduler.CompletedCount,
+			pendingUploads.Count + (currentUploadJob == null ? 0 : 1),
+			bytes,
+			meshBackpressured
+		);
+	}
+
+	private void UpdateMeshBackpressure()
+	{
+		int readyJobs = scheduler.CompletedCount
+			+ pendingUploads.Count
+			+ (currentUploadJob == null ? 0 : 1);
+		long readyBytes = checked(scheduler.CompletedBytes + CalculateQueuedUploadBytes());
+		meshBackpressured = EvaluateMeshBackpressure(
+			meshBackpressured,
+			readyJobs,
+			readyBytes,
+			options);
+	}
+
+	internal static bool EvaluateMeshBackpressure(
+		bool currentlyBackpressured,
+		int readyJobs,
+		long readyBytes,
+		VoxelRendererOptions options)
+	{
+		if (currentlyBackpressured)
+		{
+			return readyJobs > options.ResumeReadyMeshJobs
+				|| readyBytes > options.ResumeReadyMeshBytes;
+		}
+		return readyJobs >= options.MaximumReadyMeshJobs
+			|| readyBytes >= options.MaximumReadyMeshBytes;
 	}
 
 	internal static bool IsMeshCurrent(

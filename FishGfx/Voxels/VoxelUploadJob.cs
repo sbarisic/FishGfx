@@ -36,24 +36,42 @@ internal sealed class VoxelUploadJob : IDisposable
 		this.transparentStore = transparentStore;
 		int stride = Marshal.SizeOf<VoxelVertex>();
 		MaximumSliceVertices = Math.Max(1, maximumSliceBytes / stride);
-		Opaque = opaquePool.Reserve(result.OpaqueVertexCount, result.Coordinate.WorldOrigin);
-		Cutout = cutoutPool.Reserve(result.CutoutVertexCount, result.Coordinate.WorldOrigin);
-		AlphaShadow = alphaShadowPool.Reserve(result.AlphaShadowVertexCount, result.Coordinate.WorldOrigin);
-		int transparentVertices = CountTransparentVertices(result.TransparentFaces);
-		Transparent = transparentStore.Reserve(transparentVertices);
-		transparentRecords = CreateTransparentRecords(
-			result.TransparentFaces,
-			result.Coordinate,
-			result.Coordinate.WorldOrigin,
-			Transparent
-		);
-		if (transparentVertices > 0)
-			transparentSlice = ArrayPool<VoxelVertex>.Shared.Rent(MaximumSliceVertices);
-		TotalBytes = checked((long)(
-			result.OpaqueVertexCount
-			+ result.CutoutVertexCount
-			+ result.AlphaShadowVertexCount
-			+ transparentVertices) * stride);
+		transparentRecords = Array.Empty<VoxelTransparentFaceRecord>();
+		try
+		{
+			Opaque = opaquePool.Reserve(result.OpaqueVertexCount, result.Coordinate.WorldOrigin);
+			Cutout = cutoutPool.Reserve(result.CutoutVertexCount, result.Coordinate.WorldOrigin);
+			AlphaShadow = alphaShadowPool.Reserve(result.AlphaShadowVertexCount, result.Coordinate.WorldOrigin);
+			int transparentVertices = CountTransparentVertices(result.TransparentFaces);
+			Transparent = transparentStore.Reserve(transparentVertices);
+			transparentRecords = CreateTransparentRecords(
+				result.TransparentFaces,
+				result.Coordinate,
+				result.Coordinate.WorldOrigin,
+				Transparent
+			);
+			if (transparentVertices > 0)
+				transparentSlice = ArrayPool<VoxelVertex>.Shared.Rent(MaximumSliceVertices);
+			TotalBytes = checked((long)(
+				result.OpaqueVertexCount
+				+ result.CutoutVertexCount
+				+ result.AlphaShadowVertexCount
+				+ transparentVertices) * stride);
+		}
+		catch
+		{
+			Opaque?.ReleaseOwner();
+			Cutout?.ReleaseOwner();
+			AlphaShadow?.ReleaseOwner();
+			Transparent?.ReleaseOwner();
+			if (transparentSlice != null)
+			{
+				ArrayPool<VoxelVertex>.Shared.Return(transparentSlice);
+				transparentSlice = null;
+			}
+			result.ReleasePooledVertexBuffers();
+			throw;
+		}
 		StartedTimestamp = Stopwatch.GetTimestamp();
 	}
 
