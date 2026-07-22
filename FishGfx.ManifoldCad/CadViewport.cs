@@ -42,6 +42,11 @@ internal sealed class CadViewport : IDisposable
 	private Vector2 gizmoRotationCenter;
 	private float gizmoRotationStartAngle;
 	private Mesh3D selectedFaceMesh;
+	private bool pickingRayDebugEnabled;
+	private bool hasDebugPickingRay;
+	private Vector3 debugPickingRayStart;
+	private Vector3 debugPickingRayEnd;
+	private Vector3? debugPickingHit;
 	private bool disposed;
 
 	internal CadViewport(GraphicsContext graphics)
@@ -70,6 +75,19 @@ internal sealed class CadViewport : IDisposable
 		rotationGizmo = !rotationGizmo;
 		activeGizmoAxis = -1;
 		return rotationGizmo;
+	}
+
+	internal bool TogglePickingRayDebug()
+	{
+		pickingRayDebugEnabled = !pickingRayDebugEnabled;
+
+		if (!pickingRayDebugEnabled)
+		{
+			hasDebugPickingRay = false;
+			debugPickingHit = null;
+		}
+
+		return pickingRayDebugEnabled;
 	}
 
 	internal void AddOrReplace(Guid? partId, CadTessellation tessellation, bool runner, bool stale = false)
@@ -189,6 +207,7 @@ internal sealed class CadViewport : IDisposable
 		if (input.WasMouseButtonPressed(MouseButton.Left))
 		{
 			PickContext context = CreatePickContext(bounds, mouse);
+			CaptureDebugPickingRay(context);
 
 			if (TryPickMateGlyph(context) || TryPickMateCandidate(context))
 			{
@@ -262,6 +281,24 @@ internal sealed class CadViewport : IDisposable
 
 	internal bool CanPickMateCandidate(CadRect bounds)
 	{
+		return TryCreateVisibleCandidatePickContext(bounds, out _);
+	}
+
+	internal bool TryCapturePickingRayToVisibleCandidate(CadRect bounds)
+	{
+		if (!TryCreateVisibleCandidatePickContext(bounds, out PickContext context))
+		{
+			return false;
+		}
+
+		pickingRayDebugEnabled = true;
+		CaptureDebugPickingRay(context);
+		return true;
+	}
+
+	private bool TryCreateVisibleCandidatePickContext(CadRect bounds, out PickContext context)
+	{
+		context = default;
 		ConfigureCamera(Math.Max(1, (int)bounds.Width), Math.Max(1, (int)bounds.Height));
 
 		foreach (MateCandidateGlyph candidate in mateCandidates)
@@ -277,12 +314,13 @@ internal sealed class CadViewport : IDisposable
 				bounds.X + screen.X,
 				bounds.Y + bounds.Height - screen.Y
 			);
-			PickContext context = CreatePickContext(bounds, layoutPoint);
+			PickContext candidateContext = CreatePickContext(bounds, layoutPoint);
 
-			if (TryFindMateCandidate(context, out MateCandidateGlyph selected)
+			if (TryFindMateCandidate(candidateContext, out MateCandidateGlyph selected)
 				&& selected.PartId == candidate.PartId
 				&& selected.TopologyId == candidate.TopologyId)
 			{
+				context = candidateContext;
 				return true;
 			}
 		}
@@ -332,6 +370,7 @@ internal sealed class CadViewport : IDisposable
 		DrawMateGlyphs(pass);
 		DrawMateCandidates(pass);
 		DrawPartGizmo(pass);
+		DrawDebugPickingRay(pass);
 
 		return target;
 	}
@@ -379,6 +418,24 @@ internal sealed class CadViewport : IDisposable
 			? camera.WorldToScreen(ray.GetPoint(nearestFace.Value.Distance)).Z
 			: float.PositiveInfinity;
 		return new PickContext(local, ray, nearestFace, nearestFaceItem, faceDepth);
+	}
+
+	private void CaptureDebugPickingRay(PickContext context)
+	{
+		if (!pickingRayDebugEnabled)
+		{
+			return;
+		}
+
+		float rayLength = context.NearestFace.HasValue
+			? context.NearestFace.Value.Distance + Math.Max(distance * 0.25f, 25)
+			: Math.Max(distance * 2, 500);
+		debugPickingRayStart = orthographic ? context.Ray.Origin : camera.Position;
+		debugPickingRayEnd = context.Ray.GetPoint(rayLength);
+		debugPickingHit = context.NearestFace.HasValue
+			? context.Ray.GetPoint(context.NearestFace.Value.Distance)
+			: null;
+		hasDebugPickingRay = true;
 	}
 
 	private bool TryPickMateGlyph(PickContext context)
@@ -948,6 +1005,31 @@ internal sealed class CadViewport : IDisposable
 		pass.DrawLine(new Vertex3(origin, Color.Red), new Vertex3(origin + Vector3.UnitX * length, Color.Red), 4);
 		pass.DrawLine(new Vertex3(origin, Color.Green), new Vertex3(origin + Vector3.UnitY * length, Color.Green), 4);
 		pass.DrawLine(new Vertex3(origin, Color.Blue), new Vertex3(origin + Vector3.UnitZ * length, Color.Blue), 4);
+	}
+
+	private void DrawDebugPickingRay(RenderPass pass)
+	{
+		if (!pickingRayDebugEnabled || !hasDebugPickingRay)
+		{
+			return;
+		}
+
+		using IDisposable stateScope = pass.PushState(pass.State with
+		{
+			DepthTestEnabled = false,
+			DepthWriteEnabled = false,
+		});
+		pass.DrawLine(
+			new Vertex3(debugPickingRayStart, new Color(255, 40, 220)),
+			new Vertex3(debugPickingRayEnd, new Color(255, 40, 220)),
+			3
+		);
+		pass.DrawPoint(new Vertex3(debugPickingRayStart, new Color(80, 220, 255)), 8);
+
+		if (debugPickingHit.HasValue)
+		{
+			pass.DrawPoint(new Vertex3(debugPickingHit.Value, Color.Yellow), 11);
+		}
 	}
 
 	private static void DrawRing(RenderPass pass, Vector3 center, Vector3 axis, float radius, Color color)

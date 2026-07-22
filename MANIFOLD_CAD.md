@@ -37,6 +37,8 @@ Original STEP paths are informational. Reopening a project uses `model.xbf` and 
 4. Move or rotate a selected part with the viewport gizmo or exact millimetre/degree fields. Use **Gizmo** in the toolbar to switch handle modes. Its local mate frame is recomposed and the runner regenerates.
 5. Save `.fgcad` or export the complete placed assembly and valid runner as STEP AP242.
 
+Use **Pick Ray** to debug viewport selection. While enabled, each left click records the exact picking ray: the magenta line shows its world-space path, the cyan point marks its origin, and the yellow point marks the nearest tessellated face hit. Click **Pick Ray** again to clear and disable it.
+
 Replacing a part deliberately invalidates its logical mates. Select compatible replacement topology and use **Create / Rebind Mate**; the mate ID and name remain unchanged.
 
 ## Boundaries

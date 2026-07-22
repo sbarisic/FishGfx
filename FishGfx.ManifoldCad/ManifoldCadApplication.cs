@@ -129,6 +129,13 @@ internal sealed class ManifoldCadApplication : IDisposable
 			bool rotating = viewport.ToggleGizmoMode();
 			ui.SetStatus(rotating ? "Rotation gizmo active." : "Translation gizmo active.");
 		};
+		ui.PickingRayDebugRequested += () =>
+		{
+			bool enabled = viewport.TogglePickingRayDebug();
+			ui.SetStatus(enabled
+				? "Pick-ray debug enabled; click in the model viewport."
+				: "Pick-ray debug disabled.");
+		};
 		viewport.SelectionChanged += SelectViewportItem;
 		viewport.GizmoTranslationChanged += translation =>
 		{
@@ -653,6 +660,13 @@ internal sealed class ManifoldCadApplication : IDisposable
 		}
 
 		viewport.Fit();
+
+		if (!string.IsNullOrWhiteSpace(stepPath)
+			&& !viewport.TryCapturePickingRayToVisibleCandidate(CadLayout.Viewport(window.Width, window.Height)))
+		{
+			throw new InvalidOperationException("Automatic fixture could not capture its debug picking ray.");
+		}
+
 		RunnerNode bend = project.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.Bend);
 		nodeCanvas.SelectBySource(bend.Id, project.Graph);
 	}

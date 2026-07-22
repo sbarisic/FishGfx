@@ -56,6 +56,7 @@ internal sealed class CadUi : IDisposable
 		CreateToolbarButton("Front", 808, () => ViewRequested?.Invoke(CadStandardView.Front));
 		CreateToolbarButton("Right", 884, () => ViewRequested?.Invoke(CadStandardView.Right));
 		CreateToolbarButton("Gizmo", 962, () => GizmoModeRequested?.Invoke());
+		CreateToolbarButton("Pick Ray", 1038, () => PickingRayDebugRequested?.Invoke());
 		ui.AddControl(toolbar);
 
 		modelPanel = new Panel
@@ -175,6 +176,7 @@ internal sealed class CadUi : IDisposable
 
 	internal event Action<CadStandardView> ViewRequested;
 	internal event Action GizmoModeRequested;
+	internal event Action PickingRayDebugRequested;
 
 	internal bool InteractionEnabled
 	{
