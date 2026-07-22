@@ -158,7 +158,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 		CadRect graphBounds = CadLayout.Graph(window.Width);
 		Vector2 mouse = input.MousePosition;
 		viewport.OnScroll(viewportBounds.Contains(mouse) ? scrollDelta : 0);
-		viewport.Update(viewportBounds, input);
+		viewport.Update(viewportBounds, input, mouse);
 		nodeCanvas.Update(project.Graph, graphBounds, input, mouse, graphBounds.Contains(mouse) ? scrollDelta : 0);
 		ui.Update(deltaTime, time);
 	}
@@ -272,13 +272,15 @@ internal sealed class ManifoldCadApplication : IDisposable
 	{
 		if (!hasSelectedTopology || selectedPart == null)
 		{
-			ui.SetStatus("Select a circular edge or cylindrical face first.", true);
+			ui.SetStatus("Select a cyan mate candidate or supported topology first.", true);
 			return;
 		}
 
-		if (selectedTopology.Topology.Kind is not CadTopologyKind.CircularEdge and not CadTopologyKind.CylindricalFace)
+		if (selectedTopology.Topology.Kind is not CadTopologyKind.CircularEdge
+			and not CadTopologyKind.CylindricalFace
+			and not CadTopologyKind.ClosedProfile)
 		{
-			ui.SetStatus("V1 mates require a circular edge or cylindrical face.", true);
+			ui.SetStatus("Mates require a circular edge, cylindrical face, or detected closed profile.", true);
 			return;
 		}
 
@@ -288,6 +290,14 @@ internal sealed class ManifoldCadApplication : IDisposable
 				selectedTopology.Topology,
 				viewport.Selection.HitPoint
 			).GetAwaiter().GetResult();
+			RunnerNode mateReference = project.Graph.Nodes.FirstOrDefault(node =>
+				node.DefinitionId == RunnerNodes.MateReference);
+			CadMate referencedMate = mateReference != null
+				&& mateReference.Properties.TryGetValue("mateId", out string mateIdText)
+				&& Guid.TryParse(mateIdText, out Guid mateId)
+				? project.Mates.FirstOrDefault(mate => mate.Id == mateId && mate.PartId == selectedPart.Id)
+				: null;
+			selectedMate ??= referencedMate;
 			selectedMate ??= project.Mates.FirstOrDefault(mate => mate.PartId == selectedPart.Id && !mate.IsResolved);
 			selectedMate ??= project.AddMate(selectedPart.Id, $"Mate {project.Mates.Count + 1}");
 			selectedMate.Rebind(selectedTopology.Topology, result.Value.Frame, result.Value.RadiusMillimetres);
@@ -296,6 +306,10 @@ internal sealed class ManifoldCadApplication : IDisposable
 			if (project.Graph.Nodes.Count == 0)
 			{
 				project.Graph = RunnerGraph.CreateDefault(selectedMate.Id);
+			}
+			else if (mateReference != null)
+			{
+				mateReference.Properties["mateId"] = selectedMate.Id.ToString("D");
 			}
 
 			RegenerateRunner();
@@ -377,6 +391,16 @@ internal sealed class ManifoldCadApplication : IDisposable
 		{
 			viewport.AddOrReplace(part.Id, preview.Value, false);
 		}
+
+		CadRevisioned<IReadOnlyList<NativeTopologyDescriptor>> topology = document.GetTopologyAsync(part.Id)
+			.GetAwaiter()
+			.GetResult();
+
+		if (topology.Revision == document.Revision)
+		{
+			viewport.SetMateCandidates(part, topology.Value);
+			viewport.SetMates(project);
+		}
 	}
 
 	private void SelectViewportItem(CadViewportSelection selection)
@@ -409,6 +433,24 @@ internal sealed class ManifoldCadApplication : IDisposable
 		selectedTopology = topology.Value.FirstOrDefault(item => item.Topology.TopologyId == selection.TopologyId);
 		hasSelectedTopology = selectedTopology != null;
 		RefreshUi();
+
+		if (hasSelectedTopology && selection.IsMateCandidate)
+		{
+			CreateOrRebindMate();
+			return;
+		}
+
+		if (hasSelectedTopology)
+		{
+			bool mateEligible = selectedTopology.Topology.Kind is CadTopologyKind.CircularEdge
+				or CadTopologyKind.CylindricalFace
+				or CadTopologyKind.ClosedProfile;
+			ui.SetStatus(
+				mateEligible
+					? $"Selected {selectedTopology.Topology.Kind}; click Create / Rebind Mate."
+					: $"Selected {selectedTopology.Topology.Kind}; choose a cyan candidate sphere or supported topology."
+			);
+		}
 	}
 
 	private void SaveProject(string path)
@@ -515,9 +557,16 @@ internal sealed class ManifoldCadApplication : IDisposable
 			throw new InvalidOperationException("Automatic graphical validation captured an empty frame.");
 		}
 
+		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
+			&& viewport.MateCandidateCount == 0)
+		{
+			throw new InvalidOperationException("Automatic STEP validation found no visible mate candidates.");
+		}
+
 		Console.WriteLine(
 			$"MANIFOLD_CAD_AUTO_OK renderer={window.Graphics.Capabilities.Renderer} "
 			+ $"fishUiInput=enabled vertices=exact-runner visibleSamples={autoVisibleSamples} "
+			+ $"mateCandidates={viewport.MateCandidateCount} "
 			+ $"screenshot={autoScreenshotPath}"
 		);
 	}
@@ -543,13 +592,36 @@ internal sealed class ManifoldCadApplication : IDisposable
 	private void ConfigureAutomaticFixture()
 	{
 		CadPart part = project.AddPart("Automated flange fixture");
-		part.Transform = new CadTransform(new CadPoint3(15, -8, 4), CadQuaternion.Identity);
+		string stepPath = Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP");
+		part.Transform = string.IsNullOrWhiteSpace(stepPath)
+			? new CadTransform(new CadPoint3(15, -8, 4), CadQuaternion.Identity)
+			: CadTransform.Identity;
 		CadMate mate = project.AddMate(part.Id, "Cylinder 1");
-		mate.Rebind(
-			new CadTopologyRef(part.Id, 1, CadTopologyKind.CircularEdge),
-			new CadFrame(CadPoint3.Zero, new CadPoint3(1, 0, 0), new CadPoint3(0, 1, 0)),
-			21.2
-		);
+
+		if (!string.IsNullOrWhiteSpace(stepPath))
+		{
+			document.ImportStepAsync(part, stepPath).GetAwaiter().GetResult();
+			NativeTopologyDescriptor candidate = document.GetTopologyAsync(part.Id).GetAwaiter().GetResult().Value
+				.Where(item => item.Topology.Kind == CadTopologyKind.ClosedProfile && item.Axis.Z > 0.5)
+				.OrderByDescending(item => item.RadiusMillimetres)
+				.First();
+			MateFrameResult frame = document.GetMateFrameAsync(candidate.Topology, candidate.Center)
+				.GetAwaiter()
+				.GetResult()
+				.Value;
+			mate.Rebind(candidate.Topology, frame.Frame, frame.RadiusMillimetres);
+			document.BindMateSelectorAsync(mate).GetAwaiter().GetResult();
+			UploadPart(part);
+		}
+		else
+		{
+			mate.Rebind(
+				new CadTopologyRef(part.Id, 1, CadTopologyKind.CircularEdge),
+				new CadFrame(CadPoint3.Zero, new CadPoint3(1, 0, 0), new CadPoint3(0, 1, 0)),
+				21.2
+			);
+		}
+
 		project.Graph = RunnerGraph.CreateDefault(mate.Id);
 		selectedPart = part;
 		selectedMate = mate;
@@ -557,7 +629,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 		document.BuildRunnerAsync(evaluation).GetAwaiter().GetResult();
 		CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync().GetAwaiter().GetResult();
 		viewport.AddOrReplace(null, preview.Value, true);
-		viewport.SetView(CadStandardView.Right);
+		viewport.SetView(string.IsNullOrWhiteSpace(stepPath) ? CadStandardView.Right : CadStandardView.Front);
 		viewport.Fit();
 		RunnerNode bend = project.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.Bend);
 		nodeCanvas.SelectBySource(bend.Id, project.Graph);

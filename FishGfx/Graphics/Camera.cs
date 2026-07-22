@@ -146,6 +146,38 @@ public partial class Camera
 		float farPlane = 10000
 	)
 	{
+		SetOrthogonal(
+			left,
+			bottom,
+			right,
+			top,
+			new Vector2(MathF.Abs(left - right), MathF.Abs(bottom - top)),
+			nearPlane,
+			farPlane
+		);
+	}
+
+	public void SetOrthogonal(
+		float left,
+		float bottom,
+		float right,
+		float top,
+		Vector2 viewportSize,
+		float nearPlane = 1,
+		float farPlane = 10000
+	)
+	{
+		if (!float.IsFinite(viewportSize.X)
+			|| !float.IsFinite(viewportSize.Y)
+			|| viewportSize.X <= 0
+			|| viewportSize.Y <= 0)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(viewportSize),
+				"Viewport dimensions must be finite and greater than zero."
+			);
+		}
+
 		Projection = Matrix4x4.CreateOrthographicOffCenter(
 			left,
 			right,
@@ -154,10 +186,7 @@ public partial class Camera
 			nearPlane,
 			farPlane
 		);
-		ViewportSize = new Vector2(
-			MathF.Abs(left - right),
-			MathF.Abs(bottom - top)
-		);
+		ViewportSize = viewportSize;
 		Near = nearPlane;
 		Far = farPlane;
 	}

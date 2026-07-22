@@ -44,7 +44,7 @@ std::filesystem::path temporary(const char* extension)
 
 int main()
 {
-	require(fgcad_api_version() == 1, "ABI version mismatch");
+	require(fgcad_api_version() == 2, "ABI version mismatch");
 	fgcad_document* document = nullptr;
 	require(fgcad_document_create(&document) == FGCAD_STATUS_OK, "Document creation failed");
 	require(document != nullptr, "Document handle was null");
@@ -161,6 +161,11 @@ int main()
 		return item.kind == FGCAD_TOPOLOGY_CIRCULAR_EDGE;
 	});
 	require(circular != topology.end(), "Circular-edge recognition failed");
+	auto closed_profile = std::find_if(topology.begin(), topology.end(), [](const fgcad_topology_info& item)
+	{
+		return item.kind == FGCAD_TOPOLOGY_CLOSED_PROFILE;
+	});
+	require(closed_profile != topology.end(), "Planar closed-profile recognition failed");
 	fgcad_frame frame{};
 	double radius = 0;
 	fgcad_point3 hit = circular->center;
@@ -170,6 +175,13 @@ int main()
 		"Exact circular mate-frame extraction failed"
 	);
 	require(radius > 0 && std::isfinite(radius), "Mate radius was invalid");
+	fgcad_point3 profile_hit = closed_profile->center;
+	require(
+		fgcad_document_get_mate_frame(reopened, part_id, closed_profile->id, &profile_hit, &frame, &radius)
+			== FGCAD_STATUS_OK,
+		"Exact closed-profile mate-frame extraction failed"
+	);
+	require(radius > 0 && std::isfinite(radius), "Closed-profile equivalent radius was invalid");
 	fgcad_transform placement{};
 	placement.translation = { 300, 20, -10 };
 	placement.rotation.w = 1;
@@ -182,9 +194,9 @@ int main()
 			reopened,
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			part_id,
-			circular->id
+			closed_profile->id
 		) == FGCAD_STATUS_OK,
-		"OCAF topology selector binding failed"
+		"OCAF closed-profile selector binding failed"
 	);
 	std::filesystem::path selected_binary = temporary("-selector.xbf");
 	require(

@@ -43,9 +43,15 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			await document.InvokeAsync(() =>
 			{
-				if (NativeMethods.ApiVersion() != 1)
+				const uint requiredApiVersion = 2;
+				uint apiVersion = NativeMethods.ApiVersion();
+
+				if (apiVersion != requiredApiVersion)
 				{
-					throw new CadKernelException("Initialize", "Unsupported native CAD ABI version.");
+					throw new CadKernelException(
+						"Initialize",
+						$"Unsupported native CAD ABI version {apiVersion}; expected {requiredApiVersion}."
+					);
 				}
 
 				Check(NativeMethods.DocumentCreate(out nint nativeHandle), "Create CAD document");

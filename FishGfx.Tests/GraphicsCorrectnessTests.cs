@@ -55,6 +55,57 @@ public class GraphicsCorrectnessTests
 	}
 
 	[Fact]
+	public void OrthographicProjectionUsesPixelViewportIndependentlyFromWorldExtents()
+	{
+		Camera camera = new();
+		camera.SetOrthogonal(
+			-100,
+			-50,
+			100,
+			50,
+			new Vector2(1200, 600),
+			-1,
+			1
+		);
+
+		Vector3 topLeft = camera.ProjectToViewport(new Vector3(-100, 50, 0));
+		Vector3 bottomRight = camera.ProjectToViewport(new Vector3(100, -50, 0));
+
+		Assert.Equal(new Vector2(1200, 600), camera.ViewportSize);
+		Assert.Equal(0, topLeft.X, 4);
+		Assert.Equal(0, topLeft.Y, 4);
+		Assert.Equal(1200, bottomRight.X, 4);
+		Assert.Equal(600, bottomRight.Y, 4);
+		Assert.True(camera.TryUnproject(topLeft, out Vector3 restoredTopLeft));
+		Assert.True(camera.TryUnproject(bottomRight, out Vector3 restoredBottomRight));
+		AssertVector(new Vector3(-100, 50, 0), restoredTopLeft);
+		AssertVector(new Vector3(100, -50, 0), restoredBottomRight);
+	}
+
+	[Fact]
+	public void OrthographicPickingRayUsesPixelViewportCenter()
+	{
+		Camera camera = new();
+		camera.SetOrthogonal(
+			-200,
+			-100,
+			200,
+			100,
+			new Vector2(1000, 500),
+			0.1f,
+			100
+		);
+
+		PickingRay ray = camera.CreatePickingRay(new Vector2(500, 250));
+
+		Assert.InRange(ray.Origin.X, -0.0001f, 0.0001f);
+		Assert.InRange(ray.Origin.Y, -0.0001f, 0.0001f);
+		Assert.InRange(ray.Direction.X, -0.0001f, 0.0001f);
+		Assert.InRange(ray.Direction.Y, -0.0001f, 0.0001f);
+		Assert.InRange(ray.Direction.Z, -1.0001f, -0.9999f);
+	}
+
+	[Fact]
 	public void PerspectivePickingRayPointsThroughViewportCenter()
 	{
 		Camera camera = new();

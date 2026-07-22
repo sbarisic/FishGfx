@@ -11,7 +11,8 @@ internal readonly record struct CadViewportSelection(
 	ulong TopologyId,
 	Guid? SourceNodeId,
 	CadPoint3 HitPoint,
-	Guid? MateId
+	Guid? MateId,
+	bool IsMateCandidate = false
 );
 
 internal sealed class CadViewport : IDisposable
@@ -20,6 +21,8 @@ internal sealed class CadViewport : IDisposable
 	private readonly Camera camera = new();
 	private readonly List<SceneItem> items = new();
 	private readonly List<MateGlyph> mates = new();
+	private readonly List<MateCandidateGlyph> mateCandidates = new();
+	private readonly Mesh3D candidateSphere;
 	private RenderTarget target;
 	private Vector3 focus;
 	private float distance = 450;
@@ -37,11 +40,13 @@ internal sealed class CadViewport : IDisposable
 	private CadPoint3 gizmoEulerStart;
 	private Vector2 gizmoRotationCenter;
 	private float gizmoRotationStartAngle;
+	private Mesh3D selectedFaceMesh;
 	private bool disposed;
 
 	internal CadViewport(GraphicsContext graphics)
 	{
 		this.graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
+		candidateSphere = CreateCandidateSphere(graphics);
 	}
 
 	internal event Action<CadViewportSelection> SelectionChanged;
@@ -50,6 +55,7 @@ internal sealed class CadViewport : IDisposable
 	internal event Action<CadPoint3> GizmoRotationChanged;
 
 	internal CadViewportSelection Selection { get; private set; }
+	internal int MateCandidateCount => mateCandidates.Count;
 
 	internal void SetSelectedPart(CadPart part, CadPoint3 euler)
 	{
@@ -90,6 +96,31 @@ internal sealed class CadViewport : IDisposable
 			CadPart part = project.Parts.Single(item => item.Id == mate.PartId);
 			mates.Add(new MateGlyph(mate.Id, part.Id, mate.Topology.Value.TopologyId, mate.LocalFrame.Value.Transformed(part.Transform)));
 		}
+
+		HashSet<(Guid PartId, ulong TopologyId)> bound = project.Mates
+			.Where(mate => mate.IsResolved)
+			.Select(mate => (mate.PartId, mate.Topology.Value.TopologyId))
+			.ToHashSet();
+		mateCandidates.RemoveAll(candidate => bound.Contains((candidate.PartId, candidate.TopologyId)));
+	}
+
+	internal void SetMateCandidates(CadPart part, IReadOnlyList<NativeTopologyDescriptor> topology)
+	{
+		ArgumentNullException.ThrowIfNull(part);
+		ArgumentNullException.ThrowIfNull(topology);
+		mateCandidates.RemoveAll(candidate => candidate.PartId == part.Id);
+
+		foreach (NativeTopologyDescriptor descriptor in topology.Where(item =>
+			item.Topology.Kind == CadTopologyKind.ClosedProfile))
+		{
+			mateCandidates.Add(new MateCandidateGlyph(
+				part.Id,
+				descriptor.Topology.TopologyId,
+				part.Transform.TransformPoint(descriptor.Center),
+				part.Transform.TransformDirection(descriptor.Axis).Normalized(),
+				descriptor.RadiusMillimetres
+			));
+		}
 	}
 
 	internal void MarkRunnerStale()
@@ -109,9 +140,8 @@ internal sealed class CadViewport : IDisposable
 		}
 	}
 
-	internal void Update(CadRect bounds, InputManager input)
+	internal void Update(CadRect bounds, InputManager input, Vector2 mouse)
 	{
-		Vector2 mouse = input.MousePosition;
 		Vector2 delta = mouse - previousMouse;
 		previousMouse = mouse;
 
@@ -129,8 +159,13 @@ internal sealed class CadViewport : IDisposable
 		if (input.IsMouseButtonDown(MouseButton.Middle))
 		{
 			float scale = Math.Max(distance, 1) / Math.Max(bounds.Height, 1);
-			focus -= camera.WorldRightNormal * delta.X * scale;
-			focus -= camera.WorldUpNormal * delta.Y * scale;
+			focus = PanFocus(
+				focus,
+				camera.WorldRightNormal,
+				camera.WorldUpNormal,
+				delta,
+				scale
+			);
 		}
 
 		if (scrollDelta != 0)
@@ -225,7 +260,7 @@ internal sealed class CadViewport : IDisposable
 		foreach (SceneItem item in items)
 		{
 			pass.DrawMesh(item.Mesh);
-			DrawEdges(pass, item, highlightedNodeId);
+			DrawEdges(pass, item, highlightedNodeId, Selection);
 
 			if (highlightedNodeId.HasValue && item.HighlightMeshes.TryGetValue(highlightedNodeId.Value, out Mesh3D highlight))
 			{
@@ -233,7 +268,13 @@ internal sealed class CadViewport : IDisposable
 			}
 		}
 
+		if (selectedFaceMesh != null)
+		{
+			pass.DrawMesh(selectedFaceMesh);
+		}
+
 		DrawMateGlyphs(pass);
+		DrawMateCandidates(pass);
 		DrawPartGizmo(pass);
 
 		return target;
@@ -254,66 +295,148 @@ internal sealed class CadViewport : IDisposable
 		}
 
 		items.Clear();
+		selectedFaceMesh?.Dispose();
+		candidateSphere.Dispose();
 		target?.Dispose();
 	}
 
 	private void Pick(CadRect bounds, Vector2 mouse)
 	{
 		ConfigureCamera(Math.Max(1, (int)bounds.Width), Math.Max(1, (int)bounds.Height));
-		Vector2 local = new(mouse.X - bounds.X, bounds.Height - (mouse.Y - bounds.Y));
+		Vector2 local = ToCameraPoint(bounds, mouse);
 		PickingRay ray = camera.CreatePickingRay(local);
+		CadPickHit? nearestFace = null;
+		SceneItem nearestFaceItem = null;
+
+		foreach (SceneItem item in items)
+		{
+			if (item.Bvh.TryIntersect(ray, out CadPickHit hit)
+				&& (!nearestFace.HasValue || hit.Distance < nearestFace.Value.Distance))
+			{
+				nearestFace = hit;
+				nearestFaceItem = item;
+			}
+		}
+
+		float faceDepth = nearestFace.HasValue
+			? camera.WorldToScreen(ray.GetPoint(nearestFace.Value.Distance)).Z
+			: float.PositiveInfinity;
 		MateGlyph? glyph = mates
 			.Select(mate => (Mate: mate, Screen: camera.WorldToScreen(ToVector(mate.Frame.Origin))))
-			.Where(item => item.Screen.Z >= -1 && item.Screen.Z <= 1)
-			.OrderBy(item => Vector2.Distance(new Vector2(item.Screen.X, item.Screen.Y), local))
-			.Where(item => Vector2.Distance(new Vector2(item.Screen.X, item.Screen.Y), local) <= 11)
+			.Select(item => (
+				item.Mate,
+				item.Screen,
+				Distance: Vector2.Distance(new Vector2(item.Screen.X, item.Screen.Y), local)
+			))
+			.Where(item => IsProjectedPointVisible(item.Screen, faceDepth) && item.Distance <= 11)
+			.OrderBy(item => item.Distance)
+			.ThenBy(item => item.Screen.Z)
 			.Select(item => (MateGlyph?)item.Mate)
 			.FirstOrDefault();
 
 		if (glyph.HasValue)
 		{
 			MateGlyph mate = glyph.Value;
-			Selection = new CadViewportSelection(mate.PartId, mate.TopologyId, null, mate.Frame.Origin, mate.Id);
-			SelectionChanged?.Invoke(Selection);
+			SetSelection(new CadViewportSelection(mate.PartId, mate.TopologyId, null, mate.Frame.Origin, mate.Id));
 			return;
 		}
 
-		if (TryPickEdge(local, out SceneItem edgeItem, out CadEdgePolyline edge))
+		if (TryPickMateCandidate(ray, nearestFace?.Distance ?? float.PositiveInfinity, out MateCandidateGlyph candidate))
 		{
-			Selection = new CadViewportSelection(edgeItem.PartId, edge.TopologyId, null, ClosestPoint(edge, local), null);
-			SelectionChanged?.Invoke(Selection);
+			SetSelection(new CadViewportSelection(
+				candidate.PartId,
+				candidate.TopologyId,
+				null,
+				candidate.Center,
+				null,
+				true
+			));
 			return;
 		}
 
-		CadPickHit? nearest = null;
-		SceneItem nearestItem = null;
-
-		foreach (SceneItem item in items)
+		if (TryPickEdge(local, faceDepth, out SceneItem edgeItem, out CadEdgePolyline edge, out CadPoint3 edgePoint))
 		{
-			if (item.Bvh.TryIntersect(ray, out CadPickHit hit)
-				&& (!nearest.HasValue || hit.Distance < nearest.Value.Distance))
+			SetSelection(new CadViewportSelection(edgeItem.PartId, edge.TopologyId, null, edgePoint, null));
+			return;
+		}
+
+		SetSelection(nearestFace.HasValue
+			? new CadViewportSelection(
+				nearestFaceItem.PartId,
+				nearestFace.Value.TopologyId,
+				nearestFace.Value.SourceNodeId,
+				CadPoint3.FromVector3(ray.GetPoint(nearestFace.Value.Distance)),
+				null
+			)
+			: default);
+	}
+
+	private void SetSelection(CadViewportSelection selection)
+	{
+		Selection = selection;
+		selectedFaceMesh?.Dispose();
+		selectedFaceMesh = null;
+
+		if (selection.PartId.HasValue)
+		{
+			SceneItem item = items.FirstOrDefault(candidate => candidate.PartId == selection.PartId);
+			CadFaceRange[] faces = item?.Tessellation.Faces
+				.Where(face => face.TopologyId == selection.TopologyId)
+				.ToArray();
+
+			if (faces?.Length > 0)
 			{
-				nearest = hit;
-				nearestItem = item;
+				selectedFaceMesh = graphics.CreateMesh3D(BufferUsage.Dynamic);
+				selectedFaceMesh.SetVertices(item.Tessellation.Vertices
+					.Select(vertex => new Vector3(vertex.X, vertex.Y, vertex.Z))
+					.ToArray());
+				selectedFaceMesh.DefaultColor = new Color(255, 205, 55, 190);
+				selectedFaceMesh.SetElements(faces
+					.SelectMany(face => item.Tessellation.Indices.Skip(face.FirstIndex).Take(face.IndexCount))
+					.ToArray());
 			}
 		}
 
-		Selection = nearest.HasValue
-			? new CadViewportSelection(
-				nearestItem.PartId,
-				nearest.Value.TopologyId,
-				nearest.Value.SourceNodeId,
-				CadPoint3.FromVector3(ray.GetPoint(nearest.Value.Distance)),
-				null
-			)
-			: default;
 		SelectionChanged?.Invoke(Selection);
 	}
 
-	private bool TryPickEdge(Vector2 mouse, out SceneItem selectedItem, out CadEdgePolyline selectedEdge)
+	private bool TryPickMateCandidate(
+		PickingRay ray,
+		float faceDistance,
+		out MateCandidateGlyph selectedCandidate
+	)
+	{
+		selectedCandidate = default;
+		float nearest = float.PositiveInfinity;
+
+		foreach (MateCandidateGlyph candidate in mateCandidates)
+		{
+			Vector3 center = CandidateDisplayCenter(candidate);
+			float radius = CandidateDisplayRadius(candidate);
+
+			if (TryIntersectSphere(ray, center, radius, out float distance)
+				&& distance <= faceDistance + Math.Max(radius * 0.05f, 0.01f)
+				&& distance < nearest)
+			{
+				nearest = distance;
+				selectedCandidate = candidate;
+			}
+		}
+
+		return float.IsFinite(nearest);
+	}
+
+	private bool TryPickEdge(
+		Vector2 mouse,
+		float faceDepth,
+		out SceneItem selectedItem,
+		out CadEdgePolyline selectedEdge,
+		out CadPoint3 selectedPoint
+	)
 	{
 		selectedItem = null;
 		selectedEdge = null;
+		selectedPoint = default;
 		float best = 7;
 		float bestDepth = float.PositiveInfinity;
 
@@ -324,15 +447,29 @@ internal sealed class CadViewport : IDisposable
 				{
 					Vector3 a = camera.WorldToScreen(ToVector(edge.Points[index - 1]));
 					Vector3 b = camera.WorldToScreen(ToVector(edge.Points[index]));
-					float distance = DistanceToSegment(mouse, new Vector2(a.X, a.Y), new Vector2(b.X, b.Y));
-					float depth = MathF.Min(a.Z, b.Z);
 
-					if (distance < best || (MathF.Abs(distance - best) < 0.25f && depth < bestDepth))
+					if (!IsProjectedPointInClip(a) || !IsProjectedPointInClip(b))
+					{
+						continue;
+					}
+
+					float amount = ClosestSegmentAmount(
+						mouse,
+						new Vector2(a.X, a.Y),
+						new Vector2(b.X, b.Y)
+					);
+					Vector2 projected = Vector2.Lerp(new Vector2(a.X, a.Y), new Vector2(b.X, b.Y), amount);
+					float distance = Vector2.Distance(mouse, projected);
+					float depth = float.Lerp(a.Z, b.Z, amount);
+
+					if (depth <= faceDepth + 0.002f
+						&& (distance < best || (MathF.Abs(distance - best) < 0.25f && depth < bestDepth)))
 					{
 						best = distance;
 						bestDepth = depth;
 						selectedItem = item;
 						selectedEdge = edge;
+						selectedPoint = edge.Points[index - 1] + (edge.Points[index] - edge.Points[index - 1]) * amount;
 					}
 				}
 			}
@@ -352,7 +489,7 @@ internal sealed class CadViewport : IDisposable
 			return TryBeginRotationGizmo(bounds, mouse);
 		}
 
-		Vector2 local = new(mouse.X - bounds.X, bounds.Height - (mouse.Y - bounds.Y));
+		Vector2 local = ToCameraPoint(bounds, mouse);
 		Vector3 origin = camera.WorldToScreen(ToVector(selectedPart.Transform.Translation));
 		Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
 		float length = Math.Max(distance * 0.08f, 20);
@@ -413,7 +550,7 @@ internal sealed class CadViewport : IDisposable
 
 	private bool TryBeginRotationGizmo(CadRect bounds, Vector2 mouse)
 	{
-		Vector2 local = new(mouse.X - bounds.X, bounds.Height - (mouse.Y - bounds.Y));
+		Vector2 local = ToCameraPoint(bounds, mouse);
 		Vector3 center = ToVector(selectedPart.Transform.Translation);
 		Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
 		float radius = Math.Max(distance * 0.065f, 16);
@@ -462,7 +599,7 @@ internal sealed class CadViewport : IDisposable
 
 	private void UpdateRotationGizmo(CadRect bounds, Vector2 mouse)
 	{
-		Vector2 local = new(mouse.X - bounds.X, bounds.Height - (mouse.Y - bounds.Y));
+		Vector2 local = ToCameraPoint(bounds, mouse);
 		float currentAngle = MathF.Atan2(
 			local.Y - gizmoRotationCenter.Y,
 			local.X - gizmoRotationCenter.X
@@ -487,32 +624,73 @@ internal sealed class CadViewport : IDisposable
 		GizmoRotationChanged?.Invoke(euler);
 	}
 
-	private CadPoint3 ClosestPoint(CadEdgePolyline edge, Vector2 mouse)
+	internal static bool TryIntersectSphere(PickingRay ray, Vector3 center, float radius, out float distance)
 	{
-		float best = float.PositiveInfinity;
-		CadPoint3 result = edge.Points[0];
+		Vector3 offset = ray.Origin - center;
+		float along = Vector3.Dot(offset, ray.Direction);
+		float discriminant = along * along - (offset.LengthSquared() - radius * radius);
 
-		foreach (CadPoint3 point in edge.Points)
+		if (discriminant < 0)
 		{
-			Vector3 screen = camera.WorldToScreen(ToVector(point));
-			float distance = Vector2.DistanceSquared(mouse, new Vector2(screen.X, screen.Y));
-
-			if (distance < best)
-			{
-				best = distance;
-				result = point;
-			}
+			distance = 0;
+			return false;
 		}
 
-		return result;
+		float root = MathF.Sqrt(discriminant);
+		float near = -along - root;
+		float far = -along + root;
+		distance = near >= 0 ? near : far;
+		return distance >= 0;
 	}
 
 	private static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
 	{
+		float amount = ClosestSegmentAmount(point, start, end);
+		return Vector2.Distance(point, start + (end - start) * amount);
+	}
+
+	internal static float ClosestSegmentAmount(Vector2 point, Vector2 start, Vector2 end)
+	{
 		Vector2 segment = end - start;
 		float lengthSquared = segment.LengthSquared();
-		float amount = lengthSquared <= 1e-8f ? 0 : Math.Clamp(Vector2.Dot(point - start, segment) / lengthSquared, 0, 1);
-		return Vector2.Distance(point, start + segment * amount);
+		return lengthSquared <= 1e-8f
+			? 0
+			: Math.Clamp(Vector2.Dot(point - start, segment) / lengthSquared, 0, 1);
+	}
+
+	internal static bool IsProjectedPointInClip(Vector3 point)
+	{
+		return float.IsFinite(point.X)
+			&& float.IsFinite(point.Y)
+			&& float.IsFinite(point.Z)
+			&& point.Z >= 0
+			&& point.Z <= 1;
+	}
+
+	internal static bool IsProjectedPointVisible(Vector3 point, float surfaceDepth)
+	{
+		return IsProjectedPointInClip(point) && point.Z <= surfaceDepth + 0.002f;
+	}
+
+	internal static Vector2 ToCameraPoint(CadRect bounds, Vector2 layoutPoint)
+	{
+		return new Vector2(
+			layoutPoint.X - bounds.X,
+			bounds.Height - (layoutPoint.Y - bounds.Y)
+		);
+	}
+
+	internal static Vector3 PanFocus(
+		Vector3 currentFocus,
+		Vector3 cameraRight,
+		Vector3 cameraUp,
+		Vector2 layoutDelta,
+		float scale
+	)
+	{
+		return currentFocus
+			- cameraRight * layoutDelta.X * scale
+			+ cameraUp * layoutDelta.Y * scale;
 	}
 
 	private void ConfigureCamera(int width, int height)
@@ -534,7 +712,15 @@ internal sealed class CadViewport : IDisposable
 		{
 			float halfHeight = distance * 0.5f;
 			float halfWidth = halfHeight * width / Math.Max(1f, height);
-			camera.SetOrthogonal(-halfWidth, -halfHeight, halfWidth, halfHeight, 0.1f, 200000);
+			camera.SetOrthogonal(
+				-halfWidth,
+				-halfHeight,
+				halfWidth,
+				halfHeight,
+				new Vector2(width, height),
+				0.1f,
+				200000
+			);
 		}
 		else
 		{
@@ -569,11 +755,19 @@ internal sealed class CadViewport : IDisposable
 		}
 	}
 
-	private static void DrawEdges(RenderPass pass, SceneItem item, Guid? highlightedNodeId)
+	private static void DrawEdges(
+		RenderPass pass,
+		SceneItem item,
+		Guid? highlightedNodeId,
+		CadViewportSelection selection
+	)
 	{
 		foreach (CadEdgePolyline edge in item.Tessellation.Edges)
 		{
-			Color color = item.IsRunner && highlightedNodeId.HasValue
+			bool selected = item.PartId == selection.PartId && edge.TopologyId == selection.TopologyId;
+			Color color = selected
+				? new Color(255, 205, 55)
+				: item.IsRunner && highlightedNodeId.HasValue
 				? new Color(255, 210, 80)
 				: new Color(44, 49, 55);
 
@@ -582,7 +776,7 @@ internal sealed class CadViewport : IDisposable
 				pass.DrawLine(
 					new Vertex3(ToVector(edge.Points[index - 1]), color),
 					new Vertex3(ToVector(edge.Points[index]), color),
-					item.IsRunner ? 2 : 1
+					selected ? 4 : item.IsRunner ? 2 : 1
 				);
 			}
 		}
@@ -599,6 +793,38 @@ internal sealed class CadViewport : IDisposable
 			pass.DrawLine(new Vertex3(origin, Color.Blue), new Vertex3(origin + ToVector(mate.Frame.Tangent) * scale, Color.Blue), 3);
 			pass.DrawPoint(new Vertex3(origin, Color.Yellow), 8);
 		}
+	}
+
+	private void DrawMateCandidates(RenderPass pass)
+	{
+		foreach (MateCandidateGlyph candidate in mateCandidates)
+		{
+			float radius = CandidateDisplayRadius(candidate);
+			Vector3 center = CandidateDisplayCenter(candidate);
+			bool selected = Selection.PartId == candidate.PartId
+				&& Selection.TopologyId == candidate.TopologyId;
+			candidateSphere.DefaultColor = selected
+				? new Color(255, 205, 55)
+				: new Color(70, 205, 235);
+
+			using (pass.PushModel(Matrix4x4.CreateScale(radius) * Matrix4x4.CreateTranslation(center)))
+			{
+				pass.DrawMesh(candidateSphere);
+			}
+		}
+	}
+
+	private float CandidateDisplayRadius(MateCandidateGlyph candidate)
+	{
+		float minimum = Math.Max(distance * 0.008f, 1.5f);
+		float maximum = Math.Max(distance * 0.018f, minimum);
+		return Math.Clamp((float)candidate.EquivalentRadius * 0.18f, minimum, maximum);
+	}
+
+	private Vector3 CandidateDisplayCenter(MateCandidateGlyph candidate)
+	{
+		float radius = CandidateDisplayRadius(candidate);
+		return ToVector(candidate.Center) + ToVector(candidate.Axis) * radius * 0.65f;
 	}
 
 	private void DrawPartGizmo(RenderPass pass)
@@ -642,6 +868,55 @@ internal sealed class CadViewport : IDisposable
 		Vector3 first = Vector3.Normalize(Vector3.Cross(axis, reference));
 		Vector3 second = Vector3.Normalize(Vector3.Cross(axis, first));
 		return center + radius * (first * MathF.Cos(angle) + second * MathF.Sin(angle));
+	}
+
+	private static Mesh3D CreateCandidateSphere(GraphicsContext graphics)
+	{
+		const int latitudeSegments = 8;
+		const int longitudeSegments = 12;
+		List<Vector3> vertices = new();
+		List<Vector3> normals = new();
+		List<uint> indices = new();
+
+		for (int latitude = 0; latitude <= latitudeSegments; latitude++)
+		{
+			float vertical = latitude * MathF.PI / latitudeSegments;
+			float height = MathF.Cos(vertical);
+			float ring = MathF.Sin(vertical);
+
+			for (int longitude = 0; longitude <= longitudeSegments; longitude++)
+			{
+				float horizontal = longitude * MathF.Tau / longitudeSegments;
+				Vector3 normal = new(
+					ring * MathF.Cos(horizontal),
+					height,
+					ring * MathF.Sin(horizontal)
+				);
+				vertices.Add(normal);
+				normals.Add(normal);
+			}
+		}
+
+		int row = longitudeSegments + 1;
+
+		for (int latitude = 0; latitude < latitudeSegments; latitude++)
+			for (int longitude = 0; longitude < longitudeSegments; longitude++)
+			{
+				uint first = checked((uint)(latitude * row + longitude));
+				uint second = checked(first + (uint)row);
+				indices.Add(first);
+				indices.Add(second);
+				indices.Add(first + 1);
+				indices.Add(first + 1);
+				indices.Add(second);
+				indices.Add(second + 1);
+			}
+
+		Mesh3D mesh = graphics.CreateMesh3D(BufferUsage.Static);
+		mesh.SetVertices(vertices.ToArray());
+		mesh.SetNormals(normals.ToArray());
+		mesh.SetElements(indices.ToArray());
+		return mesh;
 	}
 
 	private static Color Shade(Color color, Vector3 normal)
@@ -715,4 +990,12 @@ internal sealed class CadViewport : IDisposable
 	}
 
 	private readonly record struct MateGlyph(Guid Id, Guid PartId, ulong TopologyId, CadFrame Frame);
+
+	private readonly record struct MateCandidateGlyph(
+		Guid PartId,
+		ulong TopologyId,
+		CadPoint3 Center,
+		CadPoint3 Axis,
+		double EquivalentRadius
+	);
 }

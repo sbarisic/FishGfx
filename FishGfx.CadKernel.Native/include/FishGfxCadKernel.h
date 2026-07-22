@@ -37,6 +37,7 @@ typedef enum fgcad_topology_kind
 	FGCAD_TOPOLOGY_EDGE = 2,
 	FGCAD_TOPOLOGY_CYLINDRICAL_FACE = 3,
 	FGCAD_TOPOLOGY_CIRCULAR_EDGE = 4,
+	FGCAD_TOPOLOGY_CLOSED_PROFILE = 5,
 } fgcad_topology_kind;
 
 typedef enum fgcad_segment_kind

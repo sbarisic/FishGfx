@@ -22,6 +22,7 @@
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
+#include <BRepTools.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <BinXCAFDrivers.hxx>
@@ -63,6 +64,7 @@
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
+#include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Quaternion.hxx>
 #include <gp_Trsf.hxx>
@@ -237,6 +239,61 @@ void rebuild_topology(part_record& part)
 		}
 
 		part.topology.push_back({ info, edge });
+	}
+
+	for (TopExp_Explorer explorer(part.shape, TopAbs_FACE); explorer.More(); explorer.Next())
+	{
+		TopoDS_Face face = TopoDS::Face(explorer.Current());
+		BRepAdaptor_Surface surface(face);
+
+		if (surface.GetType() != GeomAbs_Plane)
+		{
+			continue;
+		}
+
+		gp_Pln plane = surface.Plane();
+		gp_Dir axis = plane.Axis().Direction();
+
+		if (face.Orientation() == TopAbs_REVERSED)
+		{
+			axis.Reverse();
+		}
+
+		TopoDS_Wire outer = BRepTools::OuterWire(face);
+
+		for (TopExp_Explorer wires(face, TopAbs_WIRE); wires.More(); wires.Next())
+		{
+			TopoDS_Wire wire = TopoDS::Wire(wires.Current());
+
+			if (wire.IsSame(outer))
+			{
+				continue;
+			}
+
+			BRepBuilderAPI_MakeFace opening(plane, wire, true);
+
+			if (!opening.IsDone())
+			{
+				continue;
+			}
+
+			GProp_GProps properties;
+			BRepGProp::SurfaceProperties(opening.Face(), properties);
+			double area = std::abs(properties.Mass());
+
+			if (!std::isfinite(area) || area <= 1e-9)
+			{
+				continue;
+			}
+
+			fgcad_topology_info info{};
+			info.id = id++;
+			info.kind = FGCAD_TOPOLOGY_CLOSED_PROFILE;
+			info.center = point(properties.CentreOfMass());
+			info.axis = direction(axis);
+			info.radius = std::sqrt(area / pi);
+			part.topology.push_back({ info, wire });
+		}
 	}
 }
 
@@ -656,7 +713,7 @@ extern "C"
 {
 uint32_t fgcad_api_version(void)
 {
-	return 1;
+	return 2;
 }
 
 const char* fgcad_last_error(void)
@@ -871,9 +928,20 @@ fgcad_status fgcad_document_get_mate_frame(
 				return FGCAD_STATUS_UNSUPPORTED_TOPOLOGY;
 			}
 		}
+		else if (found->info.kind == FGCAD_TOPOLOGY_CLOSED_PROFILE)
+		{
+			gp_Pnt origin = point(found->info.center);
+			gp_Dir tangent = unit(found->info.axis);
+			gp_Ax2 axes(origin, tangent);
+			frame->origin = found->info.center;
+			frame->tangent = found->info.axis;
+			frame->normal = direction(axes.XDirection());
+			*radius = found->info.radius;
+			return FGCAD_STATUS_OK;
+		}
 		else
 		{
-			last_error = "V1 mate creation supports only circular edges and cylindrical faces.";
+			last_error = "Mate creation requires a circular edge, cylindrical face, or planar closed profile.";
 			return FGCAD_STATUS_UNSUPPORTED_TOPOLOGY;
 		}
 

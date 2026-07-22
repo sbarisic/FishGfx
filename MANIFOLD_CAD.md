@@ -32,7 +32,7 @@ Original STEP paths are informational. Reopening a project uses `model.xbf` and 
 ## V1 workflow
 
 1. Import one or more `.step` parts.
-2. Select a circular edge or cylindrical face in the viewport and create a mate.
+2. Click a cyan sphere on a detected planar opening to create or move the runner's start mate immediately. Circular edges and cylindrical faces can still be selected manually and bound with **Create / Rebind Mate**.
 3. Edit straight, bend, and circular-pipe values in the graph inspector.
 4. Move or rotate a selected part with the viewport gizmo or exact millimetre/degree fields. Use **Gizmo** in the toolbar to switch handle modes. Its local mate frame is recomposed and the runner regenerates.
 5. Save `.fgcad` or export the complete placed assembly and valid runner as STEP AP242.
@@ -41,7 +41,7 @@ Replacing a part deliberately invalidates its logical mates. Select compatible r
 
 ## Boundaries
 
-V1 supports one start-mate-attached runner with straight and circular-arc centreline edges, a hollow circular profile, exact G1 sweep, exact length, CPU face BVH picking, edge preview picking, rigid placements, and STEP/XCAF persistence. End constraints, transitions, multiple runners, collectors, booleans, collision/clearance analysis, equal-length tooling, automatic routing, and assembly solving are deferred.
+V1 supports one start-mate-attached runner with straight and circular-arc centreline edges, a hollow circular profile, exact G1 sweep, exact length, automatic planar opening candidates, CPU face BVH picking, edge preview picking, rigid placements, and STEP/XCAF persistence. End constraints, transitions, multiple runners, collectors, booleans, collision/clearance analysis, equal-length tooling, automatic routing, and assembly solving are deferred.
 
 Preview vertices are immutable float tessellations for rendering and picking only. All editable, persisted, validated, and exported geometry remains double-precision OCCT B-rep.
 

@@ -7,6 +7,7 @@ public enum CadTopologyKind
 	Edge,
 	CylindricalFace,
 	CircularEdge,
+	ClosedProfile,
 }
 
 public readonly record struct CadTopologyRef(
