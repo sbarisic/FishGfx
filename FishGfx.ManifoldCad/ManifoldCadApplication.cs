@@ -563,6 +563,12 @@ internal sealed class ManifoldCadApplication : IDisposable
 			throw new InvalidOperationException("Automatic STEP validation found no visible mate candidates.");
 		}
 
+		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
+			&& !viewport.CanPickMateCandidate(CadLayout.Viewport(window.Width, window.Height)))
+		{
+			throw new InvalidOperationException("Automatic rotated-view validation could not pick a mate candidate.");
+		}
+
 		Console.WriteLine(
 			$"MANIFOLD_CAD_AUTO_OK renderer={window.Graphics.Capabilities.Renderer} "
 			+ $"fishUiInput=enabled vertices=exact-runner visibleSamples={autoVisibleSamples} "
@@ -629,7 +635,16 @@ internal sealed class ManifoldCadApplication : IDisposable
 		document.BuildRunnerAsync(evaluation).GetAwaiter().GetResult();
 		CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync().GetAwaiter().GetResult();
 		viewport.AddOrReplace(null, preview.Value, true);
-		viewport.SetView(string.IsNullOrWhiteSpace(stepPath) ? CadStandardView.Right : CadStandardView.Front);
+
+		if (string.IsNullOrWhiteSpace(stepPath))
+		{
+			viewport.SetView(CadStandardView.Right);
+		}
+		else
+		{
+			viewport.SetOrbit(38, 24, false);
+		}
+
 		viewport.Fit();
 		RunnerNode bend = project.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.Bend);
 		nodeCanvas.SelectBySource(bend.Id, project.Graph);

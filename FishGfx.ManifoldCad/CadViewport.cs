@@ -186,9 +186,16 @@ internal sealed class CadViewport : IDisposable
 
 		if (input.WasMouseButtonPressed(MouseButton.Left))
 		{
+			PickContext context = CreatePickContext(bounds, mouse);
+
+			if (TryPickMateGlyph(context) || TryPickMateCandidate(context))
+			{
+				return;
+			}
+
 			if (!TryBeginGizmo(bounds, mouse))
 			{
-				Pick(bounds, mouse);
+				PickGeometry(context);
 			}
 		}
 	}
@@ -219,6 +226,23 @@ internal sealed class CadViewport : IDisposable
 
 	internal void ToggleOrthographic() => orthographic = !orthographic;
 
+	internal void SetOrbit(float yawDegrees, float pitchDegrees, bool useOrthographic)
+	{
+		if (!float.IsFinite(yawDegrees))
+		{
+			throw new ArgumentOutOfRangeException(nameof(yawDegrees));
+		}
+
+		if (!float.IsFinite(pitchDegrees))
+		{
+			throw new ArgumentOutOfRangeException(nameof(pitchDegrees));
+		}
+
+		yaw = yawDegrees;
+		pitch = Math.Clamp(pitchDegrees, -89, 89);
+		orthographic = useOrthographic;
+	}
+
 	internal void SetView(CadStandardView view)
 	{
 		(yaw, pitch) = view switch
@@ -232,6 +256,36 @@ internal sealed class CadViewport : IDisposable
 			_ => (yaw, pitch),
 		};
 		orthographic = true;
+	}
+
+	internal bool CanPickMateCandidate(CadRect bounds)
+	{
+		ConfigureCamera(Math.Max(1, (int)bounds.Width), Math.Max(1, (int)bounds.Height));
+
+		foreach (MateCandidateGlyph candidate in mateCandidates)
+		{
+			Vector3 screen = camera.WorldToScreen(CandidateDisplayCenter(candidate));
+
+			if (!IsProjectedPointInClip(screen))
+			{
+				continue;
+			}
+
+			Vector2 layoutPoint = new(
+				bounds.X + screen.X,
+				bounds.Y + bounds.Height - screen.Y
+			);
+			PickContext context = CreatePickContext(bounds, layoutPoint);
+
+			if (TryFindMateCandidate(context, out MateCandidateGlyph selected)
+				&& selected.PartId == candidate.PartId
+				&& selected.TopologyId == candidate.TopologyId)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	internal RenderTarget Render(RenderFrame frame, CadRect bounds, Guid? highlightedNodeId)
@@ -300,7 +354,7 @@ internal sealed class CadViewport : IDisposable
 		target?.Dispose();
 	}
 
-	private void Pick(CadRect bounds, Vector2 mouse)
+	private PickContext CreatePickContext(CadRect bounds, Vector2 mouse)
 	{
 		ConfigureCamera(Math.Max(1, (int)bounds.Width), Math.Max(1, (int)bounds.Height));
 		Vector2 local = ToCameraPoint(bounds, mouse);
@@ -321,14 +375,19 @@ internal sealed class CadViewport : IDisposable
 		float faceDepth = nearestFace.HasValue
 			? camera.WorldToScreen(ray.GetPoint(nearestFace.Value.Distance)).Z
 			: float.PositiveInfinity;
+		return new PickContext(local, ray, nearestFace, nearestFaceItem, faceDepth);
+	}
+
+	private bool TryPickMateGlyph(PickContext context)
+	{
 		MateGlyph? glyph = mates
 			.Select(mate => (Mate: mate, Screen: camera.WorldToScreen(ToVector(mate.Frame.Origin))))
 			.Select(item => (
 				item.Mate,
 				item.Screen,
-				Distance: Vector2.Distance(new Vector2(item.Screen.X, item.Screen.Y), local)
+				Distance: Vector2.Distance(new Vector2(item.Screen.X, item.Screen.Y), context.LocalPoint)
 			))
-			.Where(item => IsProjectedPointVisible(item.Screen, faceDepth) && item.Distance <= 11)
+			.Where(item => IsProjectedPointVisible(item.Screen, context.FaceDepth) && item.Distance <= 11)
 			.OrderBy(item => item.Distance)
 			.ThenBy(item => item.Screen.Z)
 			.Select(item => (MateGlyph?)item.Mate)
@@ -338,10 +397,15 @@ internal sealed class CadViewport : IDisposable
 		{
 			MateGlyph mate = glyph.Value;
 			SetSelection(new CadViewportSelection(mate.PartId, mate.TopologyId, null, mate.Frame.Origin, mate.Id));
-			return;
+			return true;
 		}
 
-		if (TryPickMateCandidate(ray, nearestFace?.Distance ?? float.PositiveInfinity, out MateCandidateGlyph candidate))
+		return false;
+	}
+
+	private bool TryPickMateCandidate(PickContext context)
+	{
+		if (TryFindMateCandidate(context, out MateCandidateGlyph candidate))
 		{
 			SetSelection(new CadViewportSelection(
 				candidate.PartId,
@@ -351,21 +415,32 @@ internal sealed class CadViewport : IDisposable
 				null,
 				true
 			));
-			return;
+			return true;
 		}
 
-		if (TryPickEdge(local, faceDepth, out SceneItem edgeItem, out CadEdgePolyline edge, out CadPoint3 edgePoint))
+		return false;
+	}
+
+	private void PickGeometry(PickContext context)
+	{
+		if (TryPickEdge(
+			context.LocalPoint,
+			context.FaceDepth,
+			out SceneItem edgeItem,
+			out CadEdgePolyline edge,
+			out CadPoint3 edgePoint
+		))
 		{
 			SetSelection(new CadViewportSelection(edgeItem.PartId, edge.TopologyId, null, edgePoint, null));
 			return;
 		}
 
-		SetSelection(nearestFace.HasValue
+		SetSelection(context.NearestFace.HasValue
 			? new CadViewportSelection(
-				nearestFaceItem.PartId,
-				nearestFace.Value.TopologyId,
-				nearestFace.Value.SourceNodeId,
-				CadPoint3.FromVector3(ray.GetPoint(nearestFace.Value.Distance)),
+				context.NearestFaceItem.PartId,
+				context.NearestFace.Value.TopologyId,
+				context.NearestFace.Value.SourceNodeId,
+				CadPoint3.FromVector3(context.Ray.GetPoint(context.NearestFace.Value.Distance)),
 				null
 			)
 			: default);
@@ -400,30 +475,61 @@ internal sealed class CadViewport : IDisposable
 		SelectionChanged?.Invoke(Selection);
 	}
 
-	private bool TryPickMateCandidate(
-		PickingRay ray,
-		float faceDistance,
-		out MateCandidateGlyph selectedCandidate
-	)
+	private bool TryFindMateCandidate(PickContext context, out MateCandidateGlyph selectedCandidate)
 	{
 		selectedCandidate = default;
-		float nearest = float.PositiveInfinity;
+		float bestScreenDistance = float.PositiveInfinity;
+		float bestRayDistance = float.PositiveInfinity;
 
 		foreach (MateCandidateGlyph candidate in mateCandidates)
 		{
 			Vector3 center = CandidateDisplayCenter(candidate);
 			float radius = CandidateDisplayRadius(candidate);
+			Vector3 projectedCenter = camera.WorldToScreen(center);
 
-			if (TryIntersectSphere(ray, center, radius, out float distance)
-				&& distance <= faceDistance + Math.Max(radius * 0.05f, 0.01f)
-				&& distance < nearest)
+			if (!IsProjectedPointInClip(projectedCenter))
 			{
-				nearest = distance;
+				continue;
+			}
+
+			Vector3 projectedRadiusPoint = camera.WorldToScreen(center + camera.WorldRightNormal * radius);
+			float projectedRadius = Vector2.Distance(
+				new Vector2(projectedCenter.X, projectedCenter.Y),
+				new Vector2(projectedRadiusPoint.X, projectedRadiusPoint.Y)
+			);
+
+			if (!float.IsFinite(projectedRadius) || projectedRadius <= 0)
+			{
+				continue;
+			}
+
+			float screenDistance = Vector2.Distance(
+				context.LocalPoint,
+				new Vector2(projectedCenter.X, projectedCenter.Y)
+			);
+			float pickRadius = projectedRadius + 4;
+
+			if (screenDistance > pickRadius)
+			{
+				continue;
+			}
+
+			float expandedRadius = radius * pickRadius / projectedRadius;
+
+			if (TryIntersectSphere(context.Ray, center, expandedRadius, out float rayDistance)
+				&& rayDistance <= (context.NearestFace?.Distance ?? float.PositiveInfinity)
+					+ Math.Max(radius * 0.05f, 0.01f)
+				&& (screenDistance < bestScreenDistance
+					|| (MathF.Abs(screenDistance - bestScreenDistance) < 0.25f
+						&& rayDistance < bestRayDistance)))
+			{
+				bestScreenDistance = screenDistance;
+				bestRayDistance = rayDistance;
 				selectedCandidate = candidate;
 			}
 		}
 
-		return float.IsFinite(nearest);
+		return float.IsFinite(bestRayDistance);
 	}
 
 	private bool TryPickEdge(
@@ -990,6 +1096,14 @@ internal sealed class CadViewport : IDisposable
 	}
 
 	private readonly record struct MateGlyph(Guid Id, Guid PartId, ulong TopologyId, CadFrame Frame);
+
+	private readonly record struct PickContext(
+		Vector2 LocalPoint,
+		PickingRay Ray,
+		CadPickHit? NearestFace,
+		SceneItem NearestFaceItem,
+		float FaceDepth
+	);
 
 	private readonly record struct MateCandidateGlyph(
 		Guid PartId,

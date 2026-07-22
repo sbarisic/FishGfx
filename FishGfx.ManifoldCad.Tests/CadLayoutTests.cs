@@ -123,4 +123,33 @@ public sealed class CadLayoutTests
 		Assert.Equal(0, hitPoint.Y, 4);
 		Assert.Equal(0, hitPoint.Z, 4);
 	}
+
+	[Theory]
+	[InlineData(38, 24)]
+	[InlineData(-57, 31)]
+	[InlineData(124, -42)]
+	public void PerspectiveOrbitRayHitsProjectedCandidate(float yaw, float pitch)
+	{
+		const float distance = 450;
+		float yawRadians = yaw * MathF.PI / 180;
+		float pitchRadians = pitch * MathF.PI / 180;
+		Vector3 direction = new(
+			MathF.Sin(yawRadians) * MathF.Cos(pitchRadians),
+			MathF.Sin(pitchRadians),
+			MathF.Cos(yawRadians) * MathF.Cos(pitchRadians)
+		);
+		Camera camera = new()
+		{
+			Position = direction * distance,
+			CameraUpNormal = Vector3.UnitY,
+		};
+		camera.LookAt(Vector3.Zero);
+		camera.SetPerspective(1200, 600, MathF.PI / 3, 0.1f, 200000);
+		Vector3 center = new(45, 12, -3);
+		Vector3 screen = camera.WorldToScreen(center);
+
+		PickingRay ray = camera.CreatePickingRay(new Vector2(screen.X, screen.Y));
+
+		Assert.True(CadViewport.TryIntersectSphere(ray, center, 4, out _));
+	}
 }
