@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "fishgfx-cad-kernel-native",
+  "version-string": "1.0.0",
+  "builtin-baseline": "4493042c759d3bdff26164695dbee500d1e696c8",
+  "dependencies": [
+    {
+      "name": "opencascade",
+      "default-features": false
+    }
+  ],
+  "overrides": [
+    {
+      "name": "opencascade",
+      "version": "8.0.0",
+      "port-version": 1
+    }
+  ]
+}
