@@ -24,18 +24,41 @@ public sealed class CadLayoutTests
 	}
 
 	[Fact]
-	public void ViewportLayoutPointConvertsOnceToCameraCoordinates()
+	public void ViewportLayoutAndCameraPointsRoundTripThroughFlippedComposite()
 	{
 		CadRect viewport = CadLayout.Viewport(1600, 1000);
+		Vector2 bottomLeft = viewport.Minimum;
+		Vector2 topRight = viewport.Maximum;
 
 		Assert.Equal(Vector2.Zero, CadViewport.ToCameraPoint(
 			viewport,
-			new Vector2(viewport.X, viewport.Y + viewport.Height)
+			bottomLeft
 		));
 		Assert.Equal(new Vector2(viewport.Width, viewport.Height), CadViewport.ToCameraPoint(
 			viewport,
-			new Vector2(viewport.X + viewport.Width, viewport.Y)
+			topRight
 		));
+		Assert.Equal(bottomLeft, CadViewport.FromCameraPoint(viewport, Vector2.Zero));
+		Assert.Equal(topRight, CadViewport.FromCameraPoint(
+			viewport,
+			new Vector2(viewport.Width, viewport.Height)
+		));
+	}
+
+	[Fact]
+	public void NativeCursorRoundTripsThroughInputAndFlippedViewport()
+	{
+		const int windowHeight = 1000;
+		CadRect viewport = CadLayout.Viewport(1600, windowHeight);
+		Vector2 nativeCursor = new(747, 590);
+		Vector2 layoutCursor = new(nativeCursor.X, windowHeight - nativeCursor.Y);
+
+		Vector2 cameraPoint = CadViewport.ToCameraPoint(viewport, layoutCursor);
+		Vector2 restoredLayout = CadViewport.FromCameraPoint(viewport, cameraPoint);
+		Vector2 restoredNative = new(restoredLayout.X, windowHeight - restoredLayout.Y);
+
+		Assert.Equal(new Vector2(487, 90), cameraPoint);
+		Assert.Equal(nativeCursor, restoredNative);
 	}
 
 	[Fact]

@@ -310,10 +310,7 @@ internal sealed class CadViewport : IDisposable
 				continue;
 			}
 
-			Vector2 layoutPoint = new(
-				bounds.X + screen.X,
-				bounds.Y + bounds.Height - screen.Y
-			);
+			Vector2 layoutPoint = FromCameraPoint(bounds, new Vector2(screen.X, screen.Y));
 			PickContext candidateContext = CreatePickContext(bounds, layoutPoint);
 
 			if (TryFindMateCandidate(candidateContext, out MateCandidateGlyph selected)
@@ -701,7 +698,7 @@ internal sealed class CadViewport : IDisposable
 		Vector3 axis = axes[activeGizmoAxis];
 		Vector3 origin = camera.WorldToScreen(ToVector(gizmoTranslationStart));
 		Vector3 end = camera.WorldToScreen(ToVector(gizmoTranslationStart) + axis * Math.Max(distance * 0.08f, 20));
-		Vector2 screenAxis = new(end.X - origin.X, -(end.Y - origin.Y));
+		Vector2 screenAxis = new(end.X - origin.X, end.Y - origin.Y);
 
 		if (screenAxis.LengthSquared() <= 1e-6f)
 		{
@@ -840,10 +837,15 @@ internal sealed class CadViewport : IDisposable
 
 	internal static Vector2 ToCameraPoint(CadRect bounds, Vector2 layoutPoint)
 	{
-		return new Vector2(
-			layoutPoint.X - bounds.X,
-			bounds.Height - (layoutPoint.Y - bounds.Y)
-		);
+		// Layout coordinates are bottom-left based. The offscreen viewport is
+		// composited with inverted V coordinates, so its camera-space Y already
+		// matches the layout-local Y and must not be flipped again here.
+		return layoutPoint - bounds.Minimum;
+	}
+
+	internal static Vector2 FromCameraPoint(CadRect bounds, Vector2 cameraPoint)
+	{
+		return bounds.Minimum + cameraPoint;
 	}
 
 	internal static Vector3 PanFocus(
