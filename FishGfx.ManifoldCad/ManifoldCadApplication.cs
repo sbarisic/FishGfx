@@ -33,6 +33,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 	private double previousTime;
 	private bool disposed;
 	private bool autoFrameCaptured;
+	private int autoRenderedFrames;
 	private int autoVisibleSamples;
 	private string autoScreenshotPath;
 
@@ -214,6 +215,11 @@ internal sealed class ManifoldCadApplication : IDisposable
 		}
 
 		frame.Present();
+
+		if (autoMode)
+		{
+			autoRenderedFrames++;
+		}
 	}
 
 	private void ImportStep(string path)
@@ -572,6 +578,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 		Console.WriteLine(
 			$"MANIFOLD_CAD_AUTO_OK renderer={window.Graphics.Capabilities.Renderer} "
 			+ $"fishUiInput=enabled vertices=exact-runner visibleSamples={autoVisibleSamples} "
+			+ $"frames={autoRenderedFrames} "
 			+ $"mateCandidates={viewport.MateCandidateCount} "
 			+ $"screenshot={autoScreenshotPath}"
 		);

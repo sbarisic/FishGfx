@@ -23,6 +23,7 @@ internal sealed class CadViewport : IDisposable
 	private readonly List<MateGlyph> mates = new();
 	private readonly List<MateCandidateGlyph> mateCandidates = new();
 	private readonly Mesh3D candidateSphere;
+	private readonly Mesh3D gridMesh;
 	private RenderTarget target;
 	private Vector3 focus;
 	private float distance = 450;
@@ -47,6 +48,7 @@ internal sealed class CadViewport : IDisposable
 	{
 		this.graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
 		candidateSphere = CreateCandidateSphere(graphics);
+		gridMesh = CreateGridMesh(graphics);
 	}
 
 	internal event Action<CadViewportSelection> SelectionChanged;
@@ -309,7 +311,7 @@ internal sealed class CadViewport : IDisposable
 			ClearColor = new Color(19, 23, 29),
 		});
 
-		DrawGrid(pass);
+		pass.DrawMesh(gridMesh);
 
 		foreach (SceneItem item in items)
 		{
@@ -351,6 +353,7 @@ internal sealed class CadViewport : IDisposable
 		items.Clear();
 		selectedFaceMesh?.Dispose();
 		candidateSphere.Dispose();
+		gridMesh.Dispose();
 		target?.Dispose();
 	}
 
@@ -848,19 +851,6 @@ internal sealed class CadViewport : IDisposable
 		target = graphics.CreateRenderTarget(new RenderTargetDescriptor(width, height));
 	}
 
-	private static void DrawGrid(RenderPass pass)
-	{
-		Color minor = new(46, 52, 60);
-		Color major = new(76, 84, 94);
-
-		for (int value = -500; value <= 500; value += 25)
-		{
-			Color color = value == 0 ? major : minor;
-			pass.DrawLine(new Vertex3(value, 0, -500) { Color = color }, new Vertex3(value, 0, 500) { Color = color });
-			pass.DrawLine(new Vertex3(-500, 0, value) { Color = color }, new Vertex3(500, 0, value) { Color = color });
-		}
-	}
-
 	private static void DrawEdges(
 		RenderPass pass,
 		SceneItem item,
@@ -868,24 +858,28 @@ internal sealed class CadViewport : IDisposable
 		CadViewportSelection selection
 	)
 	{
-		foreach (CadEdgePolyline edge in item.Tessellation.Edges)
-		{
-			bool selected = item.PartId == selection.PartId && edge.TopologyId == selection.TopologyId;
-			Color color = selected
-				? new Color(255, 205, 55)
-				: item.IsRunner && highlightedNodeId.HasValue
-				? new Color(255, 210, 80)
-				: new Color(44, 49, 55);
+		item.EdgeMesh.DefaultColor = item.IsRunner && highlightedNodeId.HasValue
+			? new Color(255, 210, 80)
+			: new Color(44, 49, 55);
+		pass.DrawMesh(item.EdgeMesh);
 
+		if (selection.PartId != item.PartId)
+		{
+			return;
+		}
+
+		Color selectedColor = new(255, 205, 55);
+
+		foreach (CadEdgePolyline edge in item.Tessellation.Edges.Where(edge =>
+			edge.TopologyId == selection.TopologyId))
 			for (int index = 1; index < edge.Points.Length; index++)
 			{
 				pass.DrawLine(
-					new Vertex3(ToVector(edge.Points[index - 1]), color),
-					new Vertex3(ToVector(edge.Points[index]), color),
-					selected ? 4 : item.IsRunner ? 2 : 1
+					new Vertex3(ToVector(edge.Points[index - 1]), selectedColor),
+					new Vertex3(ToVector(edge.Points[index]), selectedColor),
+					4
 				);
 			}
-		}
 	}
 
 	private void DrawMateGlyphs(RenderPass pass)
@@ -1025,6 +1019,27 @@ internal sealed class CadViewport : IDisposable
 		return mesh;
 	}
 
+	private static Mesh3D CreateGridMesh(GraphicsContext graphics)
+	{
+		Color minor = new(46, 52, 60);
+		Color major = new(76, 84, 94);
+		List<Vertex3> vertices = new();
+
+		for (int value = -500; value <= 500; value += 25)
+		{
+			Color color = value == 0 ? major : minor;
+			vertices.Add(new Vertex3(value, 0, -500) { Color = color });
+			vertices.Add(new Vertex3(value, 0, 500) { Color = color });
+			vertices.Add(new Vertex3(-500, 0, value) { Color = color });
+			vertices.Add(new Vertex3(500, 0, value) { Color = color });
+		}
+
+		Mesh3D mesh = graphics.CreateMesh3D(BufferUsage.Static);
+		mesh.PrimitiveType = PrimitiveType.Lines;
+		mesh.SetVertices(vertices.ToArray(), vertices.Count, hasUvs: false, hasColors: true);
+		return mesh;
+	}
+
 	private static Color Shade(Color color, Vector3 normal)
 	{
 		Vector3 light = Vector3.Normalize(new Vector3(0.35f, 0.8f, 0.45f));
@@ -1033,6 +1048,21 @@ internal sealed class CadViewport : IDisposable
 	}
 
 	private static Vector3 ToVector(CadPoint3 point) => new((float)point.X, (float)point.Y, (float)point.Z);
+
+	internal static Vector3[] BuildEdgeLineVertices(IEnumerable<CadEdgePolyline> edges)
+	{
+		ArgumentNullException.ThrowIfNull(edges);
+		List<Vector3> vertices = new();
+
+		foreach (CadEdgePolyline edge in edges)
+			for (int index = 1; index < edge.Points.Length; index++)
+			{
+				vertices.Add(ToVector(edge.Points[index - 1]));
+				vertices.Add(ToVector(edge.Points[index]));
+			}
+
+		return vertices.ToArray();
+	}
 
 	private sealed class SceneItem : IDisposable
 	{
@@ -1043,6 +1073,7 @@ internal sealed class CadViewport : IDisposable
 			Stale = stale;
 			Tessellation = tessellation;
 			Mesh = mesh;
+			EdgeMesh = CreateEdgeMesh(graphics, tessellation);
 			Bvh = new CadTriangleBvh(tessellation);
 			HighlightMeshes = CreateHighlights(graphics, tessellation);
 		}
@@ -1052,6 +1083,7 @@ internal sealed class CadViewport : IDisposable
 		internal bool Stale { get; private set; }
 		internal CadTessellation Tessellation { get; }
 		internal Mesh3D Mesh { get; }
+		internal Mesh3D EdgeMesh { get; }
 		internal CadTriangleBvh Bvh { get; }
 		internal IReadOnlyDictionary<Guid, Mesh3D> HighlightMeshes { get; }
 
@@ -1068,11 +1100,21 @@ internal sealed class CadViewport : IDisposable
 		public void Dispose()
 		{
 			Mesh.Dispose();
+			EdgeMesh.Dispose();
 
 			foreach (Mesh3D highlight in HighlightMeshes.Values)
 			{
 				highlight.Dispose();
 			}
+		}
+
+		private static Mesh3D CreateEdgeMesh(GraphicsContext graphics, CadTessellation tessellation)
+		{
+			Mesh3D mesh = graphics.CreateMesh3D(BufferUsage.Static);
+			mesh.PrimitiveType = PrimitiveType.Lines;
+			mesh.SetVertices(BuildEdgeLineVertices(tessellation.Edges));
+			mesh.DefaultColor = new Color(44, 49, 55);
+			return mesh;
 		}
 
 		private static IReadOnlyDictionary<Guid, Mesh3D> CreateHighlights(GraphicsContext graphics, CadTessellation tessellation)

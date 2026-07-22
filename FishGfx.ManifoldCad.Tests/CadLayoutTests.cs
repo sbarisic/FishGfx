@@ -152,4 +152,32 @@ public sealed class CadLayoutTests
 
 		Assert.True(CadViewport.TryIntersectSphere(ray, center, 4, out _));
 	}
+
+	[Fact]
+	public void EdgePolylinesBecomeOneLineList()
+	{
+		CadEdgePolyline[] edges =
+		[
+			new CadEdgePolyline(
+				1,
+				CadTopologyKind.Edge,
+				[new CadPoint3(0, 0, 0), new CadPoint3(1, 0, 0), new CadPoint3(2, 0, 0)]
+			),
+			new CadEdgePolyline(
+				2,
+				CadTopologyKind.Edge,
+				[new CadPoint3(0, 1, 0), new CadPoint3(1, 1, 0)]
+			),
+		];
+
+		Vector3[] vertices = CadViewport.BuildEdgeLineVertices(edges);
+
+		Assert.Equal(6, vertices.Length);
+		Assert.Equal(new Vector3(0, 0, 0), vertices[0]);
+		Assert.Equal(new Vector3(1, 0, 0), vertices[1]);
+		Assert.Equal(new Vector3(1, 0, 0), vertices[2]);
+		Assert.Equal(new Vector3(2, 0, 0), vertices[3]);
+		Assert.Equal(new Vector3(0, 1, 0), vertices[4]);
+		Assert.Equal(new Vector3(1, 1, 0), vertices[5]);
+	}
 }
