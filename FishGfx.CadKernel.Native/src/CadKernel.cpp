@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <string>
@@ -14,12 +17,13 @@
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
-#include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -48,6 +52,7 @@
 #include <Poly_Triangulation.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
+#include <ShapeFix_Shell.hxx>
 #include <Standard_Failure.hxx>
 #include <TCollection_ExtendedString.hxx>
 #include <TDataStd_Name.hxx>
@@ -1069,6 +1074,18 @@ fgcad_status fgcad_document_build_runner(
 			throw std::invalid_argument("Runner features cannot be empty.");
 		}
 
+		const bool trace_timing = std::getenv("FGCAD_TRACE_TIMING") != nullptr;
+		auto trace_last = std::chrono::steady_clock::now();
+		auto trace = [&](const char* label)
+		{
+			if (!trace_timing) return;
+			auto now = std::chrono::steady_clock::now();
+			std::cerr << "[FGCAD] " << label << "="
+				<< std::chrono::duration_cast<std::chrono::milliseconds>(now - trace_last).count()
+				<< " ms\n";
+			trace_last = now;
+		};
+
 		struct profile_wires
 		{
 			TopoDS_Wire inner;
@@ -1266,74 +1283,271 @@ fgcad_status fgcad_document_build_runner(
 			throw std::invalid_argument("A profile transition does not have a sweep edge.");
 		};
 
-		auto make_sweep = [&](const fgcad_runner_feature& feature)
+		struct generated_section
 		{
-			BRepBuilderAPI_MakeWire wire(feature_edge(feature));
-			BRepOffsetAPI_MakePipe pipe(wire.Wire(), annular_face(profile_at(feature.input_profile, feature.entry_frame)));
-			if (!pipe.IsDone()) throw std::runtime_error("Open CASCADE could not sweep a runner feature.");
-			return pipe.Shape();
+			TopoDS_Shape shape;
+			std::vector<runner_source> sources;
+		};
+
+		auto append_faces = [](const TopoDS_Shape& shape, std::vector<TopoDS_Face>& faces)
+		{
+			if (shape.ShapeType() == TopAbs_FACE)
+			{
+				faces.push_back(TopoDS::Face(shape));
+				return;
+			}
+			for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next())
+			{
+				faces.push_back(TopoDS::Face(explorer.Current()));
+			}
+		};
+
+		auto same_profile = [](const fgcad_runner_profile& left, const fgcad_runner_profile& right)
+		{
+			return left.kind == right.kind
+				&& std::strcmp(left.mate_id, right.mate_id) == 0
+				&& left.outer_diameter == right.outer_diameter
+				&& left.wall_thickness == right.wall_thickness;
+		};
+
+		auto make_sweep = [&](size_t first, size_t last)
+		{
+			BRepBuilderAPI_MakeWire wire;
+			std::vector<TopoDS_Edge> edges;
+			edges.reserve(last - first);
+			const fgcad_runner_profile& profile = features[first].input_profile;
+
+			for (size_t index = first; index < last; ++index)
+			{
+				const fgcad_runner_feature& feature = features[index];
+				if (feature.kind == FGCAD_FEATURE_LOFT_TRANSITION
+					|| !same_profile(profile, feature.input_profile)
+					|| !same_profile(profile, feature.output_profile))
+				{
+					throw std::invalid_argument("A constant-profile sweep group contains incompatible features.");
+				}
+				edges.push_back(feature_edge(feature));
+				wire.Add(edges.back());
+			}
+
+			if (!wire.IsDone()) throw std::runtime_error("The grouped runner spine could not be built.");
+			BRepOffsetAPI_MakePipe pipe(
+				wire.Wire(),
+				annular_face(profile_at(profile, features[first].entry_frame))
+			);
+			if (!pipe.IsDone()) throw std::runtime_error("Open CASCADE could not sweep a grouped runner spine.");
+			trace("grouped sweep");
+
+			generated_section section;
+			section.shape = pipe.Shape();
+			for (size_t index = first; index < last; ++index)
+			{
+				runner_source source;
+				source.id = features[index].source_node_id;
+				source.feature = features[index];
+				const NCollection_List<TopoDS_Shape>& generated = pipe.Generated(edges[index - first]);
+				for (NCollection_List<TopoDS_Shape>::Iterator iterator(generated); iterator.More(); iterator.Next())
+				{
+					append_faces(iterator.Value(), source.faces);
+				}
+				section.sources.push_back(std::move(source));
+			}
+			return section;
 		};
 
 		auto make_loft = [&](const fgcad_runner_feature& feature)
 		{
-			profile_wires input = profile_at(feature.input_profile, feature.entry_frame);
-			profile_wires output = profile_at(feature.output_profile, feature.exit_frame);
-			BRepOffsetAPI_ThruSections outer(true, false);
+			auto canonical_profile_frame = [](fgcad_frame frame)
+			{
+				const double components[] = {
+					frame.tangent.x,
+					frame.tangent.y,
+					frame.tangent.z
+				};
+				bool reverse = false;
+				for (double component : components)
+				{
+					if (std::abs(component) <= 1.0e-12) continue;
+					reverse = component < 0;
+					break;
+				}
+				if (reverse)
+				{
+					frame.tangent.x = -frame.tangent.x;
+					frame.tangent.y = -frame.tangent.y;
+					frame.tangent.z = -frame.tangent.z;
+				}
+				return frame;
+			};
+			fgcad_frame entry_frame = canonical_profile_frame(feature.entry_frame);
+			fgcad_frame exit_frame = canonical_profile_frame(feature.exit_frame);
+			profile_wires input = profile_at(feature.input_profile, entry_frame);
+			profile_wires output = profile_at(feature.output_profile, exit_frame);
+			trace("loft profiles");
+			BRepOffsetAPI_ThruSections outer(false, false);
 			outer.CheckCompatibility(true);
 			outer.AddWire(input.outer);
 			outer.AddWire(output.outer);
 			outer.Build();
-			BRepOffsetAPI_ThruSections inner(true, false);
+			BRepOffsetAPI_ThruSections inner(false, false);
 			inner.CheckCompatibility(true);
 			inner.AddWire(input.inner);
 			inner.AddWire(output.inner);
 			inner.Build();
 			if (!outer.IsDone() || !inner.IsDone()) throw std::runtime_error("Open CASCADE could not loft the profile transition.");
-			BRepAlgoAPI_Cut cut(outer.Shape(), inner.Shape());
-			cut.Build();
-			if (!cut.IsDone()) throw std::runtime_error("The hollow profile transition could not be cut.");
-			return cut.Shape();
+			trace("loft shells");
+			TopoDS_Face entry = annular_face(input);
+			entry.Reverse();
+			TopoDS_Face exit = annular_face(output);
+			TopoDS_Shape inner_shell = inner.Shape().Reversed();
+			BRepBuilderAPI_Sewing sewing;
+			sewing.Add(outer.Shape());
+			sewing.Add(inner_shell);
+			sewing.Add(entry);
+			sewing.Add(exit);
+			sewing.Perform();
+			TopoDS_Shape sewed = sewing.SewedShape();
+			if (sewed.IsNull() || sewed.ShapeType() != TopAbs_SHELL)
+			{
+				throw std::runtime_error("The hollow profile transition could not be sewn.");
+			}
+			TopoDS_Shell shell = TopoDS::Shell(sewed);
+			ShapeFix_Shell orientation;
+			orientation.FixFaceOrientation(shell, false, false);
+			if (orientation.NbShells() == 1) shell = orientation.Shell();
+			BRepBuilderAPI_MakeSolid solid(shell);
+			if (!solid.IsDone()) throw std::runtime_error("The hollow profile transition could not form a solid.");
+			trace("loft solid");
+			return solid.Solid();
 		};
 
 		runner_record replacement;
 		replacement.id = require_text(runner_id, "runner_id");
 		replacement.name = require_text(runner_name, "runner_name");
 		TopoDS_Shape result;
-		for (size_t index = 0; index < feature_count; ++index)
+		auto is_joint_cap = [](const TopoDS_Face& face, const fgcad_frame& frame)
 		{
-			const fgcad_runner_feature& feature = features[index];
-			TopoDS_Shape section = feature.kind == FGCAD_FEATURE_LOFT_TRANSITION
-				? make_loft(feature)
-				: make_sweep(feature);
-			if (section.IsNull() || !BRepCheck_Analyzer(section, true).IsValid())
+			BRepAdaptor_Surface surface(face, true);
+			if (surface.GetType() != GeomAbs_Plane) return false;
+			gp_Pln plane = surface.Plane();
+			double distance = plane.Distance(point(frame.origin));
+			double alignment = std::abs(plane.Axis().Direction().Dot(unit(frame.tangent)));
+			return distance <= 1.0e-6 && alignment >= 1.0 - 1.0e-9;
+		};
+		auto try_sew_join = [&](const TopoDS_Shape& left, const TopoDS_Shape& right,
+			const fgcad_frame& frame, TopoDS_Shape& joined)
+		{
+			BRepBuilderAPI_Sewing sewing;
+			size_t removed_caps = 0;
+			auto add_without_joint_cap = [&](const TopoDS_Shape& shape)
+			{
+				for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next())
+				{
+					TopoDS_Face face = TopoDS::Face(explorer.Current());
+					if (is_joint_cap(face, frame))
+					{
+						++removed_caps;
+						continue;
+					}
+					sewing.Add(face);
+				}
+			};
+			add_without_joint_cap(left);
+			add_without_joint_cap(right);
+			if (removed_caps != 2) return false;
+
+			sewing.Perform();
+			TopoDS_Shape sewed = sewing.SewedShape();
+			if (sewed.IsNull() || sewed.ShapeType() != TopAbs_SHELL) return false;
+			BRepBuilderAPI_MakeSolid solid(TopoDS::Shell(sewed));
+			if (!solid.IsDone()) return false;
+			TopoDS_Shape candidate = solid.Solid();
+			if (!BRepCheck_Analyzer(candidate, true).IsValid()) return false;
+
+			for (runner_source& source : replacement.sources)
+			{
+				for (TopoDS_Face& face : source.faces)
+				{
+					if (sewing.IsModifiedSubShape(face))
+					{
+						TopoDS_Shape modified = sewing.ModifiedSubShape(face);
+						if (!modified.IsNull() && modified.ShapeType() == TopAbs_FACE)
+						{
+							face = TopoDS::Face(modified);
+						}
+					}
+				}
+			}
+			joined = candidate;
+			return true;
+		};
+		auto join_section = [&](generated_section&& section, const fgcad_frame* joint_frame)
+		{
+			if (section.shape.IsNull() || !BRepCheck_Analyzer(section.shape, true).IsValid())
 			{
 				throw std::runtime_error("A generated runner feature failed exact B-rep validation.");
 			}
-			runner_source source;
-			source.id = feature.source_node_id;
-			source.feature = feature;
-			source.faces = shape_faces(section);
-			replacement.sources.push_back(std::move(source));
+			trace("section validation");
+			for (runner_source& source : section.sources)
+			{
+				replacement.sources.push_back(std::move(source));
+			}
 
-			if (result.IsNull()) result = section;
+			if (result.IsNull()) result = section.shape;
 			else
 			{
-				BRepAlgoAPI_Fuse fuse(result, section);
+				TopoDS_Shape sewn;
+				if (joint_frame != nullptr && try_sew_join(result, section.shape, *joint_frame, sewn))
+				{
+					result = sewn;
+					trace("section sew");
+					return;
+				}
+				BRepAlgoAPI_Fuse fuse(result, section.shape);
 				fuse.Build();
 				if (!fuse.IsDone()) throw std::runtime_error("Adjacent runner features could not be joined.");
+				trace("section fuse");
 				apply_fuse_history(fuse, replacement.sources);
 				result = fuse.Shape();
 				if (result.IsNull() || !BRepCheck_Analyzer(result, true).IsValid())
 				{
 					throw std::runtime_error("An intermediate runner join failed exact B-rep validation.");
 				}
+				trace("joined validation");
 			}
+		};
+
+		for (size_t index = 0; index < feature_count;)
+		{
+			if (features[index].kind == FGCAD_FEATURE_LOFT_TRANSITION)
+			{
+				generated_section section;
+				section.shape = make_loft(features[index]);
+				section.sources.push_back({
+					features[index].source_node_id,
+					features[index],
+					shape_faces(section.shape)
+				});
+				join_section(std::move(section), &features[index].entry_frame);
+				++index;
+				continue;
+			}
+
+			size_t end = index + 1;
+			while (end < feature_count && features[end].kind != FGCAD_FEATURE_LOFT_TRANSITION
+				&& same_profile(features[index].input_profile, features[end].input_profile))
+			{
+				++end;
+			}
+			join_section(make_sweep(index, end), &features[index].entry_frame);
+			index = end;
 		}
 
 		if (result.IsNull() || !BRepCheck_Analyzer(result, true).IsValid())
 		{
 			throw std::runtime_error("The complete runner failed exact B-rep validation.");
 		}
+		trace("final validation");
 
 		replacement.shape = result;
 		document->runners[replacement.id] = std::move(replacement);

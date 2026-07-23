@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FishGfx.Cad;
 using FishGfx.Graphics;
 
@@ -70,7 +71,7 @@ internal sealed partial class ManifoldCadApplication
 		{
 			document.ImportStepAsync(part, stepPath).GetAwaiter().GetResult();
 			automaticCandidates = document.GetTopologyAsync(part.Id).GetAwaiter().GetResult().Value
-				.Where(item => item.Topology.Kind == CadTopologyKind.ClosedProfile && item.Axis.Z > 0.5)
+				.Where(item => item.Topology.Kind == CadTopologyKind.ClosedProfile)
 				.OrderByDescending(item => item.RadiusMillimetres)
 				.ToArray();
 			NativeTopologyDescriptor candidate = automaticCandidates.First();
@@ -96,28 +97,59 @@ internal sealed partial class ManifoldCadApplication
 		selectedMate = mate;
 		evaluation = project.EvaluateRunner(runner);
 		evaluations[runner.Id] = evaluation;
+		Stopwatch automaticTiming = Stopwatch.StartNew();
 		document.BuildRunnerAsync(runner, evaluation).GetAwaiter().GetResult();
-		CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync(runner.Id).GetAwaiter().GetResult();
+		long firstBuildMilliseconds = automaticTiming.ElapsedMilliseconds;
+		automaticTiming.Restart();
+		CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync(
+			runner.Id,
+			InteractiveLinearDeflection,
+			InteractiveAngularDeflection
+		).GetAwaiter().GetResult();
+		long firstMeshMilliseconds = automaticTiming.ElapsedMilliseconds;
+		Console.WriteLine(
+			$"[Manifold CAD] Automatic runner 1: build={firstBuildMilliseconds} ms, "
+			+ $"mesh={firstMeshMilliseconds} ms"
+		);
 		viewport.AddOrReplace(null, runner.Id, preview.Value, true);
 		viewport.SetActiveRunner(runner.Id);
 
-		if (automaticCandidates?.Length > 1)
+		for (int candidateIndex = 1; candidateIndex < Math.Min(automaticCandidates?.Length ?? 0, 8); candidateIndex++)
 		{
-			NativeTopologyDescriptor secondCandidate = automaticCandidates[1];
-			CadMate secondMate = project.AddMate(part.Id, "Cylinder 2");
-			MateFrameResult secondFrame = document.GetMateFrameAsync(secondCandidate.Topology, secondCandidate.Center)
+			NativeTopologyDescriptor additionalCandidate = automaticCandidates[candidateIndex];
+			CadMate additionalMate = project.AddMate(part.Id, $"Cylinder {candidateIndex + 1}");
+			MateFrameResult additionalFrame = document.GetMateFrameAsync(
+				additionalCandidate.Topology,
+				additionalCandidate.Center
+			)
 				.GetAwaiter().GetResult().Value;
-			secondMate.Rebind(secondCandidate.Topology, secondFrame.Frame, secondFrame.RadiusMillimetres);
-			document.BindMateSelectorAsync(secondMate).GetAwaiter().GetResult();
-			CadRunner secondRunner = project.AddRunner(secondMate.Id);
-			RunnerEvaluationResult secondEvaluation = project.EvaluateRunner(secondRunner);
-			evaluations[secondRunner.Id] = secondEvaluation;
-			document.BuildRunnerAsync(secondRunner, secondEvaluation).GetAwaiter().GetResult();
-			CadTessellation secondPreview = document.TessellateRunnerAsync(secondRunner.Id).GetAwaiter().GetResult().Value;
-			viewport.AddOrReplace(null, secondRunner.Id, secondPreview, true);
-			project.SetActiveRunner(runner.Id);
-			viewport.SetActiveRunner(runner.Id);
+			additionalMate.Rebind(
+				additionalCandidate.Topology,
+				additionalFrame.Frame,
+				additionalFrame.RadiusMillimetres
+			);
+			document.BindMateSelectorAsync(additionalMate).GetAwaiter().GetResult();
+			CadRunner additionalRunner = project.AddRunner(additionalMate.Id);
+			RunnerEvaluationResult additionalEvaluation = project.EvaluateRunner(additionalRunner);
+			evaluations[additionalRunner.Id] = additionalEvaluation;
+			automaticTiming.Restart();
+			document.BuildRunnerAsync(additionalRunner, additionalEvaluation).GetAwaiter().GetResult();
+			long additionalBuildMilliseconds = automaticTiming.ElapsedMilliseconds;
+			automaticTiming.Restart();
+			CadTessellation additionalPreview = document.TessellateRunnerAsync(
+				additionalRunner.Id,
+				InteractiveLinearDeflection,
+				InteractiveAngularDeflection
+			).GetAwaiter().GetResult().Value;
+			long additionalMeshMilliseconds = automaticTiming.ElapsedMilliseconds;
+			Console.WriteLine(
+				$"[Manifold CAD] Automatic runner {candidateIndex + 1}: "
+				+ $"build={additionalBuildMilliseconds} ms, mesh={additionalMeshMilliseconds} ms"
+			);
+			viewport.AddOrReplace(null, additionalRunner.Id, additionalPreview, true);
 		}
+		project.SetActiveRunner(runner.Id);
+		viewport.SetActiveRunner(runner.Id);
 
 		if (string.IsNullOrWhiteSpace(stepPath))
 		{

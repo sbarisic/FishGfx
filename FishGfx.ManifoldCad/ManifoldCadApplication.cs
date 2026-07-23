@@ -12,6 +12,8 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 {
 	private const int InitialWidth = 1600;
 	private const int InitialHeight = 1000;
+	private const double InteractiveLinearDeflection = 0.5;
+	private const double InteractiveAngularDeflection = Math.PI / 12;
 	private readonly bool autoMode;
 	private readonly Stopwatch timer = Stopwatch.StartNew();
 	private readonly Dictionary<Guid, CadPoint3> eulerByPart = new();

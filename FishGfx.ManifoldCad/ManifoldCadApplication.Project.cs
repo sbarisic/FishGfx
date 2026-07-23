@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using FishGfx.Cad;
 
@@ -248,7 +249,9 @@ internal sealed partial class ManifoldCadApplication
 
 	private void RegenerateRunner(CadRunner runner)
 	{
+		Stopwatch timing = Stopwatch.StartNew();
 		RunnerEvaluationResult result = project.EvaluateRunner(runner);
+		long evaluationMilliseconds = timing.ElapsedMilliseconds;
 		evaluations[runner.Id] = result;
 		if (runner == ActiveRunner) evaluation = result;
 
@@ -263,17 +266,34 @@ internal sealed partial class ManifoldCadApplication
 
 		try
 		{
+			timing.Restart();
 			long revision = document.BuildRunnerAsync(runner, result).GetAwaiter().GetResult();
-			CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync(runner.Id).GetAwaiter().GetResult();
+			long buildMilliseconds = timing.ElapsedMilliseconds;
+			timing.Restart();
+			CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync(
+				runner.Id,
+				InteractiveLinearDeflection,
+				InteractiveAngularDeflection
+			).GetAwaiter().GetResult();
+			long tessellationMilliseconds = timing.ElapsedMilliseconds;
 
 			if (preview.Revision != revision || revision != document.Revision)
 			{
 				throw new InvalidOperationException("Runner regeneration was superseded by a newer document revision.");
 			}
 
+			timing.Restart();
 			viewport.AddOrReplace(null, runner.Id, preview.Value, true);
+			long uploadMilliseconds = timing.ElapsedMilliseconds;
 			runnerBuildErrors.Remove(runner.Id);
-			ui.SetStatus($"{runner.Name} {result.LengthMillimetres:F2} mm | exact solid valid");
+			Console.WriteLine(
+				$"[Manifold CAD] Regenerated {runner.Name}: eval={evaluationMilliseconds} ms, "
+				+ $"build={buildMilliseconds} ms, mesh={tessellationMilliseconds} ms, "
+				+ $"upload={uploadMilliseconds} ms"
+			);
+			ui.SetStatus($"{runner.Name} {result.LengthMillimetres:F2} mm | exact solid valid | "
+				+ $"eval {evaluationMilliseconds} ms, build {buildMilliseconds} ms, "
+				+ $"mesh {tessellationMilliseconds} ms, upload {uploadMilliseconds} ms");
 		}
 		catch (Exception exception)
 		{

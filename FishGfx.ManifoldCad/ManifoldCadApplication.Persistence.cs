@@ -65,7 +65,11 @@ internal sealed partial class ManifoldCadApplication
 			{
 				try
 				{
-					CadTessellation stored = document.TessellateRunnerAsync(runner.Id)
+					CadTessellation stored = document.TessellateRunnerAsync(
+						runner.Id,
+						InteractiveLinearDeflection,
+						InteractiveAngularDeflection
+					)
 						.GetAwaiter().GetResult().Value;
 					viewport.AddOrReplace(null, runner.Id, stored, true, true);
 				}

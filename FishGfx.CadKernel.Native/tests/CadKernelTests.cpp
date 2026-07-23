@@ -119,7 +119,7 @@ int main()
 		"Exact annular runner sweep failed"
 	);
 	fgcad_runner_profile larger_profile = circular(55, 2.5);
-	fgcad_runner_feature transitioned[2]{};
+	fgcad_runner_feature transitioned[4]{};
 	transitioned[0] = loft(
 		"44444444-4444-4444-4444-444444444444",
 		{ 0, 250, 0 }, { 35, 250, 0 }, { 1, 0, 0 }, profile, larger_profile
@@ -128,9 +128,30 @@ int main()
 		"55555555-5555-5555-5555-555555555555",
 		{ 35, 250, 0 }, { 135, 250, 0 }, { 1, 0, 0 }, larger_profile
 	);
+	transitioned[2] = loft(
+		"66666666-6666-6666-6666-666666666666",
+		{ 135, 250, 0 }, { 165, 250, 0 }, { 1, 0, 0 }, larger_profile, profile
+	);
+	transitioned[3] = straight(
+		"77777777-7777-7777-7777-777777777777",
+		{ 165, 250, 0 }, { 215, 250, 0 }, { 1, 0, 0 }, profile
+	);
 	require(
-		fgcad_document_build_runner(document, "runner-b", "Runner B", transitioned, 2) == FGCAD_STATUS_OK,
-		"Exact hollow profile transition failed"
+		fgcad_document_build_runner(document, "runner-b", "Runner B", transitioned, 4) == FGCAD_STATUS_OK,
+		"Repeated exact hollow profile transitions failed"
+	);
+	fgcad_runner_feature reversed[2]{};
+	reversed[0] = loft(
+		"88888888-8888-8888-8888-888888888888",
+		{ 215, 325, 0 }, { 180, 325, 0 }, { -1, 0, 0 }, profile, larger_profile
+	);
+	reversed[1] = straight(
+		"99999999-9999-9999-9999-999999999999",
+		{ 180, 325, 0 }, { 80, 325, 0 }, { -1, 0, 0 }, larger_profile
+	);
+	require(
+		fgcad_document_build_runner(document, "runner-c", "Runner C", reversed, 2) == FGCAD_STATUS_OK,
+		"Negative-facing exact profile transition failed"
 	);
 
 	fgcad_tessellation* tessellation = nullptr;
@@ -181,6 +202,12 @@ int main()
 		"Second runner tessellation failed"
 	);
 	require(fgcad_tessellation_face_count(tessellation) > 0, "Loft runner had no faces");
+	fgcad_tessellation_destroy(tessellation);
+	require(
+		fgcad_document_tessellate_runner(document, "runner-c", 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
+		"Negative-facing runner tessellation failed"
+	);
+	require(fgcad_tessellation_face_count(tessellation) > 0, "Negative-facing runner had no faces");
 	fgcad_tessellation_destroy(tessellation);
 
 	std::filesystem::path binary = temporary(".xbf");
