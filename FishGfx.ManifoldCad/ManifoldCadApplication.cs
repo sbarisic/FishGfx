@@ -8,13 +8,16 @@ using FishGfx.Graphics;
 
 namespace FishGfx.ManifoldCad;
 
-internal sealed class ManifoldCadApplication : IDisposable
+internal sealed partial class ManifoldCadApplication : IDisposable
 {
 	private const int InitialWidth = 1600;
 	private const int InitialHeight = 1000;
 	private readonly bool autoMode;
 	private readonly Stopwatch timer = Stopwatch.StartNew();
 	private readonly Dictionary<Guid, CadPoint3> eulerByPart = new();
+	private readonly Dictionary<Guid, RunnerEvaluationResult> evaluations = new();
+	private readonly Dictionary<Guid, string> runnerBuildErrors = new();
+	private readonly RunnerGraph emptyGraph = new();
 	private RenderWindow window;
 	private InputManager input;
 	private CadUi ui;
@@ -25,6 +28,8 @@ internal sealed class ManifoldCadApplication : IDisposable
 	private CadDocument document;
 	private ManifoldProject project = new();
 	private RunnerEvaluationResult evaluation;
+	private CadRunner ActiveRunner => project.ActiveRunner;
+	private RunnerGraph ActiveGraph => ActiveRunner?.Graph ?? emptyGraph;
 	private CadPart selectedPart;
 	private CadMate selectedMate;
 	private NativeTopologyDescriptor selectedTopology;
@@ -61,7 +66,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 			ConfigureAutomaticFixture();
 		}
 
-		evaluation ??= project.EvaluateRunner();
+		evaluation = ActiveRunner != null ? project.EvaluateRunner(ActiveRunner) : null;
 		RefreshUi();
 		previousTime = timer.Elapsed.TotalSeconds;
 
@@ -121,6 +126,22 @@ internal sealed class ManifoldCadApplication : IDisposable
 		ui.MateNameChanged += RenameMate;
 		ui.TransformChanged += TransformPart;
 		ui.NodeParameterChanged += ChangeNodeParameter;
+		ui.AddNodeRequested += () =>
+		{
+			if (ActiveRunner == null)
+			{
+				ui.SetStatus("Select or add a runner before adding graph nodes.");
+				return;
+			}
+
+			nodeCanvas.OpenPalette(ActiveGraph, CadLayout.Graph(window.Width));
+		};
+		ui.AddRunnerRequested += AddRunner;
+		ui.DeleteRunnerRequested += DeleteActiveRunner;
+		ui.RunnerNameChanged += RenameRunner;
+		ui.PartSelected += SelectPart;
+		ui.MateSelected += SelectMate;
+		ui.RunnerSelected += SelectRunner;
 		ui.FitRequested += viewport.Fit;
 		ui.OrthographicRequested += viewport.ToggleOrthographic;
 		ui.ViewRequested += viewport.SetView;
@@ -153,6 +174,11 @@ internal sealed class ManifoldCadApplication : IDisposable
 		{
 			ui.SetNode(node);
 		};
+		nodeCanvas.GraphChanged += () =>
+		{
+			if (ActiveRunner != null) RegenerateRunner(ActiveRunner);
+		};
+		nodeCanvas.StatusChanged += ui.SetStatus;
 	}
 
 	private void Update(float deltaTime, float time)
@@ -167,7 +193,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 		Vector2 mouse = input.MousePosition;
 		viewport.OnScroll(viewportBounds.Contains(mouse) ? scrollDelta : 0);
 		viewport.Update(viewportBounds, input, mouse);
-		nodeCanvas.Update(project.Graph, graphBounds, input, mouse, graphBounds.Contains(mouse) ? scrollDelta : 0);
+		nodeCanvas.Update(ActiveGraph, graphBounds, input, mouse, graphBounds.Contains(mouse) ? scrollDelta : 0);
 		ui.Update(deltaTime, time);
 	}
 
@@ -207,7 +233,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 				Color.White,
 				viewportTarget.ColorAttachments[0]
 			);
-			nodeCanvas.Render(pass, project.Graph, graphBounds, font, evaluation);
+			nodeCanvas.Render(pass, ActiveGraph, graphBounds, font, evaluation);
 			ui.Render(pass, deltaTime, time);
 		}
 
@@ -229,311 +255,6 @@ internal sealed class ManifoldCadApplication : IDisposable
 		}
 	}
 
-	private void ImportStep(string path)
-	{
-		TryOperation(() =>
-		{
-			CadPart part = project.AddPart(Path.GetFileNameWithoutExtension(path), Path.GetFullPath(path));
-			document.ImportStepAsync(part, path).GetAwaiter().GetResult();
-			selectedPart = part;
-			eulerByPart[part.Id] = default;
-			UploadPart(part);
-			viewport.Fit();
-			RefreshUi();
-			ui.SetStatus($"Imported {part.Name}");
-		});
-	}
-
-	private void ReplaceStep(string path)
-	{
-		if (selectedPart == null)
-		{
-			ui.SetStatus("Select a part before replacing it.", true);
-			return;
-		}
-
-		TryOperation(() =>
-		{
-			project.ReplacePart(selectedPart.Id, Path.GetFullPath(path));
-			document.ReplaceStepAsync(selectedPart, path).GetAwaiter().GetResult();
-			UploadPart(selectedPart);
-			RegenerateRunner();
-			RefreshUi();
-			ui.SetStatus("Part replaced; attached mates require explicit rebinding.", true);
-		});
-	}
-
-	private void TransformPart(CadPoint3 translation, CadPoint3 euler)
-	{
-		if (selectedPart == null)
-		{
-			return;
-		}
-
-		TryOperation(() =>
-		{
-			selectedPart.Transform = new CadTransform(translation, CadQuaternion.FromEulerDegrees(euler));
-			eulerByPart[selectedPart.Id] = euler;
-			document.SetPartTransformAsync(selectedPart).GetAwaiter().GetResult();
-			UploadPart(selectedPart);
-			RegenerateRunner();
-			ui.SetStatus("Placement updated; attached runner regenerated.");
-		});
-	}
-
-	private void CreateOrRebindMate()
-	{
-		if (!hasSelectedTopology || selectedPart == null)
-		{
-			ui.SetStatus("Select a cyan mate candidate or supported topology first.", true);
-			return;
-		}
-
-		if (selectedTopology.Topology.Kind is not CadTopologyKind.CircularEdge
-			and not CadTopologyKind.CylindricalFace
-			and not CadTopologyKind.ClosedProfile)
-		{
-			ui.SetStatus("Mates require a circular edge, cylindrical face, or detected closed profile.", true);
-			return;
-		}
-
-		TryOperation(() =>
-		{
-			CadRevisioned<MateFrameResult> result = document.GetMateFrameAsync(
-				selectedTopology.Topology,
-				viewport.Selection.HitPoint
-			).GetAwaiter().GetResult();
-			RunnerNode mateReference = project.Graph.Nodes.FirstOrDefault(node =>
-				node.DefinitionId == RunnerNodes.MateReference);
-			CadMate referencedMate = mateReference != null
-				&& mateReference.Properties.TryGetValue("mateId", out string mateIdText)
-				&& Guid.TryParse(mateIdText, out Guid mateId)
-				? project.Mates.FirstOrDefault(mate => mate.Id == mateId && mate.PartId == selectedPart.Id)
-				: null;
-			selectedMate ??= referencedMate;
-			selectedMate ??= project.Mates.FirstOrDefault(mate => mate.PartId == selectedPart.Id && !mate.IsResolved);
-			selectedMate ??= project.AddMate(selectedPart.Id, $"Mate {project.Mates.Count + 1}");
-			selectedMate.Rebind(selectedTopology.Topology, result.Value.Frame, result.Value.RadiusMillimetres);
-			document.BindMateSelectorAsync(selectedMate).GetAwaiter().GetResult();
-
-			if (project.Graph.Nodes.Count == 0)
-			{
-				project.Graph = RunnerGraph.CreateDefault(selectedMate.Id);
-			}
-			else if (mateReference != null)
-			{
-				mateReference.Properties["mateId"] = selectedMate.Id.ToString("D");
-			}
-
-			RegenerateRunner();
-			RefreshUi();
-			ui.SetStatus($"Mate '{selectedMate.Name}' bound to exact topology.");
-		});
-	}
-
-	private void ChangeNodeParameter(int index, double value)
-	{
-		RunnerNode node = nodeCanvas.SelectedNode;
-
-		if (node == null)
-		{
-			return;
-		}
-
-		string[] properties = nodeCanvas.EditableProperties();
-
-		if (index >= properties.Length)
-		{
-			return;
-		}
-
-		node.Properties[properties[index]] = value.ToString("G17", CultureInfo.InvariantCulture);
-		RegenerateRunner();
-	}
-
-	private void FlipMate()
-	{
-		if (selectedMate?.IsResolved != true)
-		{
-			ui.SetStatus("Select a resolved mate before flipping its axis.", true);
-			return;
-		}
-
-		selectedMate.Flip();
-		RegenerateRunner();
-		RefreshUi();
-	}
-
-	private void RenameMate(string name)
-	{
-		if (selectedMate == null || string.IsNullOrWhiteSpace(name))
-		{
-			return;
-		}
-
-		selectedMate.Name = name.Trim();
-		RefreshUi();
-	}
-
-	private void RegenerateRunner()
-	{
-		evaluation = project.EvaluateRunner();
-
-		if (!evaluation.Success)
-		{
-			viewport.MarkRunnerStale();
-			ui.SetStatus(string.Join(Environment.NewLine, evaluation.Diagnostics.Select(item => item.Message)), true);
-			return;
-		}
-
-		long revision = document.BuildRunnerAsync(evaluation).GetAwaiter().GetResult();
-		CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync().GetAwaiter().GetResult();
-
-		if (preview.Revision == revision && revision == document.Revision)
-		{
-			viewport.AddOrReplace(null, preview.Value, true);
-			ui.SetStatus($"Runner {evaluation.LengthMillimetres:F2} mm | exact solid valid");
-		}
-	}
-
-	private void UploadPart(CadPart part)
-	{
-		CadRevisioned<CadTessellation> preview = document.TessellatePartAsync(part.Id).GetAwaiter().GetResult();
-
-		if (preview.Revision == document.Revision)
-		{
-			viewport.AddOrReplace(part.Id, preview.Value, false);
-		}
-
-		CadRevisioned<IReadOnlyList<NativeTopologyDescriptor>> topology = document.GetTopologyAsync(part.Id)
-			.GetAwaiter()
-			.GetResult();
-
-		if (topology.Revision == document.Revision)
-		{
-			viewport.SetMateCandidates(part, topology.Value);
-			viewport.SetMates(project);
-		}
-	}
-
-	private void SelectViewportItem(CadViewportSelection selection)
-	{
-		if (selection.MateId.HasValue)
-		{
-			selectedMate = project.Mates.FirstOrDefault(mate => mate.Id == selection.MateId.Value);
-			nodeCanvas.SelectBySource(
-				project.Graph.Nodes.FirstOrDefault(node => node.DefinitionId == RunnerNodes.MateReference)?.Id,
-				project.Graph
-			);
-		}
-
-		if (selection.SourceNodeId.HasValue)
-		{
-			nodeCanvas.SelectBySource(selection.SourceNodeId, project.Graph);
-		}
-
-		if (!selection.PartId.HasValue)
-		{
-			return;
-		}
-
-		selectedPart = project.Parts.FirstOrDefault(part => part.Id == selection.PartId.Value);
-		selectedMate = project.Mates.FirstOrDefault(mate => mate.PartId == selection.PartId.Value
-			&& mate.Topology?.TopologyId == selection.TopologyId);
-		CadRevisioned<IReadOnlyList<NativeTopologyDescriptor>> topology = document.GetTopologyAsync(
-			selection.PartId.Value
-		).GetAwaiter().GetResult();
-		selectedTopology = topology.Value.FirstOrDefault(item => item.Topology.TopologyId == selection.TopologyId);
-		hasSelectedTopology = selectedTopology != null;
-		RefreshUi();
-
-		if (hasSelectedTopology && selection.IsMateCandidate)
-		{
-			CreateOrRebindMate();
-			return;
-		}
-
-		if (hasSelectedTopology)
-		{
-			bool mateEligible = selectedTopology.Topology.Kind is CadTopologyKind.CircularEdge
-				or CadTopologyKind.CylindricalFace
-				or CadTopologyKind.ClosedProfile;
-			ui.SetStatus(
-				mateEligible
-					? $"Selected {selectedTopology.Topology.Kind}; click Create / Rebind Mate."
-					: $"Selected {selectedTopology.Topology.Kind}; choose a cyan candidate sphere or supported topology."
-			);
-		}
-	}
-
-	private void SaveProject(string path)
-	{
-		TryOperation(() =>
-		{
-			string temporary = Path.Combine(Path.GetTempPath(), $"fishgfx-{Guid.NewGuid():N}.xbf");
-
-			try
-			{
-				document.SaveXcafAsync(temporary).GetAwaiter().GetResult();
-				CadProjectArchive.Save(path, project, File.ReadAllBytes(temporary));
-			}
-			finally
-			{
-				File.Delete(temporary);
-			}
-
-			ui.SetStatus($"Saved {Path.GetFileName(path)} atomically.");
-		});
-	}
-
-	private void OpenProject(string path)
-	{
-		TryOperation(() =>
-		{
-			CadProjectPackage package = CadProjectArchive.Load(path);
-			string temporary = Path.Combine(Path.GetTempPath(), $"fishgfx-{Guid.NewGuid():N}.xbf");
-
-			try
-			{
-				File.WriteAllBytes(temporary, package.ModelDocument);
-				document.LoadXcafAsync(temporary).GetAwaiter().GetResult();
-			}
-			finally
-			{
-				File.Delete(temporary);
-			}
-
-			project = package.Project;
-			selectedPart = project.Parts.FirstOrDefault();
-			selectedMate = project.Mates.FirstOrDefault();
-
-			foreach (CadPart part in project.Parts)
-			{
-				UploadPart(part);
-			}
-
-			RegenerateRunner();
-			viewport.Fit();
-			RefreshUi();
-			ui.SetStatus($"Opened {Path.GetFileName(path)} without source STEP dependencies.");
-		});
-	}
-
-	private void ExportStep(string path)
-	{
-		if (evaluation?.Success != true)
-		{
-			ui.SetStatus("Export is disabled until the exact runner regenerates successfully.", true);
-			return;
-		}
-
-		TryOperation(() =>
-		{
-			document.ExportStepAsync(path).GetAwaiter().GetResult();
-			ui.SetStatus($"Exported complete AP242 assembly to {Path.GetFileName(path)}.");
-		});
-	}
-
 	private void RefreshUi()
 	{
 		viewport.SetMates(project);
@@ -541,7 +262,7 @@ internal sealed class ManifoldCadApplication : IDisposable
 			? value
 			: default;
 		viewport.SetSelectedPart(selectedPart, euler);
-		ui.SetModel(project, selectedPart?.Id, selectedMate?.Id);
+		ui.SetModel(project, selectedPart?.Id, selectedMate?.Id, ActiveRunner?.Id);
 		ui.SetPart(selectedPart, euler);
 		ui.SetNode(nodeCanvas.SelectedNode);
 	}
@@ -556,153 +277,6 @@ internal sealed class ManifoldCadApplication : IDisposable
 		{
 			ui.SetStatus(exception.Message, true);
 		}
-	}
-
-	private void ValidateAutomaticFrame()
-	{
-		if (!ui.InteractionEnabled)
-		{
-			throw new InvalidOperationException("FishUI input must remain enabled in the CAD workspace.");
-		}
-
-		if (!autoFrameCaptured || autoVisibleSamples < 4)
-		{
-			throw new InvalidOperationException("Automatic graphical validation captured an empty frame.");
-		}
-
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
-			&& viewport.MateCandidateCount == 0)
-		{
-			throw new InvalidOperationException("Automatic STEP validation found no visible mate candidates.");
-		}
-
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
-			&& !viewport.CanPickMateCandidate(CadLayout.Viewport(window.Width, window.Height)))
-		{
-			throw new InvalidOperationException("Automatic rotated-view validation could not pick a mate candidate.");
-		}
-
-		Console.WriteLine(
-			$"MANIFOLD_CAD_AUTO_OK renderer={window.Graphics.Capabilities.Renderer} "
-			+ $"fishUiInput=enabled vertices=exact-runner visibleSamples={autoVisibleSamples} "
-			+ $"frames={autoRenderedFrames} "
-			+ $"mateCandidates={viewport.MateCandidateCount} "
-			+ $"screenshot={autoScreenshotPath}"
-		);
-	}
-
-	private int CountVisibleSamples()
-	{
-		int count = 0;
-
-		for (int y = 20; y < window.Height; y += 80)
-			for (int x = 20; x < window.Width; x += 80)
-			{
-				Color color = window.GetPixel(x, y);
-
-				if (color.A != 0 && (color.R != 0 || color.G != 0 || color.B != 0))
-				{
-					count++;
-				}
-			}
-
-		return count;
-	}
-
-	private void ConfigureAutomaticFixture()
-	{
-		CadPart part = project.AddPart("Automated flange fixture");
-		string stepPath = Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP");
-		part.Transform = string.IsNullOrWhiteSpace(stepPath)
-			? new CadTransform(new CadPoint3(15, -8, 4), CadQuaternion.Identity)
-			: CadTransform.Identity;
-		CadMate mate = project.AddMate(part.Id, "Cylinder 1");
-
-		if (!string.IsNullOrWhiteSpace(stepPath))
-		{
-			document.ImportStepAsync(part, stepPath).GetAwaiter().GetResult();
-			NativeTopologyDescriptor candidate = document.GetTopologyAsync(part.Id).GetAwaiter().GetResult().Value
-				.Where(item => item.Topology.Kind == CadTopologyKind.ClosedProfile && item.Axis.Z > 0.5)
-				.OrderByDescending(item => item.RadiusMillimetres)
-				.First();
-			MateFrameResult frame = document.GetMateFrameAsync(candidate.Topology, candidate.Center)
-				.GetAwaiter()
-				.GetResult()
-				.Value;
-			mate.Rebind(candidate.Topology, frame.Frame, frame.RadiusMillimetres);
-			document.BindMateSelectorAsync(mate).GetAwaiter().GetResult();
-			UploadPart(part);
-		}
-		else
-		{
-			mate.Rebind(
-				new CadTopologyRef(part.Id, 1, CadTopologyKind.CircularEdge),
-				new CadFrame(CadPoint3.Zero, new CadPoint3(1, 0, 0), new CadPoint3(0, 1, 0)),
-				21.2
-			);
-		}
-
-		project.Graph = RunnerGraph.CreateDefault(mate.Id);
-		selectedPart = part;
-		selectedMate = mate;
-		evaluation = project.EvaluateRunner();
-		document.BuildRunnerAsync(evaluation).GetAwaiter().GetResult();
-		CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync().GetAwaiter().GetResult();
-		viewport.AddOrReplace(null, preview.Value, true);
-
-		if (string.IsNullOrWhiteSpace(stepPath))
-		{
-			viewport.SetView(CadStandardView.Right);
-		}
-		else
-		{
-			viewport.SetOrbit(38, 24, false);
-		}
-
-		viewport.Fit();
-
-		if (!string.IsNullOrWhiteSpace(stepPath)
-			&& !viewport.TryCapturePickingRayToVisibleCandidate(CadLayout.Viewport(window.Width, window.Height)))
-		{
-			throw new InvalidOperationException("Automatic fixture could not capture its debug picking ray.");
-		}
-
-		RunnerNode bend = project.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.Bend);
-		nodeCanvas.SelectBySource(bend.Id, project.Graph);
-	}
-
-	private unsafe void CaptureScreenshot(string path)
-	{
-		using System.Drawing.Bitmap bitmap = new(window.Width, window.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-		System.Drawing.Rectangle rectangle = new(0, 0, bitmap.Width, bitmap.Height);
-		System.Drawing.Imaging.BitmapData data = bitmap.LockBits(
-			rectangle,
-			System.Drawing.Imaging.ImageLockMode.WriteOnly,
-			System.Drawing.Imaging.PixelFormat.Format32bppArgb
-		);
-
-		try
-		{
-			for (int y = 0; y < bitmap.Height; y++)
-			{
-				byte* row = (byte*)data.Scan0 + y * data.Stride;
-
-				for (int x = 0; x < bitmap.Width; x++)
-				{
-					Color color = window.GetPixel(x, y);
-					row[x * 4] = color.B;
-					row[x * 4 + 1] = color.G;
-					row[x * 4 + 2] = color.R;
-					row[x * 4 + 3] = color.A;
-				}
-			}
-		}
-		finally
-		{
-			bitmap.UnlockBits(data);
-		}
-
-		bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
 	}
 
 	private void OnScroll(object sender, ScrollEventArgs args) => scrollDelta += args.Offset.Y;

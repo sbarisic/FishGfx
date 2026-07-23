@@ -118,6 +118,23 @@ public readonly record struct CadQuaternion(double X, double Y, double Z, double
 		return new CadQuaternion(value.X, value.Y, value.Z, value.W).Normalized();
 	}
 
+	public CadPoint3 ToEulerDegrees()
+	{
+		CadQuaternion value = Normalized();
+		double pitchSine = 2 * (value.W * value.X - value.Y * value.Z);
+		double pitch = Math.Asin(Math.Clamp(pitchSine, -1, 1));
+		double yaw = Math.Atan2(
+			2 * (value.W * value.Y + value.X * value.Z),
+			1 - 2 * (value.X * value.X + value.Y * value.Y)
+		);
+		double roll = Math.Atan2(
+			2 * (value.W * value.Z + value.X * value.Y),
+			1 - 2 * (value.X * value.X + value.Z * value.Z)
+		);
+		double degrees = 180 / Math.PI;
+		return new CadPoint3(pitch * degrees, yaw * degrees, roll * degrees);
+	}
+
 	public CadPoint3 Rotate(CadPoint3 value)
 	{
 		CadQuaternion rotation = Normalized();

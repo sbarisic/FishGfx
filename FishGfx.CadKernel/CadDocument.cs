@@ -43,7 +43,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			await document.InvokeAsync(() =>
 			{
-				const uint requiredApiVersion = 2;
+				const uint requiredApiVersion = 3;
 				uint apiVersion = NativeMethods.ApiVersion();
 
 				if (apiVersion != requiredApiVersion)
@@ -160,38 +160,56 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 	}
 
 	public Task<long> BuildRunnerAsync(
-		RunnerEvaluationResult runner,
+		CadRunner runner,
+		RunnerEvaluationResult evaluation,
 		CancellationToken cancellationToken = default
 	)
 	{
 		ArgumentNullException.ThrowIfNull(runner);
+		ArgumentNullException.ThrowIfNull(evaluation);
 
-		if (!runner.Success)
+		if (!evaluation.Success || evaluation.RunnerId != runner.Id)
 		{
-			throw new ArgumentException("Only a valid evaluated runner can be built.", nameof(runner));
+			throw new ArgumentException("Only a valid evaluation of the selected runner can be built.", nameof(evaluation));
 		}
 
-		NativeRunnerSegment[] segments = runner.Path.Segments
-			.Select(NativeRunnerSegment.FromManaged)
+		NativeRunnerFeature[] features = evaluation.Chain.Features
+			.Select(NativeRunnerFeature.FromManaged)
 			.ToArray();
-		PipeProfile profile = runner.Profile.Value;
 
 		return MutateAsync(() =>
 		{
 			unsafe
 			{
-				fixed (NativeRunnerSegment* pointer = segments)
+				fixed (NativeRunnerFeature* pointer = features)
 				{
 					Check(NativeMethods.DocumentBuildRunner(
 						handle,
+						runner.Id.ToString("D"),
+						runner.Name,
 						pointer,
-						(nuint)segments.Length,
-						profile.OuterDiameterMillimetres,
-						profile.WallThicknessMillimetres
+						(nuint)features.Length
 					), "Build exact runner");
 				}
 			}
 		}, cancellationToken);
+	}
+
+	public Task<long> RemoveRunnerAsync(Guid runnerId, CancellationToken cancellationToken = default)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentRemoveRunner(handle, runnerId.ToString("D")),
+			"Remove exact runner"
+		), cancellationToken);
+	}
+
+	public Task<long> RenameRunnerAsync(CadRunner runner, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(runner);
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentRenameRunner(handle, runner.Id.ToString("D"), runner.Name),
+			"Rename exact runner"
+		), cancellationToken);
 	}
 
 	public Task<long> BindMateSelectorAsync(CadMate mate, CancellationToken cancellationToken = default)
@@ -238,6 +256,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 	}
 
 	public Task<CadRevisioned<CadTessellation>> TessellateRunnerAsync(
+		Guid runnerId,
 		double linearDeflection = 0.1,
 		double angularDeflection = Math.PI / 18,
 		CancellationToken cancellationToken = default
@@ -247,6 +266,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			Check(NativeMethods.DocumentTessellateRunner(
 				handle,
+				runnerId.ToString("D"),
 				linearDeflection,
 				angularDeflection,
 				out nint nativeTessellation

@@ -111,32 +111,70 @@ internal readonly record struct NativeEdgeRange(
 );
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-internal unsafe struct NativeRunnerSegment
+internal unsafe struct NativeRunnerProfile
+{
+	internal int Kind;
+	internal fixed byte MateId[40];
+	internal double OuterDiameter;
+	internal double WallThickness;
+
+	internal static NativeRunnerProfile FromManaged(RunnerSectionProfile profile)
+	{
+		NativeRunnerProfile result = new()
+		{
+			Kind = (int)profile.Kind,
+			OuterDiameter = profile.CircularProfile?.OuterDiameterMillimetres ?? 0,
+			WallThickness = profile.WallThicknessMillimetres,
+		};
+		if (profile.MateId.HasValue)
+		{
+			CopyId(result.MateId, profile.MateId.Value);
+		}
+		return result;
+	}
+
+	private static void CopyId(byte* destination, Guid id)
+	{
+		byte[] bytes = System.Text.Encoding.UTF8.GetBytes(id.ToString("D"));
+		for (int index = 0; index < Math.Min(bytes.Length, 39); index++) destination[index] = bytes[index];
+	}
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+internal unsafe struct NativeRunnerFeature
 {
 	internal int Kind;
 	internal fixed byte SourceNodeId[40];
-	internal NativePoint3 Start;
-	internal NativePoint3 End;
-	internal NativePoint3 StartTangent;
-	internal NativePoint3 EndTangent;
+	internal NativeFrame EntryFrame;
+	internal NativeFrame ExitFrame;
+	internal NativeRunnerProfile InputProfile;
+	internal NativeRunnerProfile OutputProfile;
 	internal NativePoint3 Center;
 	internal double Radius;
 	internal double SweepRadians;
+	internal double RotationRadians;
 
-	internal static NativeRunnerSegment FromManaged(RunnerSegment segment)
+	internal static NativeRunnerFeature FromManaged(RunnerFeature feature)
 	{
-		NativeRunnerSegment result = new()
+		NativeRunnerFeature result = new()
 		{
-			Kind = (int)segment.Kind,
-			Start = new NativePoint3(segment.Start),
-			End = new NativePoint3(segment.End),
-			StartTangent = new NativePoint3(segment.StartTangent),
-			EndTangent = new NativePoint3(segment.EndTangent),
-			Center = new NativePoint3(segment.Center),
-			Radius = segment.RadiusMillimetres,
-			SweepRadians = segment.SweepRadians,
+			Kind = (int)feature.Kind,
+			EntryFrame = new NativeFrame(
+				new NativePoint3(feature.EntryFrame.Origin),
+				new NativePoint3(feature.EntryFrame.Tangent),
+				new NativePoint3(feature.EntryFrame.Normal)),
+			ExitFrame = new NativeFrame(
+				new NativePoint3(feature.ExitFrame.Origin),
+				new NativePoint3(feature.ExitFrame.Tangent),
+				new NativePoint3(feature.ExitFrame.Normal)),
+			InputProfile = NativeRunnerProfile.FromManaged(feature.InputProfile),
+			OutputProfile = NativeRunnerProfile.FromManaged(feature.OutputProfile),
+			Center = new NativePoint3(feature.Center),
+			Radius = feature.RadiusMillimetres,
+			SweepRadians = feature.SweepRadians,
+			RotationRadians = feature.RotationRadians,
 		};
-		byte[] id = System.Text.Encoding.UTF8.GetBytes(segment.NodeId.ToString("D"));
+		byte[] id = System.Text.Encoding.UTF8.GetBytes(feature.NodeId.ToString("D"));
 
 		byte* destination = result.SourceNodeId;
 
@@ -270,13 +308,23 @@ internal static partial class NativeMethods
 		ulong topologyId
 	);
 
-	[LibraryImport(Library, EntryPoint = "fgcad_document_build_runner")]
+	[LibraryImport(Library, EntryPoint = "fgcad_document_build_runner", StringMarshalling = StringMarshalling.Utf8)]
 	internal static unsafe partial NativeStatus DocumentBuildRunner(
 		CadDocumentSafeHandle document,
-		NativeRunnerSegment* segments,
-		nuint segmentCount,
-		double outerDiameter,
-		double wallThickness
+		string runnerId,
+		string runnerName,
+		NativeRunnerFeature* features,
+		nuint featureCount
+	);
+
+	[LibraryImport(Library, EntryPoint = "fgcad_document_remove_runner", StringMarshalling = StringMarshalling.Utf8)]
+	internal static partial NativeStatus DocumentRemoveRunner(CadDocumentSafeHandle document, string runnerId);
+
+	[LibraryImport(Library, EntryPoint = "fgcad_document_rename_runner", StringMarshalling = StringMarshalling.Utf8)]
+	internal static partial NativeStatus DocumentRenameRunner(
+		CadDocumentSafeHandle document,
+		string runnerId,
+		string runnerName
 	);
 
 	[LibraryImport(Library, EntryPoint = "fgcad_document_tessellate_part", StringMarshalling = StringMarshalling.Utf8)]
@@ -288,9 +336,10 @@ internal static partial class NativeMethods
 		out nint tessellation
 	);
 
-	[LibraryImport(Library, EntryPoint = "fgcad_document_tessellate_runner")]
+	[LibraryImport(Library, EntryPoint = "fgcad_document_tessellate_runner", StringMarshalling = StringMarshalling.Utf8)]
 	internal static partial NativeStatus DocumentTessellateRunner(
 		CadDocumentSafeHandle document,
+		string runnerId,
 		double linearDeflection,
 		double angularDeflection,
 		out nint tessellation

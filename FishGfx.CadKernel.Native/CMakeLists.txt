@@ -27,6 +27,8 @@ target_link_libraries(FishGfx.CadKernel.Native PRIVATE
     TKBRep
     TKGeomAlgo
     TKTopAlgo
+	TKBO
+	TKBool
     TKPrim
     TKShHealing
     TKOffset

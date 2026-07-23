@@ -15,7 +15,7 @@ public static class CadProjectArchive
 {
 	public const string Schema = "fishgfx.manifold-cad";
 
-	public const int CurrentVersion = 1;
+	public const int CurrentVersion = 2;
 
 	private const string ManifestEntry = "manifest.json";
 	private const string GraphEntry = "graph.json";
@@ -40,7 +40,7 @@ public static class CadProjectArchive
 		}
 
 		string fullPath = Path.GetFullPath(path);
-		string temporaryPath = fullPath + ".tmp";
+		string temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
 		Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
 
 		try
@@ -49,7 +49,7 @@ public static class CadProjectArchive
 			using (ZipArchive archive = new(stream, ZipArchiveMode.Create, false))
 			{
 				WriteText(archive, ManifestEntry, JsonSerializer.Serialize(CreateManifest(project), Options));
-				WriteText(archive, GraphEntry, RunnerGraphJson.Serialize(project.Graph));
+				WriteText(archive, GraphEntry, RunnerCollectionJson.Serialize(project.Runners));
 				WriteText(archive, ViewEntry, JsonSerializer.Serialize(project.View, Options));
 				WriteBytes(archive, ModelEntry, modelDocument);
 			}
@@ -78,29 +78,44 @@ public static class CadProjectArchive
 
 		if (manifest == null
 			|| !string.Equals(manifest.Schema, Schema, StringComparison.Ordinal)
-			|| manifest.Version != CurrentVersion)
+			|| manifest.Version is not 1 and not CurrentVersion
+			|| manifest.Id == Guid.Empty)
 		{
 			throw new InvalidDataException("The project schema or version is unsupported.");
 		}
 
-		RunnerGraphLoadResult graphResult = RunnerGraphJson.Deserialize(ReadText(archive, GraphEntry));
+		RunnerCollectionLoadResult graphResult = RunnerCollectionJson.Deserialize(ReadText(archive, GraphEntry));
 
 		if (!graphResult.Success)
 		{
 			throw new InvalidDataException(string.Join(Environment.NewLine, graphResult.Errors));
 		}
 
+		ManifoldViewState view = JsonSerializer.Deserialize<ManifoldViewState>(
+			ReadText(archive, ViewEntry), Options) ?? new ManifoldViewState();
+		ValidateView(view);
+
 		ManifoldProject project = new()
 		{
 			Id = manifest.Id,
 			Name = manifest.Name,
-			Graph = graphResult.Graph,
-			View = JsonSerializer.Deserialize<ManifoldViewState>(ReadText(archive, ViewEntry), Options)
-				?? new ManifoldViewState(),
+			View = view,
 		};
 
 		foreach (PartDto item in manifest.Parts ?? new List<PartDto>())
 		{
+			if (item.Id == Guid.Empty || !item.Transform.IsFinite)
+			{
+				throw new InvalidDataException("Every part requires a non-empty ID and finite rigid transform.");
+			}
+			try
+			{
+				item.Transform.Rotation.Normalized();
+			}
+			catch (InvalidOperationException exception)
+			{
+				throw new InvalidDataException("A part contains an invalid rotation.", exception);
+			}
 			project.AddLoadedPart(new CadPart
 			{
 				Id = item.Id,
@@ -112,14 +127,37 @@ public static class CadProjectArchive
 
 		foreach (MateDto item in manifest.Mates ?? new List<MateDto>())
 		{
+			if (item.Id == Guid.Empty || item.PartId == Guid.Empty
+				|| item.Topology.HasValue != item.LocalFrame.HasValue)
+			{
+				throw new InvalidDataException("Every mate requires valid IDs and a complete or empty binding.");
+			}
 			CadMate mate = new()
 			{
 				Id = item.Id,
 				PartId = item.PartId,
 				Name = item.Name,
 			};
-			mate.RestoreBinding(item.Topology, item.LocalFrame, item.RadiusMillimetres);
+			if (item.Topology.HasValue)
+			{
+				mate.Rebind(item.Topology.Value, item.LocalFrame.Value, item.RadiusMillimetres);
+			}
 			project.AddLoadedMate(mate);
+		}
+
+		foreach (CadRunner runner in graphResult.Runners)
+		{
+			if (project.Mates.All(mate => mate.Id != runner.StartMateId))
+			{
+				throw new InvalidDataException($"Runner '{runner.Name}' references a missing start mate.");
+			}
+			project.AddLoadedRunner(runner);
+		}
+
+		if (project.View.ActiveRunnerId.HasValue
+			&& project.Runners.All(runner => runner.Id != project.View.ActiveRunnerId.Value))
+		{
+			project.View.ActiveRunnerId = project.Runners.FirstOrDefault()?.Id;
 		}
 
 		return new CadProjectPackage
@@ -155,6 +193,18 @@ public static class CadProjectArchive
 				RadiusMillimetres = mate.RadiusMillimetres,
 			}).ToList(),
 		};
+	}
+
+	private static void ValidateView(ManifoldViewState view)
+	{
+		if (!view.CameraTarget.IsFinite
+			|| !double.IsFinite(view.CameraDistance) || view.CameraDistance <= 0
+			|| !double.IsFinite(view.YawDegrees) || !double.IsFinite(view.PitchDegrees)
+			|| !double.IsFinite(view.GraphPanX) || !double.IsFinite(view.GraphPanY)
+			|| !double.IsFinite(view.GraphZoom) || view.GraphZoom <= 0)
+		{
+			throw new InvalidDataException("The saved camera or graph view state is invalid.");
+		}
 	}
 
 	private static void WriteText(ZipArchive archive, string name, string value)

@@ -4,10 +4,8 @@ namespace FishGfx.Cad;
 
 public enum RunnerPortType
 {
-	MateFrame,
-	RunnerPath,
+	RunnerFeatures,
 	PipeProfile,
-	CadSolid,
 	Number,
 }
 
@@ -17,7 +15,12 @@ public enum RunnerPortDirection
 	Output,
 }
 
-public sealed record RunnerPortDefinition(string Name, RunnerPortType Type, RunnerPortDirection Direction);
+public sealed record RunnerPortDefinition(
+	string Name,
+	RunnerPortType Type,
+	RunnerPortDirection Direction,
+	bool Required = true
+);
 
 public sealed class RunnerNodeDefinition
 {
@@ -29,72 +32,72 @@ public sealed class RunnerNodeDefinition
 	}
 
 	public string Id { get; }
-
 	public string Title { get; }
-
 	public IReadOnlyList<RunnerPortDefinition> Ports { get; }
 
 	public RunnerPortDefinition FindPort(string name, RunnerPortDirection direction)
 	{
-		return Ports.FirstOrDefault(port =>
-			port.Direction == direction
-			&& string.Equals(port.Name, name, StringComparison.Ordinal)
-		);
+		return Ports.FirstOrDefault(port => port.Direction == direction
+			&& string.Equals(port.Name, name, StringComparison.Ordinal));
 	}
 }
 
 public static class RunnerNodes
 {
-	public const string MateReference = "cad.mate-reference";
 	public const string StartRunner = "cad.start-runner";
 	public const string Straight = "cad.straight";
 	public const string Bend = "cad.bend";
 	public const string CircularPipe = "cad.circular-pipe";
-	public const string SweepPipe = "cad.sweep-pipe";
+	public const string LoftTransition = "cad.loft-transition";
+	public const string RunnerOutput = "cad.runner-output";
 	public const string RunnerLength = "cad.runner-length";
+
+	// Read only by the version-one project migrator.
+	internal const string LegacyMateReference = "cad.mate-reference";
+	internal const string LegacySweepPipe = "cad.sweep-pipe";
 
 	private static readonly ReadOnlyDictionary<string, RunnerNodeDefinition> DefinitionsValue =
 		new(new Dictionary<string, RunnerNodeDefinition>(StringComparer.Ordinal)
 		{
-			[MateReference] = new RunnerNodeDefinition(
-				MateReference,
-				"Mate Reference",
-				Out("mate", RunnerPortType.MateFrame)
-			),
 			[StartRunner] = new RunnerNodeDefinition(
 				StartRunner,
 				"Start Runner",
-				In("mate", RunnerPortType.MateFrame),
-				Out("path", RunnerPortType.RunnerPath)
+				OptionalIn("profile", RunnerPortType.PipeProfile),
+				Out("runner", RunnerPortType.RunnerFeatures)
 			),
 			[Straight] = new RunnerNodeDefinition(
 				Straight,
 				"Straight",
-				In("path", RunnerPortType.RunnerPath),
-				Out("path", RunnerPortType.RunnerPath)
+				In("runner", RunnerPortType.RunnerFeatures),
+				Out("runner", RunnerPortType.RunnerFeatures)
 			),
 			[Bend] = new RunnerNodeDefinition(
 				Bend,
 				"Bend",
-				In("path", RunnerPortType.RunnerPath),
-				Out("path", RunnerPortType.RunnerPath)
+				In("runner", RunnerPortType.RunnerFeatures),
+				Out("runner", RunnerPortType.RunnerFeatures)
 			),
 			[CircularPipe] = new RunnerNodeDefinition(
 				CircularPipe,
 				"Circular Pipe",
 				Out("profile", RunnerPortType.PipeProfile)
 			),
-			[SweepPipe] = new RunnerNodeDefinition(
-				SweepPipe,
-				"Sweep Pipe",
-				In("path", RunnerPortType.RunnerPath),
-				In("profile", RunnerPortType.PipeProfile),
-				Out("solid", RunnerPortType.CadSolid)
+			[LoftTransition] = new RunnerNodeDefinition(
+				LoftTransition,
+				"Loft Transition",
+				In("runner", RunnerPortType.RunnerFeatures),
+				In("targetProfile", RunnerPortType.PipeProfile),
+				Out("runner", RunnerPortType.RunnerFeatures)
+			),
+			[RunnerOutput] = new RunnerNodeDefinition(
+				RunnerOutput,
+				"Runner Output",
+				In("runner", RunnerPortType.RunnerFeatures)
 			),
 			[RunnerLength] = new RunnerNodeDefinition(
 				RunnerLength,
 				"Runner Length",
-				In("path", RunnerPortType.RunnerPath),
+				In("runner", RunnerPortType.RunnerFeatures),
 				Out("length", RunnerPortType.Number)
 			),
 		});
@@ -106,15 +109,14 @@ public static class RunnerNodes
 		return DefinitionsValue.TryGetValue(id, out definition);
 	}
 
-	private static RunnerPortDefinition In(string name, RunnerPortType type)
-	{
-		return new RunnerPortDefinition(name, type, RunnerPortDirection.Input);
-	}
+	private static RunnerPortDefinition In(string name, RunnerPortType type) =>
+		new(name, type, RunnerPortDirection.Input);
 
-	private static RunnerPortDefinition Out(string name, RunnerPortType type)
-	{
-		return new RunnerPortDefinition(name, type, RunnerPortDirection.Output);
-	}
+	private static RunnerPortDefinition OptionalIn(string name, RunnerPortType type) =>
+		new(name, type, RunnerPortDirection.Input, false);
+
+	private static RunnerPortDefinition Out(string name, RunnerPortType type) =>
+		new(name, type, RunnerPortDirection.Output);
 }
 
 public sealed class RunnerNode
@@ -134,21 +136,15 @@ public sealed class RunnerNode
 	}
 
 	public Guid Id { get; }
-
-	public string DefinitionId { get; }
-
+	public string DefinitionId { get; internal set; }
 	public double X { get; set; }
-
 	public double Y { get; set; }
-
 	public IDictionary<string, string> Properties { get; }
-
 	public bool IsKnown => RunnerNodes.TryGet(DefinitionId, out _);
 
 	internal void ReplaceProperties(IEnumerable<KeyValuePair<string, string>> values)
 	{
 		properties.Clear();
-
 		foreach (KeyValuePair<string, string> value in values)
 		{
 			properties[value.Key] = value.Value;
@@ -159,8 +155,8 @@ public sealed class RunnerNode
 	{
 		switch (DefinitionId)
 		{
-			case RunnerNodes.MateReference:
-				properties["mateId"] = string.Empty;
+			case RunnerNodes.StartRunner:
+				properties["wallThickness"] = "2";
 				break;
 			case RunnerNodes.Straight:
 				properties["length"] = "100";
@@ -173,6 +169,10 @@ public sealed class RunnerNode
 			case RunnerNodes.CircularPipe:
 				properties["outerDiameter"] = "42.4";
 				properties["wallThickness"] = "2";
+				break;
+			case RunnerNodes.LoftTransition:
+				properties["length"] = "30";
+				properties["rotation"] = "0";
 				break;
 		}
 	}
@@ -205,32 +205,26 @@ public sealed class RunnerGraph
 	}
 
 	public Guid Id { get; }
-
 	public IReadOnlyList<RunnerNode> Nodes { get; }
-
 	public IReadOnlyList<RunnerConnection> Connections { get; }
 
 	public RunnerNode AddNode(string definitionId, double x = 0, double y = 0)
 	{
 		RunnerNode node = new(definitionId, x, y);
 		nodes.Add(node);
-
 		return node;
 	}
 
 	public bool RemoveNode(Guid nodeId)
 	{
 		int removed = nodes.RemoveAll(node => node.Id == nodeId);
-
 		if (removed == 0)
 		{
 			return false;
 		}
 
-		connections.RemoveAll(connection =>
-			connection.OutputNodeId == nodeId || connection.InputNodeId == nodeId
-		);
-
+		connections.RemoveAll(connection => connection.OutputNodeId == nodeId
+			|| connection.InputNodeId == nodeId);
 		return true;
 	}
 
@@ -245,46 +239,82 @@ public sealed class RunnerGraph
 	{
 		connection = null;
 		error = null;
-		RunnerNode outputNode = nodes.FirstOrDefault(node => node.Id == outputNodeId);
-		RunnerNode inputNode = nodes.FirstOrDefault(node => node.Id == inputNodeId);
+		RunnerConnection candidate = new(outputNodeId, outputPort, inputNodeId, inputPort);
+		List<RunnerConnection> staged = connections.Where(item => item.InputNodeId != inputNodeId
+			|| !string.Equals(item.InputPort, inputPort, StringComparison.Ordinal)).ToList();
+		staged.Add(candidate);
 
-		if (outputNode == null || inputNode == null)
+		if (!ValidateConnections(nodes, staged, out error))
 		{
-			error = "Both connection nodes must exist in the graph.";
 			return false;
 		}
 
-		if (!RunnerNodes.TryGet(outputNode.DefinitionId, out RunnerNodeDefinition outputDefinition)
-			|| !RunnerNodes.TryGet(inputNode.DefinitionId, out RunnerNodeDefinition inputDefinition))
+		connections.Clear();
+		connections.AddRange(staged);
+		connection = candidate;
+		return true;
+	}
+
+	public bool TrySpliceConnection(
+		Guid connectionId,
+		string definitionId,
+		double x,
+		double y,
+		out RunnerNode node,
+		out string error
+	)
+	{
+		node = null;
+		error = null;
+		RunnerConnection original = connections.FirstOrDefault(item => item.Id == connectionId);
+
+		if (original == null || !RunnerNodes.TryGet(definitionId, out RunnerNodeDefinition definition))
 		{
-			error = "Unknown nodes cannot be connected.";
+			error = "The selected connection or node definition is unavailable.";
 			return false;
 		}
 
-		RunnerPortDefinition source = outputDefinition.FindPort(outputPort, RunnerPortDirection.Output);
-		RunnerPortDefinition destination = inputDefinition.FindPort(inputPort, RunnerPortDirection.Input);
+		RunnerNode outputNode = nodes.Single(item => item.Id == original.OutputNodeId);
+		RunnerNode inputNode = nodes.Single(item => item.Id == original.InputNodeId);
+		RunnerNodeDefinition outputDefinition = RunnerNodes.Definitions[outputNode.DefinitionId];
+		RunnerNodeDefinition inputDefinition = RunnerNodes.Definitions[inputNode.DefinitionId];
+		RunnerPortType type = outputDefinition.FindPort(original.OutputPort, RunnerPortDirection.Output).Type;
+		RunnerPortDefinition spliceInput = definition.Ports.SingleOrDefault(port =>
+			port.Direction == RunnerPortDirection.Input && port.Type == type);
+		RunnerPortDefinition spliceOutput = definition.Ports.SingleOrDefault(port =>
+			port.Direction == RunnerPortDirection.Output && port.Type == type);
 
-		if (source == null || destination == null || source.Type != destination.Type)
+		if (spliceInput == null || spliceOutput == null)
 		{
-			error = "The selected ports do not exist or have incompatible types.";
+			error = "The node cannot splice the selected connection type.";
 			return false;
 		}
 
-		connections.RemoveAll(candidate =>
-			candidate.InputNodeId == inputNodeId
-			&& string.Equals(candidate.InputPort, inputPort, StringComparison.Ordinal)
-		);
-		RunnerConnection candidateConnection = new(outputNodeId, outputPort, inputNodeId, inputPort);
-		connections.Add(candidateConnection);
+		RunnerNode candidateNode = new(definitionId, x, y);
+		List<RunnerNode> stagedNodes = new(nodes) { candidateNode };
+		List<RunnerConnection> staged = connections.Where(item => item.Id != connectionId).ToList();
+		staged.Add(new RunnerConnection(
+			original.OutputNodeId,
+			original.OutputPort,
+			candidateNode.Id,
+			spliceInput.Name
+		));
+		staged.Add(new RunnerConnection(
+			candidateNode.Id,
+			spliceOutput.Name,
+			original.InputNodeId,
+			original.InputPort
+		));
 
-		if (HasCycle())
+		if (!ValidateConnections(stagedNodes, staged, out error))
 		{
-			connections.Remove(candidateConnection);
-			error = "Runner graphs must remain acyclic.";
 			return false;
 		}
 
-		connection = candidateConnection;
+		nodes.Add(candidateNode);
+		connections.Clear();
+		connections.AddRange(staged);
+		node = candidateNode;
 		return true;
 	}
 
@@ -293,27 +323,36 @@ public sealed class RunnerGraph
 		return connections.RemoveAll(connection => connection.Id == connectionId) > 0;
 	}
 
-	public static RunnerGraph CreateDefault(Guid mateId)
+	public static RunnerGraph CreateDefault(CadTopologyKind mateKind)
 	{
 		RunnerGraph graph = new();
-		RunnerNode mate = graph.AddNode(RunnerNodes.MateReference, 20, 220);
-		mate.Properties["mateId"] = mateId.ToString("D");
-		RunnerNode start = graph.AddNode(RunnerNodes.StartRunner, 280, 220);
-		RunnerNode straightA = graph.AddNode(RunnerNodes.Straight, 540, 220);
-		RunnerNode bend = graph.AddNode(RunnerNodes.Bend, 800, 220);
-		RunnerNode straightB = graph.AddNode(RunnerNodes.Straight, 1060, 220);
-		RunnerNode profile = graph.AddNode(RunnerNodes.CircularPipe, 1060, 20);
-		RunnerNode sweep = graph.AddNode(RunnerNodes.SweepPipe, 1320, 170);
-		RunnerNode length = graph.AddNode(RunnerNodes.RunnerLength, 1320, 360);
+		RunnerNode start = graph.AddNode(RunnerNodes.StartRunner, 20, 220);
+		RunnerNode profile = graph.AddNode(RunnerNodes.CircularPipe, 300, 20);
+		RunnerNode straightA;
 
-		graph.ConnectRequired(mate, "mate", start, "mate");
-		graph.ConnectRequired(start, "path", straightA, "path");
-		graph.ConnectRequired(straightA, "path", bend, "path");
-		graph.ConnectRequired(bend, "path", straightB, "path");
-		graph.ConnectRequired(straightB, "path", sweep, "path");
-		graph.ConnectRequired(profile, "profile", sweep, "profile");
-		graph.ConnectRequired(straightB, "path", length, "path");
+		if (mateKind == CadTopologyKind.ClosedProfile)
+		{
+			RunnerNode loft = graph.AddNode(RunnerNodes.LoftTransition, 300, 220);
+			straightA = graph.AddNode(RunnerNodes.Straight, 580, 220);
+			graph.ConnectRequired(start, "runner", loft, "runner");
+			graph.ConnectRequired(profile, "profile", loft, "targetProfile");
+			graph.ConnectRequired(loft, "runner", straightA, "runner");
+		}
+		else
+		{
+			straightA = graph.AddNode(RunnerNodes.Straight, 300, 220);
+			graph.ConnectRequired(profile, "profile", start, "profile");
+			graph.ConnectRequired(start, "runner", straightA, "runner");
+		}
 
+		RunnerNode bend = graph.AddNode(RunnerNodes.Bend, 860, 220);
+		RunnerNode straightB = graph.AddNode(RunnerNodes.Straight, 1140, 220);
+		RunnerNode output = graph.AddNode(RunnerNodes.RunnerOutput, 1420, 170);
+		RunnerNode length = graph.AddNode(RunnerNodes.RunnerLength, 1420, 360);
+		graph.ConnectRequired(straightA, "runner", bend, "runner");
+		graph.ConnectRequired(bend, "runner", straightB, "runner");
+		graph.ConnectRequired(straightB, "runner", output, "runner");
+		graph.ConnectRequired(straightB, "runner", length, "runner");
 		return graph;
 	}
 
@@ -323,7 +362,6 @@ public sealed class RunnerGraph
 		{
 			throw new InvalidDataException($"Duplicate runner node ID '{node.Id}'.");
 		}
-
 		nodes.Add(node);
 	}
 
@@ -333,8 +371,18 @@ public sealed class RunnerGraph
 		{
 			throw new InvalidDataException($"Duplicate runner connection ID '{connection.Id}'.");
 		}
-
 		connections.Add(connection);
+	}
+
+	internal void ReplaceConnections(IEnumerable<RunnerConnection> values)
+	{
+		connections.Clear();
+		connections.AddRange(values);
+	}
+
+	internal bool TryValidate(out string error)
+	{
+		return ValidateConnections(nodes, connections, out error);
 	}
 
 	private void ConnectRequired(RunnerNode output, string outputPort, RunnerNode input, string inputPort)
@@ -345,45 +393,92 @@ public sealed class RunnerGraph
 		}
 	}
 
-	private bool HasCycle()
+	private static bool ValidateConnections(
+		IReadOnlyList<RunnerNode> candidateNodes,
+		IReadOnlyList<RunnerConnection> candidateConnections,
+		out string error
+	)
 	{
-		Dictionary<Guid, int> states = nodes.ToDictionary(node => node.Id, _ => 0);
-		Dictionary<Guid, Guid[]> outgoing = connections
-			.GroupBy(connection => connection.OutputNodeId)
-			.ToDictionary(
-				group => group.Key,
-				group => group.Select(connection => connection.InputNodeId).Distinct().ToArray()
-			);
-
-		bool Visit(Guid nodeId)
+		error = null;
+		if (candidateNodes.Select(node => node.Id).Distinct().Count() != candidateNodes.Count)
 		{
-			if (states[nodeId] == 1)
-			{
-				return true;
-			}
+			error = "Runner node IDs must be unique.";
+			return false;
+		}
+		if (candidateConnections.Select(connection => connection.Id).Distinct().Count()
+			!= candidateConnections.Count)
+		{
+			error = "Runner connection IDs must be unique.";
+			return false;
+		}
+		Dictionary<Guid, RunnerNode> byId = candidateNodes.ToDictionary(node => node.Id);
+		HashSet<(Guid, string)> inputs = new();
 
-			if (states[nodeId] == 2)
+		foreach (RunnerConnection item in candidateConnections)
+		{
+			if (!byId.TryGetValue(item.OutputNodeId, out RunnerNode outputNode)
+				|| !byId.TryGetValue(item.InputNodeId, out RunnerNode inputNode))
 			{
+				error = "Both connection nodes must exist in the graph.";
 				return false;
 			}
 
-			states[nodeId] = 1;
+			if (!RunnerNodes.TryGet(outputNode.DefinitionId, out RunnerNodeDefinition outputDefinition)
+				|| !RunnerNodes.TryGet(inputNode.DefinitionId, out RunnerNodeDefinition inputDefinition))
+			{
+				error = "Unknown nodes cannot be connected.";
+				return false;
+			}
 
+			RunnerPortDefinition source = outputDefinition.FindPort(item.OutputPort, RunnerPortDirection.Output);
+			RunnerPortDefinition destination = inputDefinition.FindPort(item.InputPort, RunnerPortDirection.Input);
+
+			if (source == null || destination == null || source.Type != destination.Type)
+			{
+				error = "The selected ports do not exist or have incompatible types.";
+				return false;
+			}
+
+			if (!inputs.Add((item.InputNodeId, item.InputPort)))
+			{
+				error = "A node input may have only one connection.";
+				return false;
+			}
+		}
+
+		if (HasCycle(candidateNodes, candidateConnections))
+		{
+			error = "Runner graphs must remain acyclic.";
+			return false;
+		}
+		return true;
+	}
+
+	private static bool HasCycle(
+		IReadOnlyList<RunnerNode> candidateNodes,
+		IReadOnlyList<RunnerConnection> candidateConnections
+	)
+	{
+		Dictionary<Guid, int> states = candidateNodes.ToDictionary(node => node.Id, _ => 0);
+		Dictionary<Guid, Guid[]> outgoing = candidateConnections.GroupBy(connection => connection.OutputNodeId)
+			.ToDictionary(group => group.Key, group => group.Select(connection => connection.InputNodeId).Distinct().ToArray());
+
+		bool Visit(Guid nodeId)
+		{
+			if (states[nodeId] == 1) return true;
+			if (states[nodeId] == 2) return false;
+			states[nodeId] = 1;
 			if (outgoing.TryGetValue(nodeId, out Guid[] targets))
 			{
 				foreach (Guid target in targets)
 				{
-					if (Visit(target))
-					{
-						return true;
-					}
+					if (Visit(target)) return true;
 				}
 			}
-
 			states[nodeId] = 2;
 			return false;
 		}
 
-		return nodes.Any(node => Visit(node.Id));
+		return candidateNodes.Any(node => Visit(node.Id));
 	}
 }

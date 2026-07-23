@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace
@@ -18,20 +19,54 @@ void require(bool condition, const char* message)
 	}
 }
 
-fgcad_runner_segment straight(
+fgcad_runner_profile circular(double outer_diameter, double wall_thickness)
+{
+	fgcad_runner_profile result{};
+	result.kind = FGCAD_PROFILE_CIRCULAR;
+	result.outer_diameter = outer_diameter;
+	result.wall_thickness = wall_thickness;
+	return result;
+}
+
+fgcad_frame frame(fgcad_point3 origin, fgcad_point3 tangent, fgcad_point3 normal = { 0, 0, 1 })
+{
+	return { origin, tangent, normal };
+}
+
+fgcad_runner_feature straight(
 	const char* id,
 	fgcad_point3 start,
 	fgcad_point3 end,
-	fgcad_point3 tangent
+	fgcad_point3 tangent,
+	fgcad_runner_profile profile
 )
 {
-	fgcad_runner_segment result{};
-	result.kind = FGCAD_SEGMENT_STRAIGHT;
+	fgcad_runner_feature result{};
+	result.kind = FGCAD_FEATURE_STRAIGHT;
 	std::snprintf(result.source_node_id, sizeof(result.source_node_id), "%s", id);
-	result.start = start;
-	result.end = end;
-	result.start_tangent = tangent;
-	result.end_tangent = tangent;
+	result.entry_frame = frame(start, tangent);
+	result.exit_frame = frame(end, tangent);
+	result.input_profile = profile;
+	result.output_profile = profile;
+	return result;
+}
+
+fgcad_runner_feature loft(
+	const char* id,
+	fgcad_point3 start,
+	fgcad_point3 end,
+	fgcad_point3 tangent,
+	fgcad_runner_profile input,
+	fgcad_runner_profile output
+)
+{
+	fgcad_runner_feature result{};
+	result.kind = FGCAD_FEATURE_LOFT_TRANSITION;
+	std::snprintf(result.source_node_id, sizeof(result.source_node_id), "%s", id);
+	result.entry_frame = frame(start, tangent);
+	result.exit_frame = frame(end, tangent);
+	result.input_profile = input;
+	result.output_profile = output;
 	return result;
 }
 
@@ -44,46 +79,63 @@ std::filesystem::path temporary(const char* extension)
 
 int main()
 {
-	require(fgcad_api_version() == 2, "ABI version mismatch");
+	require(fgcad_api_version() == 3, "ABI version mismatch");
 	fgcad_document* document = nullptr;
 	require(fgcad_document_create(&document) == FGCAD_STATUS_OK, "Document creation failed");
 	require(document != nullptr, "Document handle was null");
 
-	fgcad_runner_segment segments[3]{};
-	segments[0] = straight(
+	fgcad_runner_profile profile = circular(42, 2);
+	fgcad_runner_feature features[3]{};
+	features[0] = straight(
 		"11111111-1111-1111-1111-111111111111",
 		{ 0, 0, 0 },
 		{ 100, 0, 0 },
-		{ 1, 0, 0 }
+		{ 1, 0, 0 },
+		profile
 	);
-	segments[1].kind = FGCAD_SEGMENT_BEND;
+	features[1].kind = FGCAD_FEATURE_BEND;
 	std::snprintf(
-		segments[1].source_node_id,
-		sizeof(segments[1].source_node_id),
+		features[1].source_node_id,
+		sizeof(features[1].source_node_id),
 		"%s",
 		"22222222-2222-2222-2222-222222222222"
 	);
-	segments[1].start = { 100, 0, 0 };
-	segments[1].end = { 175, 75, 0 };
-	segments[1].start_tangent = { 1, 0, 0 };
-	segments[1].end_tangent = { 0, 1, 0 };
-	segments[1].center = { 100, 75, 0 };
-	segments[1].radius = 75;
-	segments[1].sweep_radians = 3.14159265358979323846 * 0.5;
-	segments[2] = straight(
+	features[1].entry_frame = frame({ 100, 0, 0 }, { 1, 0, 0 });
+	features[1].exit_frame = frame({ 175, 75, 0 }, { 0, 1, 0 });
+	features[1].input_profile = profile;
+	features[1].output_profile = profile;
+	features[1].center = { 100, 75, 0 };
+	features[1].radius = 75;
+	features[1].sweep_radians = 3.14159265358979323846 * 0.5;
+	features[2] = straight(
 		"33333333-3333-3333-3333-333333333333",
 		{ 175, 75, 0 },
 		{ 175, 175, 0 },
-		{ 0, 1, 0 }
+		{ 0, 1, 0 },
+		profile
 	);
 	require(
-		fgcad_document_build_runner(document, segments, 3, 42, 2) == FGCAD_STATUS_OK,
+		fgcad_document_build_runner(document, "runner-a", "Runner A", features, 3) == FGCAD_STATUS_OK,
 		"Exact annular runner sweep failed"
+	);
+	fgcad_runner_profile larger_profile = circular(55, 2.5);
+	fgcad_runner_feature transitioned[2]{};
+	transitioned[0] = loft(
+		"44444444-4444-4444-4444-444444444444",
+		{ 0, 250, 0 }, { 35, 250, 0 }, { 1, 0, 0 }, profile, larger_profile
+	);
+	transitioned[1] = straight(
+		"55555555-5555-5555-5555-555555555555",
+		{ 35, 250, 0 }, { 135, 250, 0 }, { 1, 0, 0 }, larger_profile
+	);
+	require(
+		fgcad_document_build_runner(document, "runner-b", "Runner B", transitioned, 2) == FGCAD_STATUS_OK,
+		"Exact hollow profile transition failed"
 	);
 
 	fgcad_tessellation* tessellation = nullptr;
 	require(
-		fgcad_document_tessellate_runner(document, 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
+		fgcad_document_tessellate_runner(document, "runner-a", 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
 		"Runner tessellation failed"
 	);
 	require(fgcad_tessellation_vertex_count(tessellation) > 0, "Tessellation had no vertices");
@@ -112,6 +164,23 @@ int main()
 	);
 	require(maximum.x > minimum.x && maximum.y > minimum.y, "Tessellation bounds were invalid");
 	require(faces.front().source_node_id[0] != '\0', "Generated face lacked a source node ID");
+	std::unordered_set<std::string> source_ids;
+	for (const fgcad_face_range& face : faces)
+	{
+		source_ids.emplace(face.source_node_id);
+	}
+	require(source_ids.count("11111111-1111-1111-1111-111111111111") != 0,
+		"Straight build history was not retained");
+	require(source_ids.count("22222222-2222-2222-2222-222222222222") != 0,
+		"Bend build history was not retained");
+	require(source_ids.count("33333333-3333-3333-3333-333333333333") != 0,
+		"Trailing straight build history was not retained");
+	fgcad_tessellation_destroy(tessellation);
+	require(
+		fgcad_document_tessellate_runner(document, "runner-b", 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
+		"Second runner tessellation failed"
+	);
+	require(fgcad_tessellation_face_count(tessellation) > 0, "Loft runner had no faces");
 	fgcad_tessellation_destroy(tessellation);
 
 	std::filesystem::path binary = temporary(".xbf");
@@ -134,10 +203,19 @@ int main()
 		"XCAF reopen failed"
 	);
 	require(
-		fgcad_document_tessellate_runner(reopened, 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
+		fgcad_document_tessellate_runner(reopened, "runner-a", 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
 		"Reopened exact runner tessellation failed"
 	);
 	fgcad_tessellation_destroy(tessellation);
+	require(
+		fgcad_document_tessellate_runner(reopened, "runner-b", 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
+		"Second reopened runner tessellation failed"
+	);
+	fgcad_tessellation_destroy(tessellation);
+	require(fgcad_document_remove_runner(reopened, "runner-b") == FGCAD_STATUS_OK,
+		"Runner removal failed");
+	require(fgcad_document_tessellate_runner(reopened, "runner-b", 0.25, 0.2, &tessellation)
+		== FGCAD_STATUS_NOT_FOUND, "Removed runner remained available");
 
 	const char* part_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 	require(
@@ -151,6 +229,18 @@ int main()
 		"Topology enumeration failed"
 	);
 	require(topology_count > 0, "Imported STEP had no topology");
+	std::filesystem::path missing_step = temporary("-missing.step");
+	require(
+		fgcad_document_replace_step(reopened, part_id, missing_step.string().c_str(), "Broken replacement")
+			!= FGCAD_STATUS_OK,
+		"Missing STEP replacement unexpectedly succeeded"
+	);
+	size_t retained_topology_count = 0;
+	require(
+		fgcad_document_get_topology_count(reopened, part_id, &retained_topology_count) == FGCAD_STATUS_OK
+			&& retained_topology_count == topology_count,
+		"Failed STEP replacement did not retain the original exact part"
+	);
 	std::vector<fgcad_topology_info> topology(topology_count);
 	require(
 		fgcad_document_copy_topology(reopened, part_id, topology.data(), topology.size()) == FGCAD_STATUS_OK,

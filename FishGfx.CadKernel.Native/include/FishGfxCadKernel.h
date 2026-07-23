@@ -40,11 +40,18 @@ typedef enum fgcad_topology_kind
 	FGCAD_TOPOLOGY_CLOSED_PROFILE = 5,
 } fgcad_topology_kind;
 
-typedef enum fgcad_segment_kind
+typedef enum fgcad_feature_kind
 {
-	FGCAD_SEGMENT_STRAIGHT = 0,
-	FGCAD_SEGMENT_BEND = 1,
-} fgcad_segment_kind;
+	FGCAD_FEATURE_STRAIGHT = 0,
+	FGCAD_FEATURE_BEND = 1,
+	FGCAD_FEATURE_LOFT_TRANSITION = 2,
+} fgcad_feature_kind;
+
+typedef enum fgcad_profile_kind
+{
+	FGCAD_PROFILE_MATE = 0,
+	FGCAD_PROFILE_CIRCULAR = 1,
+} fgcad_profile_kind;
 
 typedef struct fgcad_point3
 {
@@ -109,18 +116,27 @@ typedef struct fgcad_edge_range
 	uint32_t point_count;
 } fgcad_edge_range;
 
-typedef struct fgcad_runner_segment
+typedef struct fgcad_runner_profile
 {
-	fgcad_segment_kind kind;
+	fgcad_profile_kind kind;
+	char mate_id[40];
+	double outer_diameter;
+	double wall_thickness;
+} fgcad_runner_profile;
+
+typedef struct fgcad_runner_feature
+{
+	fgcad_feature_kind kind;
 	char source_node_id[40];
-	fgcad_point3 start;
-	fgcad_point3 end;
-	fgcad_point3 start_tangent;
-	fgcad_point3 end_tangent;
+	fgcad_frame entry_frame;
+	fgcad_frame exit_frame;
+	fgcad_runner_profile input_profile;
+	fgcad_runner_profile output_profile;
 	fgcad_point3 center;
 	double radius;
 	double sweep_radians;
-} fgcad_runner_segment;
+	double rotation_radians;
+} fgcad_runner_feature;
 
 FGCAD_API uint32_t fgcad_api_version(void);
 FGCAD_API const char* fgcad_last_error(void);
@@ -171,10 +187,19 @@ FGCAD_API fgcad_status fgcad_document_bind_topology_selector(
 );
 FGCAD_API fgcad_status fgcad_document_build_runner(
 	fgcad_document* document,
-	const fgcad_runner_segment* segments,
-	size_t segment_count,
-	double outer_diameter,
-	double wall_thickness
+	const char* runner_id,
+	const char* runner_name,
+	const fgcad_runner_feature* features,
+	size_t feature_count
+);
+FGCAD_API fgcad_status fgcad_document_remove_runner(
+	fgcad_document* document,
+	const char* runner_id
+);
+FGCAD_API fgcad_status fgcad_document_rename_runner(
+	fgcad_document* document,
+	const char* runner_id,
+	const char* runner_name
 );
 FGCAD_API fgcad_status fgcad_document_tessellate_part(
 	fgcad_document* document,
@@ -185,6 +210,7 @@ FGCAD_API fgcad_status fgcad_document_tessellate_part(
 );
 FGCAD_API fgcad_status fgcad_document_tessellate_runner(
 	fgcad_document* document,
+	const char* runner_id,
 	double linear_deflection,
 	double angular_deflection,
 	fgcad_tessellation** tessellation

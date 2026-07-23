@@ -77,12 +77,6 @@ public sealed class CadMate
 		LocalFrame = LocalFrame.Value.Flipped();
 	}
 
-	internal void RestoreBinding(CadTopologyRef? topology, CadFrame? frame, double radius)
-	{
-		Topology = topology;
-		LocalFrame = frame;
-		RadiusMillimetres = radius;
-	}
 }
 
 public enum CadDiagnosticSeverity

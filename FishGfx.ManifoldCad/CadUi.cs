@@ -16,10 +16,11 @@ internal sealed class CadUi : IDisposable
 	private readonly Panel toolbar;
 	private readonly Panel modelPanel;
 	private readonly Panel inspectorPanel;
-	private readonly Label modelLabel;
+	private readonly TreeView modelTree;
 	private readonly Label inspectorTitle;
 	private readonly Label statusLabel;
 	private readonly Textbox mateName;
+	private readonly Textbox runnerName;
 	private readonly NumericUpDown[] translation = new NumericUpDown[3];
 	private readonly NumericUpDown[] rotation = new NumericUpDown[3];
 	private readonly NumericUpDown[] parameters = new NumericUpDown[3];
@@ -57,6 +58,7 @@ internal sealed class CadUi : IDisposable
 		CreateToolbarButton("Right", 884, () => ViewRequested?.Invoke(CadStandardView.Right));
 		CreateToolbarButton("Gizmo", 962, () => GizmoModeRequested?.Invoke());
 		CreateToolbarButton("Pick Ray", 1038, () => PickingRayDebugRequested?.Invoke());
+		CreateToolbarButton("Add Node", 1142, () => AddNodeRequested?.Invoke());
 		ui.AddControl(toolbar);
 
 		modelPanel = new Panel
@@ -71,13 +73,49 @@ internal sealed class CadUi : IDisposable
 			Position = new Vector2(16, 14),
 			Size = new Vector2(220, 26),
 		});
-		modelLabel = new Label("No STEP parts imported")
+		modelTree = new TreeView
 		{
 			Position = new Vector2(16, 50),
-			Size = new Vector2(226, 600),
-			Alignment = Align.None,
+			Size = new Vector2(224, 480),
+			ShowLines = true,
 		};
-		modelPanel.AddChild(modelLabel);
+		modelTree.OnNodeSelected += (_, node) =>
+		{
+			if (node.UserData is TreeIdentity identity)
+			{
+				switch (identity.Kind)
+				{
+					case TreeIdentityKind.Part: PartSelected?.Invoke(identity.Id); break;
+					case TreeIdentityKind.Mate: MateSelected?.Invoke(identity.Id); break;
+					case TreeIdentityKind.Runner: RunnerSelected?.Invoke(identity.Id); break;
+				}
+			}
+		};
+		modelPanel.AddChild(modelTree);
+
+		Button addRunner = new() { Position = new Vector2(16, 540), Size = new Vector2(108, 32), Text = "Add Runner" };
+		addRunner.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left) AddRunnerRequested?.Invoke();
+		};
+		modelPanel.AddChild(addRunner);
+		Button deleteRunner = new() { Position = new Vector2(132, 540), Size = new Vector2(108, 32), Text = "Delete Runner" };
+		deleteRunner.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left) DeleteRunnerRequested?.Invoke();
+		};
+		modelPanel.AddChild(deleteRunner);
+		runnerName = new Textbox
+		{
+			Position = new Vector2(16, 582),
+			Size = new Vector2(224, 28),
+			Placeholder = "Runner name",
+		};
+		runnerName.OnTextChanged += (_, text) =>
+		{
+			if (!synchronizing) RunnerNameChanged?.Invoke(text);
+		};
+		modelPanel.AddChild(runnerName);
 		mateName = new Textbox
 		{
 			Position = new Vector2(16, 638),
@@ -177,6 +215,13 @@ internal sealed class CadUi : IDisposable
 	internal event Action<CadStandardView> ViewRequested;
 	internal event Action GizmoModeRequested;
 	internal event Action PickingRayDebugRequested;
+	internal event Action AddNodeRequested;
+	internal event Action AddRunnerRequested;
+	internal event Action DeleteRunnerRequested;
+	internal event Action<string> RunnerNameChanged;
+	internal event Action<Guid> PartSelected;
+	internal event Action<Guid> MateSelected;
+	internal event Action<Guid> RunnerSelected;
 
 	internal bool InteractionEnabled
 	{
@@ -202,24 +247,42 @@ internal sealed class CadUi : IDisposable
 		}
 	}
 
-	internal void SetModel(ManifoldProject project, Guid? selectedPartId, Guid? selectedMateId)
+	internal void SetModel(
+		ManifoldProject project,
+		Guid? selectedPartId,
+		Guid? selectedMateId,
+		Guid? selectedRunnerId
+	)
 	{
-		List<string> lines = new();
-
+		modelTree.Nodes.Clear();
+		TreeNode partsRoot = modelTree.AddNode("PARTS");
+		partsRoot.IsExpanded = true;
 		foreach (CadPart part in project.Parts)
 		{
-			lines.Add($"{(part.Id == selectedPartId ? ">" : " ")} {part.Name}");
-
+			TreeNode partNode = partsRoot.AddChild(part.Name, new TreeIdentity(TreeIdentityKind.Part, part.Id));
+			partNode.IsExpanded = true;
+			partNode.IsSelected = part.Id == selectedPartId;
 			foreach (CadMate mate in project.Mates.Where(mate => mate.PartId == part.Id))
 			{
 				string state = mate.IsResolved ? "linked" : "UNRESOLVED";
-				lines.Add($"  {(mate.Id == selectedMateId ? ">" : "-")} {mate.Name} [{state}]");
+				TreeNode mateNode = partNode.AddChild($"{mate.Name} [{state}]",
+					new TreeIdentity(TreeIdentityKind.Mate, mate.Id));
+				mateNode.IsSelected = mate.Id == selectedMateId;
 			}
 		}
+		TreeNode runnersRoot = modelTree.AddNode("RUNNERS");
+		runnersRoot.IsExpanded = true;
+		foreach (CadRunner runner in project.Runners)
+		{
+			CadMate mate = project.Mates.FirstOrDefault(item => item.Id == runner.StartMateId);
+			TreeNode node = runnersRoot.AddChild($"{runner.Name} -> {mate?.Name ?? "missing mate"}",
+				new TreeIdentity(TreeIdentityKind.Runner, runner.Id));
+			node.IsSelected = runner.Id == selectedRunnerId;
+		}
 
-		modelLabel.Text = lines.Count == 0 ? "No STEP parts imported" : string.Join("\n", lines);
 		synchronizing = true;
 		mateName.Text = project.Mates.FirstOrDefault(mate => mate.Id == selectedMateId)?.Name ?? string.Empty;
+		runnerName.Text = project.Runners.FirstOrDefault(runner => runner.Id == selectedRunnerId)?.Name ?? string.Empty;
 		synchronizing = false;
 	}
 
@@ -254,6 +317,7 @@ internal sealed class CadUi : IDisposable
 				: "NODE: Missing definition";
 			(string Name, string Label)[] fields = node.DefinitionId switch
 			{
+				RunnerNodes.StartRunner => new[] { ("wallThickness", "Mate wall mm") },
 				RunnerNodes.Straight => new[] { ("length", "Length mm") },
 				RunnerNodes.Bend => new[]
 				{
@@ -265,6 +329,11 @@ internal sealed class CadUi : IDisposable
 				{
 					("outerDiameter", "Outer diameter mm"),
 					("wallThickness", "Wall thickness mm"),
+				},
+				RunnerNodes.LoftTransition => new[]
+				{
+					("length", "Loft length mm"),
+					("rotation", "Profile rotation deg"),
 				},
 				_ => Array.Empty<(string, string)>(),
 			};
@@ -447,3 +516,12 @@ internal enum CadStandardView
 	Left,
 	Right,
 }
+
+internal enum TreeIdentityKind
+{
+	Part,
+	Mate,
+	Runner,
+}
+
+internal readonly record struct TreeIdentity(TreeIdentityKind Kind, Guid Id);
