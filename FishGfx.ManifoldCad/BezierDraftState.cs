@@ -61,27 +61,43 @@ internal sealed class BezierDraftState
 		};
 	}
 
-	internal void MoveWorldPoint(RunnerPathPointKind kind, CadPoint3 worldPoint)
+	internal bool MoveWorldPoint(RunnerPathPointKind kind, CadPoint3 worldPoint)
 	{
 		switch (kind)
 		{
 			case RunnerPathPointKind.Control1:
-				StartHandleLength = Math.Max(
+				double handleLength = Math.Max(
 					CadPoint3.Dot(worldPoint - Start, EntryFrame.Tangent),
 					1.0e-6
 				);
+				if (NearlyEqual(handleLength, StartHandleLength))
+				{
+					return false;
+				}
+				StartHandleLength = handleLength;
 				break;
 			case RunnerPathPointKind.Control2:
-				Control2Local = ToLocal(worldPoint);
+				CadPoint3 control2 = ToLocal(worldPoint);
+				if (NearlyEqual(control2, Control2Local))
+				{
+					return false;
+				}
+				Control2Local = control2;
 				break;
 			case RunnerPathPointKind.End:
-				EndLocal = ToLocal(worldPoint);
+				CadPoint3 end = ToLocal(worldPoint);
+				if (NearlyEqual(end, EndLocal))
+				{
+					return false;
+				}
+				EndLocal = end;
 				break;
 			default:
-				return;
+				return false;
 		}
 		IsDirty = true;
 		IsInvalid = false;
+		return true;
 	}
 
 	internal void UpdateFrames(CadFrame entryFrame, CadFrame authoritativeExitFrame)
@@ -166,5 +182,17 @@ internal sealed class BezierDraftState
 	private static string Format(double value)
 	{
 		return value.ToString("G17", CultureInfo.InvariantCulture);
+	}
+
+	private static bool NearlyEqual(double left, double right)
+	{
+		double scale = Math.Max(1, Math.Max(Math.Abs(left), Math.Abs(right)));
+		return Math.Abs(left - right) <= scale * 1.0e-12;
+	}
+
+	private static bool NearlyEqual(CadPoint3 left, CadPoint3 right)
+	{
+		double scale = Math.Max(1, Math.Max(left.Length, right.Length));
+		return (left - right).Length <= scale * 1.0e-12;
 	}
 }

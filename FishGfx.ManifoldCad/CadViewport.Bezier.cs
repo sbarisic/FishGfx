@@ -140,7 +140,6 @@ internal sealed partial class CadViewport
 			activeBezierHandle = null;
 			return false;
 		}
-		MarkRunnerStale(bezierDraft.RunnerId);
 		return true;
 	}
 
@@ -166,11 +165,19 @@ internal sealed partial class CadViewport
 			return;
 		}
 		Vector3 delta = intersection - bezierDragIntersection;
-		bezierDraft.MoveWorldPoint(
+		bool wasDirty = bezierDraft.IsDirty;
+		bool changed = bezierDraft.MoveWorldPoint(
 			activeBezierHandle.Value,
 			bezierDragPoint + CadPoint3.FromVector3(delta)
 		);
-		BezierDraftPreviewChanged?.Invoke(bezierDraft, activeBezierHandle.Value);
+		if (changed)
+		{
+			if (!wasDirty)
+			{
+				MarkRunnerStale(bezierDraft.RunnerId);
+			}
+			BezierDraftPreviewChanged?.Invoke(bezierDraft, activeBezierHandle.Value);
+		}
 	}
 
 	private void CompleteBezierDrag()
@@ -301,7 +308,6 @@ internal sealed partial class CadViewport
 		activeBezierHandle = selectedBezierHandle;
 		bezierAxisDragStart = context.LocalPoint;
 		bezierDragPoint = point;
-		MarkRunnerStale(bezierDraft.RunnerId);
 		return true;
 	}
 
@@ -328,11 +334,19 @@ internal sealed partial class CadViewport
 			Vector2.Normalize(screenAxis)
 		);
 		float worldAmount = pixels * Math.Max(distance, 1) / Math.Max(bounds.Height, 1);
-		bezierDraft.MoveWorldPoint(
+		bool wasDirty = bezierDraft.IsDirty;
+		bool changed = bezierDraft.MoveWorldPoint(
 			activeBezierHandle.Value,
 			bezierDragPoint + CadPoint3.FromVector3(axis * worldAmount)
 		);
-		BezierDraftPreviewChanged?.Invoke(bezierDraft, activeBezierHandle.Value);
+		if (changed)
+		{
+			if (!wasDirty)
+			{
+				MarkRunnerStale(bezierDraft.RunnerId);
+			}
+			BezierDraftPreviewChanged?.Invoke(bezierDraft, activeBezierHandle.Value);
+		}
 	}
 
 	private void DrawBezierAxes(RenderPass pass, float handleRadius)

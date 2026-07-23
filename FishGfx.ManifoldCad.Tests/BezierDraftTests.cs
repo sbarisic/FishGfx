@@ -46,4 +46,37 @@ public sealed class BezierDraftTests
 		Assert.Equal("8", node.Properties["control2U"]);
 		Assert.Equal("-5", node.Properties["control2V"]);
 	}
+
+	[Fact]
+	public void MovingAHandleToItsCurrentPointDoesNotDirtyTheDraft()
+	{
+		RunnerNode node = new(RunnerNodes.CubicBezier);
+		RunnerSectionProfile profile = RunnerSectionProfile.FromCircular(new PipeProfile(42.4, 2));
+		CadFrame entry = new(
+			CadPoint3.Zero,
+			new CadPoint3(1, 1, 0),
+			new CadPoint3(0, 0, 1)
+		);
+		RunnerFeature feature = new(
+			node.Id,
+			RunnerFeatureKind.CubicBezier,
+			entry,
+			new CadFrame(new CadPoint3(100, 0, 0), entry.Tangent, entry.Normal),
+			profile,
+			profile,
+			100,
+			CadPoint3.Zero,
+			double.PositiveInfinity,
+			0,
+			0,
+			new CadPoint3(33.333333333333336, 0, 0),
+			new CadPoint3(66.66666666666667, 0, 0)
+		);
+		BezierDraftState draft = BezierDraftState.Create(Guid.NewGuid(), node, feature);
+
+		Assert.False(draft.MoveWorldPoint(RunnerPathPointKind.Control1, draft.Control1));
+		Assert.False(draft.MoveWorldPoint(RunnerPathPointKind.Control2, draft.Control2));
+		Assert.False(draft.MoveWorldPoint(RunnerPathPointKind.End, draft.End));
+		Assert.False(draft.IsDirty);
+	}
 }

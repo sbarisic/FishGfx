@@ -902,9 +902,23 @@ bool certify_curvature(
 		+ std::pow(maximum_absolute(cross_y), 2)
 		+ std::pow(maximum_absolute(cross_z), 2)
 	);
-	double radius_lower = cross_upper <= Precision::Confusion()
-		? std::numeric_limits<double>::infinity()
-		: speed_lower * speed_lower * speed_lower / cross_upper;
+	double radius_lower;
+	if (cross_upper == 0)
+	{
+		radius_lower = std::numeric_limits<double>::infinity();
+	}
+	else if (speed_lower == 0)
+	{
+		radius_lower = 0;
+	}
+	else
+	{
+		const double logarithmic_radius = 3.0 * std::log(speed_lower) - std::log(cross_upper);
+		const double maximum_logarithm = std::log(std::numeric_limits<double>::max());
+		radius_lower = logarithmic_radius >= maximum_logarithm
+			? std::numeric_limits<double>::infinity()
+			: std::exp(logarithmic_radius);
+	}
 
 	if (radius_lower > required_radius)
 	{

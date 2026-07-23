@@ -90,11 +90,7 @@ internal sealed partial class ManifoldCadApplication
 
 	private void ExportStep(string path)
 	{
-		IReadOnlyList<RunnerEvaluationResult> results = project.EvaluateRunners();
-		if (results.Count == 0
-			|| results.Any(result => !result.Success)
-			|| project.Runners.Any(runner => runnerBuildErrors.ContainsKey(runner.Id)
-				|| !evaluations.ContainsKey(runner.Id)))
+		if (!CanExportRunners(project.Runners, evaluations, runnerBuildErrors))
 		{
 			ui.SetStatus("Export is disabled until every runner regenerates successfully.", true);
 			return;
@@ -105,6 +101,24 @@ internal sealed partial class ManifoldCadApplication
 			document.ExportStepAsync(path).GetAwaiter().GetResult();
 			ui.SetStatus($"Exported complete AP242 assembly to {Path.GetFileName(path)}.");
 		});
+	}
+
+	internal static bool CanExportRunners(
+		IReadOnlyList<CadRunner> runners,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> runnerEvaluations,
+		IReadOnlyDictionary<Guid, string> buildErrors
+	)
+	{
+		ArgumentNullException.ThrowIfNull(runners);
+		ArgumentNullException.ThrowIfNull(runnerEvaluations);
+		ArgumentNullException.ThrowIfNull(buildErrors);
+
+		return runners.Count > 0 && runners.All(runner =>
+			!buildErrors.ContainsKey(runner.Id)
+			&& runnerEvaluations.TryGetValue(runner.Id, out RunnerEvaluationResult result)
+			&& result.Success
+			&& result.RunnerId == runner.Id
+			&& result.EditRevision == runner.EditRevision);
 	}
 
 }

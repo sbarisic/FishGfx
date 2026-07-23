@@ -177,20 +177,28 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 			throw new InvalidOperationException("A stale runner evaluation cannot replace current exact geometry.");
 		}
 
+		long expectedEditRevision = evaluation.EditRevision;
+		Guid runnerId = runner.Id;
+		string runnerName = runner.Name;
 		NativeRunnerFeature[] features = evaluation.Chain.Features
 			.Select(NativeRunnerFeature.FromManaged)
 			.ToArray();
 
 		return MutateAsync(() =>
 		{
+			if (runner.EditRevision != expectedEditRevision)
+			{
+				throw new InvalidOperationException("A stale runner evaluation cannot replace current exact geometry.");
+			}
+
 			unsafe
 			{
 				fixed (NativeRunnerFeature* pointer = features)
 				{
 					Check(NativeMethods.DocumentBuildRunner(
 						handle,
-						runner.Id.ToString("D"),
-						runner.Name,
+						runnerId.ToString("D"),
+						runnerName,
 						pointer,
 						(nuint)features.Length
 					), "Build exact runner");

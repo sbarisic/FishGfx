@@ -230,6 +230,22 @@ internal sealed partial class CadViewport : IDisposable
 		Vector2 delta = mouse - previousMouse;
 		previousMouse = mouse;
 
+		if (activeGizmoAxis >= 0 && input.IsMouseButtonDown(MouseButton.Left))
+		{
+			UpdateGizmo(bounds, mouse);
+		}
+
+		if (activeBezierHandle.HasValue && input.IsMouseButtonDown(MouseButton.Left))
+		{
+			UpdateBezierDrag(bounds, mouse);
+		}
+
+		if (input.WasMouseButtonReleased(MouseButton.Left))
+		{
+			CompleteBezierDrag();
+			activeGizmoAxis = -1;
+		}
+
 		if (!bounds.Contains(mouse))
 		{
 			return;
@@ -257,22 +273,6 @@ internal sealed partial class CadViewport : IDisposable
 		{
 			distance = Math.Clamp(distance * (scrollDelta > 0 ? 0.88f : 1.14f), 1, 100000);
 			scrollDelta = 0;
-		}
-
-		if (activeGizmoAxis >= 0 && input.IsMouseButtonDown(MouseButton.Left))
-		{
-			UpdateGizmo(bounds, mouse);
-		}
-
-		if (activeBezierHandle.HasValue && input.IsMouseButtonDown(MouseButton.Left))
-		{
-			UpdateBezierDrag(bounds, mouse);
-		}
-
-		if (input.WasMouseButtonReleased(MouseButton.Left))
-		{
-			CompleteBezierDrag();
-			activeGizmoAxis = -1;
 		}
 
 		if (input.WasMouseButtonPressed(MouseButton.Left))

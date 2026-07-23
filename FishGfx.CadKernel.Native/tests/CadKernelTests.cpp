@@ -140,6 +140,24 @@ int main()
 	require(std::string(fgcad_last_error()).find("self-intersects") != std::string::npos,
 		"Self-intersection diagnostic was not specific");
 
+	fgcad_frame small_curve_start = frame({ 0, 0, 0 }, { 1, 0, 0 });
+	fgcad_point3 small_curve_control1{ 0.0001, 0, 0 };
+	fgcad_point3 small_curve_control2{ 0.0001, 0.0001, 0 };
+	fgcad_point3 small_curve_end{ 0, 0.0001, 0 };
+	require(
+		fgcad_evaluate_cubic_bezier(
+			&small_curve_start,
+			&small_curve_control1,
+			&small_curve_control2,
+			&small_curve_end,
+			0.001,
+			&bezier_evaluation
+		) != FGCAD_STATUS_OK,
+		"Small-scale tight cubic Bezier curvature was incorrectly certified"
+	);
+	require(std::string(fgcad_last_error()).find("curvature") != std::string::npos,
+		"Small-scale curvature diagnostic was not specific");
+
 	fgcad_runner_feature_spec bezier_spec{};
 	bezier_spec.kind = FGCAD_FEATURE_CUBIC_BEZIER;
 	std::snprintf(
