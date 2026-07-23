@@ -47,6 +47,7 @@ public static class RunnerNodes
 	public const string StartRunner = "cad.start-runner";
 	public const string Straight = "cad.straight";
 	public const string Bend = "cad.bend";
+	public const string CubicBezier = "cad.cubic-bezier";
 	public const string CircularPipe = "cad.circular-pipe";
 	public const string LoftTransition = "cad.loft-transition";
 	public const string RunnerOutput = "cad.runner-output";
@@ -74,6 +75,12 @@ public static class RunnerNodes
 			[Bend] = new RunnerNodeDefinition(
 				Bend,
 				"Bend",
+				In("runner", RunnerPortType.RunnerFeatures),
+				Out("runner", RunnerPortType.RunnerFeatures)
+			),
+			[CubicBezier] = new RunnerNodeDefinition(
+				CubicBezier,
+				"Cubic Bézier",
 				In("runner", RunnerPortType.RunnerFeatures),
 				Out("runner", RunnerPortType.RunnerFeatures)
 			),
@@ -165,6 +172,15 @@ public sealed class RunnerNode
 				properties["radius"] = "50";
 				properties["angle"] = "45";
 				properties["rotation"] = "0";
+				break;
+			case RunnerNodes.CubicBezier:
+				properties["startHandleLength"] = "33.333333333333336";
+				properties["control2T"] = "66.66666666666667";
+				properties["control2U"] = "0";
+				properties["control2V"] = "0";
+				properties["endT"] = "100";
+				properties["endU"] = "0";
+				properties["endV"] = "0";
 				break;
 			case RunnerNodes.CircularPipe:
 				properties["outerDiameter"] = "42.4";
@@ -465,14 +481,17 @@ public sealed class RunnerGraph
 
 		bool Visit(Guid nodeId)
 		{
-			if (states[nodeId] == 1) return true;
-			if (states[nodeId] == 2) return false;
+			if (states[nodeId] == 1)
+				return true;
+			if (states[nodeId] == 2)
+				return false;
 			states[nodeId] = 1;
 			if (outgoing.TryGetValue(nodeId, out Guid[] targets))
 			{
 				foreach (Guid target in targets)
 				{
-					if (Visit(target)) return true;
+					if (Visit(target))
+						return true;
 				}
 			}
 			states[nodeId] = 2;

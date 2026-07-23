@@ -52,6 +52,53 @@ public sealed class RunnerGraphTests
 	}
 
 	[Fact]
+	public void CubicBezierSplicesTransactionallyAndPlansEntryLocalControls()
+	{
+		(ManifoldProject project, _, CadRunner runner) = CreateProject();
+		RunnerNode lastStraight = runner.Graph.Nodes.Last(node => node.DefinitionId == RunnerNodes.Straight);
+		RunnerNode output = runner.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.RunnerOutput);
+		RunnerConnection tail = runner.Graph.Connections.Single(connection =>
+			connection.OutputNodeId == lastStraight.Id && connection.InputNodeId == output.Id);
+
+		Assert.True(runner.Graph.TrySpliceConnection(
+			tail.Id,
+			RunnerNodes.CubicBezier,
+			1300,
+			220,
+			out RunnerNode bezier,
+			out string error
+		), error);
+		bezier.Properties["control2T"] = "70";
+		bezier.Properties["control2U"] = "8";
+		bezier.Properties["control2V"] = "-4";
+		bezier.Properties["endT"] = "110";
+		bezier.Properties["endU"] = "12";
+		bezier.Properties["endV"] = "3";
+
+		RunnerGraphPlan plan = RunnerGraphPlanner.Plan(
+			runner,
+			project.Mates.ToDictionary(mate => mate.Id),
+			project.Parts.ToDictionary(part => part.Id)
+		);
+		Assert.True(plan.Success, string.Join(Environment.NewLine, plan.Diagnostics.Select(item => item.Message)));
+		RunnerFeatureSpec specification = plan.Features.Single(feature => feature.NodeId == bezier.Id);
+		Assert.Equal(RunnerFeatureKind.CubicBezier, specification.Kind);
+		Assert.Equal(new CadPoint3(70, 8, -4), specification.Control2Local);
+		Assert.Equal(new CadPoint3(110, 12, 3), specification.EndLocal);
+		Assert.Equal(
+			new CadPathPointRef(runner.Id, bezier.Id, RunnerPathPointKind.End),
+			new CadPathPointRef(runner.Id, bezier.Id, RunnerPathPointKind.End)
+		);
+
+		string json = RunnerGraphJson.Serialize(runner.Graph);
+		RunnerGraphLoadResult restored = RunnerGraphJson.Deserialize(json);
+		Assert.True(restored.Success, string.Join(Environment.NewLine, restored.Errors));
+		RunnerNode restoredBezier = restored.Graph.Nodes.Single(node => node.Id == bezier.Id);
+		Assert.Equal("8", restoredBezier.Properties["control2U"]);
+		Assert.Equal("3", restoredBezier.Properties["endV"]);
+	}
+
+	[Fact]
 	public void ValidationReportsResponsibleNode()
 	{
 		(ManifoldProject project, _, CadRunner runner) = CreateProject();

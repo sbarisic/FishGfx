@@ -79,12 +79,148 @@ std::filesystem::path temporary(const char* extension)
 
 int main()
 {
-	require(fgcad_api_version() == 3, "ABI version mismatch");
+	require(fgcad_api_version() == 4, "ABI version mismatch");
 	fgcad_document* document = nullptr;
 	require(fgcad_document_create(&document) == FGCAD_STATUS_OK, "Document creation failed");
 	require(document != nullptr, "Document handle was null");
 
 	fgcad_runner_profile profile = circular(42, 2);
+	fgcad_frame bezier_start = frame({ 0, -100, 0 }, { 1, 0, 0 });
+	fgcad_point3 bezier_control1{ 33.333, -100, 0 };
+	fgcad_point3 bezier_control2{ 66.667, -90, 0 };
+	fgcad_point3 bezier_end{ 100, -80, 0 };
+	fgcad_bezier_evaluation bezier_evaluation{};
+	require(
+		fgcad_evaluate_cubic_bezier(
+			&bezier_start,
+			&bezier_control1,
+			&bezier_control2,
+			&bezier_end,
+			21,
+			&bezier_evaluation
+		) == FGCAD_STATUS_OK,
+		"Tolerance-controlled cubic Bezier evaluation failed"
+	);
+	require(bezier_evaluation.length > 100 && std::isfinite(bezier_evaluation.length),
+		"Cubic Bezier length was invalid");
+	require(std::abs(bezier_evaluation.exit_frame.origin.y + 80) < 1e-9,
+		"Native cubic Bezier exit frame did not reach the endpoint");
+	fgcad_frame spatial_start = frame({ 0, 0, 0 }, { -1, 0, 0 }, { 0, 0, 1 });
+	fgcad_point3 spatial_control1{ -30, 0, 0 };
+	fgcad_point3 spatial_control2{ -70, 20, 15 };
+	fgcad_point3 spatial_end{ -100, 40, 20 };
+	require(
+		fgcad_evaluate_cubic_bezier(
+			&spatial_start,
+			&spatial_control1,
+			&spatial_control2,
+			&spatial_end,
+			1,
+			&bezier_evaluation
+		) == FGCAD_STATUS_OK,
+		"Spatial negative-facing cubic Bezier evaluation failed"
+	);
+	require(bezier_evaluation.exit_frame.tangent.x < 0,
+		"Spatial native transport returned the wrong exit-facing direction");
+
+	fgcad_point3 loop_control1{ -33.3333333333, -27.0833333333, 0 };
+	fgcad_point3 loop_control2{ -33.3333333333, -54.1666666667, 0 };
+	fgcad_point3 loop_end{ 0, 18.75, 0 };
+	require(
+		fgcad_evaluate_cubic_bezier(
+			&spatial_start,
+			&loop_control1,
+			&loop_control2,
+			&loop_end,
+			0.1,
+			&bezier_evaluation
+		) != FGCAD_STATUS_OK,
+		"Self-intersecting cubic Bezier was not rejected"
+	);
+	require(std::string(fgcad_last_error()).find("self-intersects") != std::string::npos,
+		"Self-intersection diagnostic was not specific");
+
+	fgcad_runner_feature_spec bezier_spec{};
+	bezier_spec.kind = FGCAD_FEATURE_CUBIC_BEZIER;
+	std::snprintf(
+		bezier_spec.source_node_id,
+		sizeof(bezier_spec.source_node_id),
+		"%s",
+		"aaaaaaaa-1111-1111-1111-111111111111"
+	);
+	bezier_spec.start_handle_length = 33.333;
+	bezier_spec.control2_local = { 66.667, 0, 10 };
+	bezier_spec.end_local = { 100, 0, 20 };
+	bezier_spec.output_profile = profile;
+	fgcad_runner_feature evaluated_bezier{};
+	size_t evaluated_count = 0;
+	require(
+		fgcad_evaluate_runner_features(
+			&bezier_start,
+			&profile,
+			&bezier_spec,
+			1,
+			&evaluated_bezier,
+			1,
+			&evaluated_count
+		) == FGCAD_STATUS_OK,
+		"Caller-allocated runner feature evaluation failed"
+	);
+	require(evaluated_bezier.kind == FGCAD_FEATURE_CUBIC_BEZIER
+		&& evaluated_bezier.length > 100 && evaluated_count == 1,
+		"Evaluated cubic feature metadata was invalid");
+	fgcad_runner_profile exact_mate_profile{};
+	exact_mate_profile.kind = FGCAD_PROFILE_MATE;
+	exact_mate_profile.equivalent_radius = 10;
+	exact_mate_profile.wall_thickness = 2;
+	evaluated_count = 0;
+	require(
+		fgcad_evaluate_runner_features(
+			&bezier_start,
+			&exact_mate_profile,
+			&bezier_spec,
+			1,
+			&evaluated_bezier,
+			1,
+			&evaluated_count
+		) == FGCAD_STATUS_OK && evaluated_count == 1,
+		"Exact mate-derived active profile could not evaluate a cubic Bezier"
+	);
+	evaluated_count = 0;
+	require(
+		fgcad_evaluate_runner_features(
+			&bezier_start,
+			&profile,
+			&bezier_spec,
+			1,
+			&evaluated_bezier,
+			1,
+			&evaluated_count
+		) == FGCAD_STATUS_OK,
+		"Circular cubic Bezier re-evaluation failed"
+	);
+	require(
+		fgcad_document_build_runner(
+			document,
+			"runner-bezier",
+			"Bezier Runner",
+			&evaluated_bezier,
+			1
+		) == FGCAD_STATUS_OK,
+		"Exact cubic Bezier runner sweep failed"
+	);
+	fgcad_point3 zero_exit = bezier_control2;
+	require(
+		fgcad_evaluate_cubic_bezier(
+			&bezier_start,
+			&bezier_control1,
+			&bezier_control2,
+			&zero_exit,
+			21,
+			&bezier_evaluation
+		) != FGCAD_STATUS_OK,
+		"Zero cubic Bezier exit handle was not rejected"
+	);
 	fgcad_runner_feature features[3]{};
 	features[0] = straight(
 		"11111111-1111-1111-1111-111111111111",

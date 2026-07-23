@@ -43,7 +43,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			await document.InvokeAsync(() =>
 			{
-				const uint requiredApiVersion = 3;
+				const uint requiredApiVersion = 4;
 				uint apiVersion = NativeMethods.ApiVersion();
 
 				if (apiVersion != requiredApiVersion)
@@ -172,6 +172,10 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			throw new ArgumentException("Only a valid evaluation of the selected runner can be built.", nameof(evaluation));
 		}
+		if (evaluation.EditRevision != runner.EditRevision)
+		{
+			throw new InvalidOperationException("A stale runner evaluation cannot replace current exact geometry.");
+		}
 
 		NativeRunnerFeature[] features = evaluation.Chain.Features
 			.Select(NativeRunnerFeature.FromManaged)
@@ -193,6 +197,127 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 				}
 			}
 		}, cancellationToken);
+	}
+
+	internal Task<RunnerEvaluationResult> EvaluateRunnerAsync(
+		CadRunner runner,
+		IReadOnlyDictionary<Guid, CadMate> mates,
+		IReadOnlyDictionary<Guid, CadPart> parts,
+		CancellationToken cancellationToken = default
+	)
+	{
+		RunnerGraphPlan plan = RunnerGraphPlanner.Plan(runner, mates, parts);
+		if (!plan.Success)
+		{
+			return Task.FromResult(new RunnerEvaluationResult
+			{
+				RunnerId = runner.Id,
+				OutputNodeId = plan.OutputNodeId,
+				EditRevision = plan.EditRevision,
+				Diagnostics = plan.Diagnostics,
+			});
+		}
+
+		return InvokeAsync(() => EvaluatePlan(runner, plan), cancellationToken);
+	}
+
+	private static RunnerEvaluationResult EvaluationFailure(
+		CadRunner runner,
+		RunnerGraphPlan plan,
+		CadKernelException exception,
+		nuint evaluatedCount
+	)
+	{
+		Guid? nodeId = evaluatedCount < (nuint)plan.Features.Count
+			? plan.Features[checked((int)evaluatedCount)].NodeId
+			: null;
+		return new RunnerEvaluationResult
+		{
+			RunnerId = runner.Id,
+			OutputNodeId = plan.OutputNodeId,
+			EditRevision = plan.EditRevision,
+			Diagnostics = new[]
+			{
+				new CadDiagnostic("RUN051", exception.Message, CadDiagnosticSeverity.Error, nodeId),
+			},
+		};
+	}
+
+	private RunnerEvaluationResult EvaluatePlan(CadRunner runner, RunnerGraphPlan plan)
+	{
+		NativeRunnerFeatureSpec[] specifications = plan.Features
+			.Select(NativeRunnerFeatureSpec.FromManaged)
+			.ToArray();
+		NativeRunnerFeature[] evaluated = new NativeRunnerFeature[specifications.Length];
+		NativeFrame startFrame = new(plan.StartFrame);
+		NativeRunnerProfile startProfile = NativeRunnerProfile.FromManaged(plan.StartProfile);
+
+		nuint evaluatedCount = 0;
+		try
+		{
+			unsafe
+			{
+				fixed (NativeRunnerFeatureSpec* specificationPointer = specifications)
+				fixed (NativeRunnerFeature* evaluatedPointer = evaluated)
+				{
+					Check(NativeMethods.EvaluateRunnerFeatures(
+						in startFrame,
+						in startProfile,
+						specificationPointer,
+						(nuint)specifications.Length,
+						evaluatedPointer,
+						(nuint)evaluated.Length,
+						out evaluatedCount
+					), "Evaluate exact runner");
+				}
+			}
+		}
+		catch (CadKernelException exception)
+		{
+			return EvaluationFailure(runner, plan, exception, evaluatedCount);
+		}
+
+		List<RunnerFeature> features = new(evaluated.Length);
+		RunnerSectionProfile activeProfile = plan.StartProfile;
+		for (int index = 0; index < evaluated.Length; ++index)
+		{
+			RunnerFeatureSpec specification = plan.Features[index];
+			NativeRunnerFeature native = evaluated[index];
+			RunnerSectionProfile outputProfile = specification.Kind == RunnerFeatureKind.LoftTransition
+				? specification.OutputProfile
+				: activeProfile;
+			features.Add(new RunnerFeature(
+				specification.NodeId,
+				specification.Kind,
+				native.EntryFrame.ToManaged(),
+				native.ExitFrame.ToManaged(),
+				activeProfile,
+				outputProfile,
+				native.Length,
+				native.Center.ToManaged(),
+				native.Radius,
+				native.SweepRadians,
+				native.RotationRadians,
+				native.Control1.ToManaged(),
+				native.Control2.ToManaged()
+			));
+			activeProfile = outputProfile;
+		}
+
+		RunnerFeatureChain chain = new(
+			runner.StartMateId,
+			features[^1].ExitFrame,
+			activeProfile,
+			features.AsReadOnly()
+		);
+		return new RunnerEvaluationResult
+		{
+			RunnerId = runner.Id,
+			OutputNodeId = plan.OutputNodeId,
+			EditRevision = plan.EditRevision,
+			Chain = chain,
+			Diagnostics = Array.Empty<CadDiagnostic>(),
+		};
 	}
 
 	public Task<long> RemoveRunnerAsync(Guid runnerId, CancellationToken cancellationToken = default)

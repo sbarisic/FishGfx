@@ -51,6 +51,11 @@ internal readonly record struct NativeTransform(NativePoint3 Translation, Native
 [StructLayout(LayoutKind.Sequential)]
 internal readonly record struct NativeFrame(NativePoint3 Origin, NativePoint3 Tangent, NativePoint3 Normal)
 {
+	internal NativeFrame(CadFrame value)
+		: this(new NativePoint3(value.Origin), new NativePoint3(value.Tangent), new NativePoint3(value.Normal))
+	{
+	}
+
 	internal CadFrame ToManaged()
 	{
 		return new CadFrame(Origin.ToManaged(), Tangent.ToManaged(), Normal.ToManaged());
@@ -117,6 +122,7 @@ internal unsafe struct NativeRunnerProfile
 	internal fixed byte MateId[40];
 	internal double OuterDiameter;
 	internal double WallThickness;
+	internal double EquivalentRadius;
 
 	internal static NativeRunnerProfile FromManaged(RunnerSectionProfile profile)
 	{
@@ -125,6 +131,7 @@ internal unsafe struct NativeRunnerProfile
 			Kind = (int)profile.Kind,
 			OuterDiameter = profile.CircularProfile?.OuterDiameterMillimetres ?? 0,
 			WallThickness = profile.WallThicknessMillimetres,
+			EquivalentRadius = profile.MateEquivalentRadiusMillimetres,
 		};
 		if (profile.MateId.HasValue)
 		{
@@ -136,7 +143,8 @@ internal unsafe struct NativeRunnerProfile
 	private static void CopyId(byte* destination, Guid id)
 	{
 		byte[] bytes = System.Text.Encoding.UTF8.GetBytes(id.ToString("D"));
-		for (int index = 0; index < Math.Min(bytes.Length, 39); index++) destination[index] = bytes[index];
+		for (int index = 0; index < Math.Min(bytes.Length, 39); index++)
+			destination[index] = bytes[index];
 	}
 }
 
@@ -150,29 +158,29 @@ internal unsafe struct NativeRunnerFeature
 	internal NativeRunnerProfile InputProfile;
 	internal NativeRunnerProfile OutputProfile;
 	internal NativePoint3 Center;
+	internal double Length;
 	internal double Radius;
 	internal double SweepRadians;
 	internal double RotationRadians;
+	internal NativePoint3 Control1;
+	internal NativePoint3 Control2;
 
 	internal static NativeRunnerFeature FromManaged(RunnerFeature feature)
 	{
 		NativeRunnerFeature result = new()
 		{
 			Kind = (int)feature.Kind,
-			EntryFrame = new NativeFrame(
-				new NativePoint3(feature.EntryFrame.Origin),
-				new NativePoint3(feature.EntryFrame.Tangent),
-				new NativePoint3(feature.EntryFrame.Normal)),
-			ExitFrame = new NativeFrame(
-				new NativePoint3(feature.ExitFrame.Origin),
-				new NativePoint3(feature.ExitFrame.Tangent),
-				new NativePoint3(feature.ExitFrame.Normal)),
+			EntryFrame = new NativeFrame(feature.EntryFrame),
+			ExitFrame = new NativeFrame(feature.ExitFrame),
 			InputProfile = NativeRunnerProfile.FromManaged(feature.InputProfile),
 			OutputProfile = NativeRunnerProfile.FromManaged(feature.OutputProfile),
 			Center = new NativePoint3(feature.Center),
+			Length = feature.LengthMillimetres,
 			Radius = feature.RadiusMillimetres,
 			SweepRadians = feature.SweepRadians,
 			RotationRadians = feature.RotationRadians,
+			Control1 = new NativePoint3(feature.Control1),
+			Control2 = new NativePoint3(feature.Control2),
 		};
 		byte[] id = System.Text.Encoding.UTF8.GetBytes(feature.NodeId.ToString("D"));
 
@@ -183,6 +191,44 @@ internal unsafe struct NativeRunnerFeature
 			destination[index] = id[index];
 		}
 
+		return result;
+	}
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+internal unsafe struct NativeRunnerFeatureSpec
+{
+	internal int Kind;
+	internal fixed byte SourceNodeId[40];
+	internal double Length;
+	internal double Radius;
+	internal double SweepRadians;
+	internal double RotationRadians;
+	internal double StartHandleLength;
+	internal NativePoint3 Control2Local;
+	internal NativePoint3 EndLocal;
+	internal NativeRunnerProfile OutputProfile;
+
+	internal static NativeRunnerFeatureSpec FromManaged(RunnerFeatureSpec specification)
+	{
+		NativeRunnerFeatureSpec result = new()
+		{
+			Kind = (int)specification.Kind,
+			Length = specification.LengthMillimetres,
+			Radius = specification.RadiusMillimetres,
+			SweepRadians = specification.SweepRadians,
+			RotationRadians = specification.RotationRadians,
+			StartHandleLength = specification.StartHandleLengthMillimetres,
+			Control2Local = new NativePoint3(specification.Control2Local),
+			EndLocal = new NativePoint3(specification.EndLocal),
+			OutputProfile = NativeRunnerProfile.FromManaged(specification.OutputProfile),
+		};
+		byte[] id = System.Text.Encoding.UTF8.GetBytes(specification.NodeId.ToString("D"));
+		byte* destination = result.SourceNodeId;
+		for (int index = 0; index < Math.Min(id.Length, 39); index++)
+		{
+			destination[index] = id[index];
+		}
 		return result;
 	}
 }
@@ -245,6 +291,17 @@ internal static partial class NativeMethods
 
 	[LibraryImport(Library, EntryPoint = "fgcad_last_error")]
 	private static partial nint LastErrorPointer();
+
+	[LibraryImport(Library, EntryPoint = "fgcad_evaluate_runner_features")]
+	internal static unsafe partial NativeStatus EvaluateRunnerFeatures(
+		in NativeFrame startFrame,
+		in NativeRunnerProfile startProfile,
+		NativeRunnerFeatureSpec* specifications,
+		nuint specificationCount,
+		NativeRunnerFeature* evaluatedFeatures,
+		nuint evaluatedCapacity,
+		out nuint evaluatedCount
+	);
 
 	[LibraryImport(Library, EntryPoint = "fgcad_document_create")]
 	internal static partial NativeStatus DocumentCreate(out nint document);

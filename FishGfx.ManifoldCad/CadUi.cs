@@ -85,9 +85,15 @@ internal sealed class CadUi : IDisposable
 			{
 				switch (identity.Kind)
 				{
-					case TreeIdentityKind.Part: PartSelected?.Invoke(identity.Id); break;
-					case TreeIdentityKind.Mate: MateSelected?.Invoke(identity.Id); break;
-					case TreeIdentityKind.Runner: RunnerSelected?.Invoke(identity.Id); break;
+					case TreeIdentityKind.Part:
+						PartSelected?.Invoke(identity.Id);
+						break;
+					case TreeIdentityKind.Mate:
+						MateSelected?.Invoke(identity.Id);
+						break;
+					case TreeIdentityKind.Runner:
+						RunnerSelected?.Invoke(identity.Id);
+						break;
 				}
 			}
 		};
@@ -96,13 +102,15 @@ internal sealed class CadUi : IDisposable
 		Button addRunner = new() { Position = new Vector2(16, 540), Size = new Vector2(108, 32), Text = "Add Runner" };
 		addRunner.OnButtonPressed += (_, button, _) =>
 		{
-			if (button == global::FishUI.FishMouseButton.Left) AddRunnerRequested?.Invoke();
+			if (button == global::FishUI.FishMouseButton.Left)
+				AddRunnerRequested?.Invoke();
 		};
 		modelPanel.AddChild(addRunner);
 		Button deleteRunner = new() { Position = new Vector2(132, 540), Size = new Vector2(108, 32), Text = "Delete Runner" };
 		deleteRunner.OnButtonPressed += (_, button, _) =>
 		{
-			if (button == global::FishUI.FishMouseButton.Left) DeleteRunnerRequested?.Invoke();
+			if (button == global::FishUI.FishMouseButton.Left)
+				DeleteRunnerRequested?.Invoke();
 		};
 		modelPanel.AddChild(deleteRunner);
 		runnerName = new Textbox
@@ -113,7 +121,8 @@ internal sealed class CadUi : IDisposable
 		};
 		runnerName.OnTextChanged += (_, text) =>
 		{
-			if (!synchronizing) RunnerNameChanged?.Invoke(text);
+			if (!synchronizing)
+				RunnerNameChanged?.Invoke(text);
 		};
 		modelPanel.AddChild(runnerName);
 		mateName = new Textbox
@@ -325,6 +334,12 @@ internal sealed class CadUi : IDisposable
 					("angle", "Angle deg"),
 					("rotation", "Rotation deg"),
 				},
+				RunnerNodes.CubicBezier => new[]
+				{
+					("startHandleLength", "P1 tangent mm"),
+					("control2T", "P2 local T mm"),
+					("endT", "P3 local T mm"),
+				},
 				RunnerNodes.CircularPipe => new[]
 				{
 					("outerDiameter", "Outer diameter mm"),
@@ -350,6 +365,44 @@ internal sealed class CadUi : IDisposable
 			}
 		}
 
+		synchronizing = false;
+	}
+
+	internal void SetBezierDraft(BezierDraftState draft, RunnerPathPointKind pointKind)
+	{
+		ArgumentNullException.ThrowIfNull(draft);
+		synchronizing = true;
+		(string Label, double Value)[] fields = pointKind switch
+		{
+			RunnerPathPointKind.Control1 => new[]
+			{
+				("P1 tangent mm", draft.StartHandleLength),
+			},
+			RunnerPathPointKind.Control2 => new[]
+			{
+				("P2 local T mm", draft.Control2Local.X),
+				("P2 local U mm", draft.Control2Local.Y),
+				("P2 local V mm", draft.Control2Local.Z),
+			},
+			RunnerPathPointKind.End => new[]
+			{
+				("P3 local T mm", draft.EndLocal.X),
+				("P3 local U mm", draft.EndLocal.Y),
+				("P3 local V mm", draft.EndLocal.Z),
+			},
+			_ => Array.Empty<(string, double)>(),
+		};
+		for (int index = 0; index < parameters.Length; ++index)
+		{
+			bool visible = index < fields.Length;
+			parameterLabels[index].Visible = visible;
+			parameters[index].Visible = visible;
+			if (visible)
+			{
+				parameterLabels[index].Text = fields[index].Label;
+				parameters[index].Value = (float)fields[index].Value;
+			}
+		}
 		synchronizing = false;
 	}
 

@@ -7,7 +7,18 @@ public enum RunnerFeatureKind
 	Straight,
 	Bend,
 	LoftTransition,
+	CubicBezier,
 }
+
+public enum RunnerPathPointKind
+{
+	Start,
+	Control1,
+	Control2,
+	End,
+}
+
+public readonly record struct CadPathPointRef(Guid RunnerId, Guid NodeId, RunnerPathPointKind PointKind);
 
 public enum RunnerProfileKind
 {
@@ -70,7 +81,9 @@ public sealed record RunnerFeature(
 	CadPoint3 Center,
 	double RadiusMillimetres,
 	double SweepRadians,
-	double RotationRadians
+	double RotationRadians,
+	CadPoint3 Control1 = default,
+	CadPoint3 Control2 = default
 );
 
 public sealed class RunnerFeatureChain
@@ -111,9 +124,12 @@ public sealed class RunnerEvaluationResult
 {
 	public Guid RunnerId { get; internal set; }
 	public Guid OutputNodeId { get; internal set; }
+	public long EditRevision { get; internal set; }
 	public RunnerFeatureChain Chain { get; internal set; }
 	public IReadOnlyList<CadDiagnostic> Diagnostics { get; internal set; } = Array.Empty<CadDiagnostic>();
 	public double LengthMillimetres => Chain?.LengthMillimetres ?? 0;
+	public bool LengthIsToleranceControlled => Chain?.Features
+		.Any(feature => feature.Kind == RunnerFeatureKind.CubicBezier) == true;
 	public bool Success => Chain?.Features.Count > 0
 		&& Diagnostics.All(diagnostic => diagnostic.Severity != CadDiagnosticSeverity.Error);
 }
@@ -184,6 +200,7 @@ public static class RunnerGraphEvaluator
 			{
 				RunnerId = runner.Id,
 				OutputNodeId = outputs.Length == 1 ? outputs[0].Id : Guid.Empty,
+				EditRevision = runner.EditRevision,
 				Chain = chain,
 				Diagnostics = diagnostics.AsReadOnly(),
 			};
@@ -208,6 +225,7 @@ public static class RunnerGraphEvaluator
 					RunnerNodes.StartRunner => EvaluateStart(node),
 					RunnerNodes.Straight => EvaluateStraight(node),
 					RunnerNodes.Bend => EvaluateBend(node),
+					RunnerNodes.CubicBezier => UnsupportedBezier(node),
 					RunnerNodes.CircularPipe => EvaluateProfile(node),
 					RunnerNodes.LoftTransition => EvaluateLoft(node),
 					RunnerNodes.RunnerOutput => EvaluateRunnerOutput(node),
@@ -275,7 +293,8 @@ public static class RunnerGraphEvaluator
 		{
 			RunnerFeatureChain chain = Input<RunnerFeatureChain>(node, "runner");
 			double? length = Number(node, "length", value => value > 0, "must be greater than zero");
-			if (chain == null || !length.HasValue) return null;
+			if (chain == null || !length.HasValue)
+				return null;
 			CadFrame start = chain.EndFrame;
 			CadFrame end = new(start.Origin + start.Tangent * length.Value, start.Tangent, start.Normal);
 			return chain.Append(new RunnerFeature(
@@ -290,7 +309,8 @@ public static class RunnerGraphEvaluator
 			double? angle = Number(node, "angle", value => value > 0 && value <= 180,
 				"must be in the range (0, 180] degrees");
 			double? rotation = Number(node, "rotation", _ => true, "must be finite");
-			if (chain == null || !radius.HasValue || !angle.HasValue || !rotation.HasValue) return null;
+			if (chain == null || !radius.HasValue || !angle.HasValue || !rotation.HasValue)
+				return null;
 
 			if (radius.Value <= chain.ActiveProfile.ApproximateOuterRadiusMillimetres)
 			{
@@ -320,7 +340,8 @@ public static class RunnerGraphEvaluator
 			PipeProfile? target = Input<PipeProfile?>(node, "targetProfile");
 			double? length = Number(node, "length", value => value > 0, "must be greater than zero");
 			double? rotation = Number(node, "rotation", _ => true, "must be finite");
-			if (chain == null || !target.HasValue || !length.HasValue || !rotation.HasValue) return null;
+			if (chain == null || !target.HasValue || !length.HasValue || !rotation.HasValue)
+				return null;
 
 			CadFrame start = chain.EndFrame;
 			double rotationRadians = rotation.Value * Math.PI / 180;
@@ -332,11 +353,18 @@ public static class RunnerGraphEvaluator
 				length.Value, CadPoint3.Zero, 0, 0, rotationRadians));
 		}
 
+		private object UnsupportedBezier(RunnerNode node)
+		{
+			Error("RUN050", "Cubic Bézier evaluation requires CadDocument.EvaluateRunnerAsync.", node.Id);
+			return null;
+		}
+
 		private PipeProfile? EvaluateProfile(RunnerNode node)
 		{
 			double? outer = Number(node, "outerDiameter", value => value > 0, "must be greater than zero");
 			double? wall = Number(node, "wallThickness", value => value > 0, "must be greater than zero");
-			if (!outer.HasValue || !wall.HasValue) return null;
+			if (!outer.HasValue || !wall.HasValue)
+				return null;
 			if (wall.Value >= outer.Value * 0.5)
 			{
 				Error("RUN032", "Wall thickness must be less than half the outer diameter.", node.Id);
@@ -366,7 +394,8 @@ public static class RunnerGraphEvaluator
 		{
 			RunnerConnection connection = graph.Connections.SingleOrDefault(candidate =>
 				candidate.InputNodeId == node.Id && string.Equals(candidate.InputPort, port, StringComparison.Ordinal));
-			if (connection == null) return default;
+			if (connection == null)
+				return default;
 			RunnerNode source = graph.Nodes.Single(candidate => candidate.Id == connection.OutputNodeId);
 			object value = EvaluateOutput(source, connection.OutputPort);
 			return value is T typed ? typed : default;
@@ -389,7 +418,8 @@ public static class RunnerGraphEvaluator
 			HashSet<Guid> nodeIds = new();
 			foreach (RunnerNode node in graph.Nodes)
 			{
-				if (!nodeIds.Add(node.Id)) Error("RUN003", $"Duplicate node ID '{node.Id}'.", node.Id);
+				if (!nodeIds.Add(node.Id))
+					Error("RUN003", $"Duplicate node ID '{node.Id}'.", node.Id);
 			}
 
 			HashSet<(Guid NodeId, string Port)> inputs = new();

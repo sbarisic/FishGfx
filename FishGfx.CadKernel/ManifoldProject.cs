@@ -23,6 +23,8 @@ public sealed class ManifoldViewState
 
 public sealed class CadRunner
 {
+	private long editRevision;
+
 	public Guid Id { get; set; } = Guid.NewGuid();
 
 	public string Name { get; set; } = "Runner";
@@ -30,6 +32,10 @@ public sealed class CadRunner
 	public Guid StartMateId { get; set; }
 
 	public RunnerGraph Graph { get; set; } = new();
+
+	public long EditRevision => Interlocked.Read(ref editRevision);
+
+	public long CommitEdit() => Interlocked.Increment(ref editRevision);
 }
 
 public sealed class ManifoldProject
@@ -194,6 +200,26 @@ public sealed class ManifoldProject
 	public IReadOnlyList<RunnerEvaluationResult> EvaluateRunners()
 	{
 		return runners.Select(EvaluateRunner).ToArray();
+	}
+
+	public Task<RunnerEvaluationResult> EvaluateRunnerAsync(
+		CadDocument document,
+		CadRunner runner,
+		CancellationToken cancellationToken = default
+	)
+	{
+		ArgumentNullException.ThrowIfNull(document);
+		ArgumentNullException.ThrowIfNull(runner);
+		if (runners.All(candidate => candidate.Id != runner.Id))
+		{
+			throw new ArgumentException("The runner does not belong to this project.", nameof(runner));
+		}
+		return document.EvaluateRunnerAsync(
+			runner,
+			mates.ToDictionary(mate => mate.Id),
+			parts.ToDictionary(part => part.Id),
+			cancellationToken
+		);
 	}
 
 	internal void AddLoadedPart(CadPart part)

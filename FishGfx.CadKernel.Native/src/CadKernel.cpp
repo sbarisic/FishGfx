@@ -38,18 +38,25 @@
 #include <Bnd_Box.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GProp_GProps.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <GeomAbs_JoinType.hxx>
+#include <GeomAdaptor_Curve.hxx>
+#include <GeomFill_Trihedron.hxx>
+#include <Geom_BezierCurve.hxx>
 #include <Geom_Curve.hxx>
 #include <Interface_Static.hxx>
+#include <math_DirectPolynomialRoots.hxx>
 #include <NCollection_List.hxx>
+#include <NCollection_Array1.hxx>
 #include <NCollection_Sequence.hxx>
 #include <PCDM_ReaderStatus.hxx>
 #include <PCDM_StoreStatus.hxx>
 #include <Poly.hxx>
 #include <Poly_Triangle.hxx>
 #include <Poly_Triangulation.hxx>
+#include <Precision.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
 #include <ShapeFix_Shell.hxx>
@@ -68,6 +75,7 @@
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <TopoDS_Wire.hxx>
 #include <XCAFApp_Application.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
@@ -312,7 +320,23 @@ void rebuild_topology(part_record& part)
 			info.kind = FGCAD_TOPOLOGY_CLOSED_PROFILE;
 			info.center = point(properties.CentreOfMass());
 			info.axis = direction(axis);
-			info.radius = std::sqrt(area / pi);
+			Bnd_Box bounds;
+			BRepBndLib::Add(wire, bounds, true);
+			double x_min;
+			double y_min;
+			double z_min;
+			double x_max;
+			double y_max;
+			double z_max;
+			bounds.Get(x_min, y_min, z_min, x_max, y_max, z_max);
+			gp_Pnt profile_center = properties.CentreOfMass();
+			info.radius = 0;
+			for (double x : { x_min, x_max })
+			for (double y : { y_min, y_max })
+			for (double z : { z_min, z_max })
+			{
+				info.radius = std::max(info.radius, profile_center.Distance(gp_Pnt(x, y, z)));
+			}
 			part.topology.push_back({ info, wire });
 		}
 	}
@@ -777,18 +801,664 @@ std::unique_ptr<fgcad_tessellation> tessellate(
 	result->maximum = { x_max, y_max, z_max };
 	return result;
 }
+
+struct interval
+{
+	double low;
+	double high;
+};
+
+interval product(interval left, interval right)
+{
+	const double values[] = {
+		left.low * right.low,
+		left.low * right.high,
+		left.high * right.low,
+		left.high * right.high
+	};
+	return {
+		*std::min_element(std::begin(values), std::end(values)),
+		*std::max_element(std::begin(values), std::end(values))
+	};
+}
+
+interval subtract(interval left, interval right)
+{
+	return { left.low - right.high, left.high - right.low };
+}
+
+interval component_bounds(const gp_Vec* values, size_t count, int component)
+{
+	double minimum = std::numeric_limits<double>::infinity();
+	double maximum = -std::numeric_limits<double>::infinity();
+	for (size_t index = 0; index < count; ++index)
+	{
+		const double value = component == 0 ? values[index].X()
+			: component == 1 ? values[index].Y()
+			: values[index].Z();
+		minimum = std::min(minimum, value);
+		maximum = std::max(maximum, value);
+	}
+	return { minimum, maximum };
+}
+
+double minimum_absolute(interval value)
+{
+	if (value.low <= 0 && value.high >= 0) return 0;
+	return std::min(std::abs(value.low), std::abs(value.high));
+}
+
+double maximum_absolute(interval value)
+{
+	return std::max(std::abs(value.low), std::abs(value.high));
+}
+
+template<size_t count>
+void subdivide_bernstein(
+	const std::array<gp_Vec, count>& source,
+	std::array<gp_Vec, count>& left,
+	std::array<gp_Vec, count>& right
+)
+{
+	std::array<std::array<gp_Vec, count>, count> levels{};
+	levels[0] = source;
+	left[0] = source[0];
+	right[count - 1] = source[count - 1];
+	for (size_t level = 1; level < count; ++level)
+	{
+		for (size_t index = 0; index < count - level; ++index)
+		{
+			levels[level][index] = (levels[level - 1][index] + levels[level - 1][index + 1]) * 0.5;
+		}
+		left[level] = levels[level][0];
+		right[count - level - 1] = levels[level][count - level - 1];
+	}
+}
+
+bool certify_curvature(
+	const std::array<gp_Vec, 3>& derivative,
+	const std::array<gp_Vec, 2>& second_derivative,
+	double required_radius,
+	int depth,
+	double& minimum_radius
+)
+{
+	interval dx = component_bounds(derivative.data(), derivative.size(), 0);
+	interval dy = component_bounds(derivative.data(), derivative.size(), 1);
+	interval dz = component_bounds(derivative.data(), derivative.size(), 2);
+	double speed_lower = std::sqrt(
+		std::pow(minimum_absolute(dx), 2)
+		+ std::pow(minimum_absolute(dy), 2)
+		+ std::pow(minimum_absolute(dz), 2)
+	);
+	interval ex = component_bounds(second_derivative.data(), second_derivative.size(), 0);
+	interval ey = component_bounds(second_derivative.data(), second_derivative.size(), 1);
+	interval ez = component_bounds(second_derivative.data(), second_derivative.size(), 2);
+	interval cross_x = subtract(product(dy, ez), product(dz, ey));
+	interval cross_y = subtract(product(dz, ex), product(dx, ez));
+	interval cross_z = subtract(product(dx, ey), product(dy, ex));
+	double cross_upper = std::sqrt(
+		std::pow(maximum_absolute(cross_x), 2)
+		+ std::pow(maximum_absolute(cross_y), 2)
+		+ std::pow(maximum_absolute(cross_z), 2)
+	);
+	double radius_lower = cross_upper <= Precision::Confusion()
+		? std::numeric_limits<double>::infinity()
+		: speed_lower * speed_lower * speed_lower / cross_upper;
+
+	if (radius_lower > required_radius)
+	{
+		minimum_radius = std::min(minimum_radius, radius_lower);
+		return true;
+	}
+	if (depth >= 24)
+	{
+		return false;
+	}
+
+	std::array<gp_Vec, 3> derivative_left;
+	std::array<gp_Vec, 3> derivative_right;
+	std::array<gp_Vec, 2> second_left;
+	std::array<gp_Vec, 2> second_right;
+	subdivide_bernstein(derivative, derivative_left, derivative_right);
+	subdivide_bernstein(second_derivative, second_left, second_right);
+	return certify_curvature(
+		derivative_left, second_left, required_radius, depth + 1, minimum_radius)
+		&& certify_curvature(
+			derivative_right, second_right, required_radius, depth + 1, minimum_radius);
+}
+
+double speed_squared(const gp_Vec& a, const gp_Vec& b, const gp_Vec& c, double parameter)
+{
+	gp_Vec derivative = (a * parameter + b) * parameter + c;
+	return derivative.SquareMagnitude();
+}
+
+double coordinate(const gp_Vec& value, int index)
+{
+	return index == 0 ? value.X() : index == 1 ? value.Y() : value.Z();
+}
+
+bool has_cubic_self_intersection(
+	const gp_Vec& cubic,
+	const gp_Vec& quadratic,
+	const gp_Vec& linear,
+	double scale
+)
+{
+	double best_determinant = 0;
+	int first_component = 0;
+	int second_component = 1;
+	for (int first = 0; first < 3; ++first)
+	{
+		for (int second = first + 1; second < 3; ++second)
+		{
+			double determinant = coordinate(cubic, first) * coordinate(quadratic, second)
+				- coordinate(cubic, second) * coordinate(quadratic, first);
+			if (std::abs(determinant) > std::abs(best_determinant))
+			{
+				best_determinant = determinant;
+				first_component = first;
+				second_component = second;
+			}
+		}
+	}
+	double coefficient_scale = std::max({
+		cubic.Magnitude(),
+		quadratic.Magnitude(),
+		linear.Magnitude(),
+		scale,
+		1.0
+	});
+	if (std::abs(best_determinant) <= coefficient_scale * coefficient_scale * 1.0e-14)
+	{
+		return false;
+	}
+
+	double ai = coordinate(cubic, first_component);
+	double aj = coordinate(cubic, second_component);
+	double bi = coordinate(quadratic, first_component);
+	double bj = coordinate(quadratic, second_component);
+	double ci = coordinate(linear, first_component);
+	double cj = coordinate(linear, second_component);
+	double sum = (aj * ci - ai * cj) / best_determinant;
+	double square_sum_minus_product = (bi * cj - bj * ci) / best_determinant;
+	double product_value = sum * sum - square_sum_minus_product;
+	double discriminant = sum * sum - 4.0 * product_value;
+	if (discriminant <= 1.0e-14)
+	{
+		return false;
+	}
+	double root = std::sqrt(discriminant);
+	double first_parameter = (sum - root) * 0.5;
+	double second_parameter = (sum + root) * 0.5;
+	if (first_parameter < -1.0e-12 || second_parameter > 1.0 + 1.0e-12
+		|| second_parameter - first_parameter <= 1.0e-10)
+	{
+		return false;
+	}
+	gp_Vec residual = cubic * square_sum_minus_product + quadratic * sum + linear;
+	return residual.Magnitude() <= coefficient_scale * 1.0e-9;
+}
+
+Handle(Geom_BezierCurve) make_bezier(
+	const fgcad_frame& entry_frame,
+	const fgcad_point3& control1,
+	const fgcad_point3& control2,
+	const fgcad_point3& end
+)
+{
+	NCollection_Array1<gp_Pnt> poles(1, 4);
+	poles.SetValue(1, point(entry_frame.origin));
+	poles.SetValue(2, point(control1));
+	poles.SetValue(3, point(control2));
+	poles.SetValue(4, point(end));
+	return new Geom_BezierCurve(poles);
+}
+
+fgcad_frame transport_frame(
+	const TopoDS_Wire& spine,
+	const fgcad_frame& entry_frame,
+	const gp_Pnt& exit_origin,
+	const gp_Dir& exit_tangent
+)
+{
+	gp_Pnt entry_origin = point(entry_frame.origin);
+	gp_Pnt profile_end = entry_origin.Translated(vector(entry_frame.normal));
+	TopoDS_Edge profile = BRepBuilderAPI_MakeEdge(entry_origin, profile_end).Edge();
+	BRepOffsetAPI_MakePipe transport(
+		spine,
+		profile,
+		GeomFill_IsDiscreteTrihedron,
+		true
+	);
+	if (!transport.IsDone())
+	{
+		throw std::runtime_error("Open CASCADE could not transport the cubic Bezier span frame.");
+	}
+	TopoDS_Shape last = transport.LastShape();
+	std::vector<gp_Pnt> transported_points;
+	for (TopExp_Explorer explorer(last, TopAbs_VERTEX); explorer.More(); explorer.Next())
+	{
+		transported_points.push_back(BRep_Tool::Pnt(TopoDS::Vertex(explorer.Current())));
+	}
+	if (transported_points.size() < 2)
+	{
+		throw std::runtime_error("Open CASCADE did not return a transported endpoint section.");
+	}
+	auto origin_point = std::min_element(
+		transported_points.begin(),
+		transported_points.end(),
+		[&](const gp_Pnt& left, const gp_Pnt& right)
+		{
+			return left.SquareDistance(exit_origin) < right.SquareDistance(exit_origin);
+		}
+	);
+	auto normal_point = std::max_element(
+		transported_points.begin(),
+		transported_points.end(),
+		[&](const gp_Pnt& left, const gp_Pnt& right)
+		{
+			return left.SquareDistance(*origin_point) < right.SquareDistance(*origin_point);
+		}
+	);
+	gp_Vec normal(*origin_point, *normal_point);
+	normal -= gp_Vec(exit_tangent) * normal.Dot(exit_tangent);
+	if (normal.SquareMagnitude() <= Precision::SquareConfusion())
+	{
+		throw std::runtime_error("The transported cubic Bezier span frame is singular.");
+	}
+	fgcad_frame result{};
+	result.origin = point(exit_origin);
+	result.tangent = direction(exit_tangent);
+	result.normal = direction(gp_Dir(normal));
+	return result;
+}
+
+fgcad_bezier_evaluation evaluate_cubic_bezier_internal(
+	const fgcad_frame& entry_frame,
+	const fgcad_point3& control1,
+	const fgcad_point3& control2,
+	const fgcad_point3& end,
+	double outer_radius
+)
+{
+	const fgcad_point3 points[] = {
+		entry_frame.origin,
+		control1,
+		control2,
+		end
+	};
+	for (const fgcad_point3& value : points)
+	{
+		if (!std::isfinite(value.x) || !std::isfinite(value.y) || !std::isfinite(value.z))
+		{
+			throw std::invalid_argument("Cubic Bezier control points must be finite.");
+		}
+	}
+	if (!(outer_radius > 0) || !std::isfinite(outer_radius))
+	{
+		throw std::invalid_argument("The active outer profile radius must be positive and finite.");
+	}
+
+	gp_Pnt p0 = point(entry_frame.origin);
+	gp_Pnt p1 = point(control1);
+	gp_Pnt p2 = point(control2);
+	gp_Pnt p3 = point(end);
+	const double control_polygon_length = p0.Distance(p1) + p1.Distance(p2) + p2.Distance(p3);
+	if (!(p0.Distance(p1) > Precision::Confusion()))
+	{
+		throw std::invalid_argument("The cubic Bezier start handle must be longer than kernel confusion.");
+	}
+	if (!(p2.Distance(p3) > Precision::Confusion()))
+	{
+		throw std::invalid_argument("The cubic Bezier exit handle must be non-zero.");
+	}
+
+	// B'(t) = a*t^2 + b*t + c.  Extrema of |B'|^2 are roots of a cubic.
+	gp_Vec a = (gp_Vec(p0.XYZ()) - gp_Vec(p1.XYZ()) * 3.0
+		+ gp_Vec(p2.XYZ()) * 3.0 - gp_Vec(p3.XYZ())) * -3.0;
+	gp_Vec b = (gp_Vec(p0.XYZ()) - gp_Vec(p1.XYZ()) * 2.0 + gp_Vec(p2.XYZ())) * 6.0;
+	gp_Vec c(p0, p1);
+	c *= 3.0;
+	if (has_cubic_self_intersection(a / 3.0, b / 2.0, c, control_polygon_length))
+	{
+		throw std::invalid_argument("The cubic Bezier centreline self-intersects.");
+	}
+	const double quartic[] = {
+		a.Dot(a),
+		2.0 * a.Dot(b),
+		b.Dot(b) + 2.0 * a.Dot(c),
+		2.0 * b.Dot(c),
+		c.Dot(c)
+	};
+	math_DirectPolynomialRoots roots(
+		4.0 * quartic[0],
+		3.0 * quartic[1],
+		2.0 * quartic[2],
+		quartic[3]
+	);
+	if (!roots.IsDone())
+	{
+		throw std::runtime_error("The cubic Bezier derivative extrema could not be solved.");
+	}
+	double minimum_speed_squared = std::min(
+		speed_squared(a, b, c, 0),
+		speed_squared(a, b, c, 1)
+	);
+	if (!roots.InfiniteRoots())
+	{
+		for (int index = 1; index <= roots.NbSolutions(); ++index)
+		{
+			double parameter = roots.Value(index);
+			if (parameter >= 0 && parameter <= 1)
+			{
+				minimum_speed_squared = std::min(
+					minimum_speed_squared,
+					speed_squared(a, b, c, parameter)
+				);
+			}
+		}
+	}
+	const double speed_tolerance = std::max(
+		Precision::Confusion(),
+		control_polygon_length * 1.0e-9
+	);
+	if (minimum_speed_squared <= speed_tolerance * speed_tolerance)
+	{
+		throw std::invalid_argument("The cubic Bezier contains a cusp or singular derivative.");
+	}
+
+	std::array<gp_Vec, 3> derivative = {
+		gp_Vec(p0, p1) * 3.0,
+		gp_Vec(p1, p2) * 3.0,
+		gp_Vec(p2, p3) * 3.0
+	};
+	std::array<gp_Vec, 2> second_derivative = {
+		(derivative[1] - derivative[0]) * 2.0,
+		(derivative[2] - derivative[1]) * 2.0
+	};
+	double minimum_radius = std::numeric_limits<double>::infinity();
+	if (!certify_curvature(
+		derivative,
+		second_derivative,
+		outer_radius + Precision::Confusion(),
+		0,
+		minimum_radius))
+	{
+		throw std::invalid_argument(
+			"The cubic Bezier curvature cannot be certified for the active outer profile radius.");
+	}
+
+	Handle(Geom_BezierCurve) curve = make_bezier(entry_frame, control1, control2, end);
+	GeomAdaptor_Curve adaptor(curve);
+	const double length_tolerance = std::max(
+		Precision::Confusion(),
+		control_polygon_length * 1.0e-10
+	);
+	const double length = GCPnts_AbscissaPoint::Length(adaptor, length_tolerance);
+	if (!std::isfinite(length) || !(length > Precision::Confusion()))
+	{
+		throw std::runtime_error("The tolerance-controlled cubic Bezier length could not be computed.");
+	}
+
+	gp_Vec tangent(p2, p3);
+	fgcad_bezier_evaluation result{};
+	result.exit_frame = transport_frame(
+		BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(curve).Edge()).Wire(),
+		entry_frame,
+		p3,
+		gp_Dir(tangent)
+	);
+	result.length = length;
+	result.minimum_radius = minimum_radius;
+	return result;
+}
 }
 
 extern "C"
 {
 uint32_t fgcad_api_version(void)
 {
-	return 3;
+	return 4;
 }
 
 const char* fgcad_last_error(void)
 {
 	return last_error.c_str();
+}
+
+fgcad_status fgcad_evaluate_cubic_bezier(
+	const fgcad_frame* entry_frame,
+	const fgcad_point3* control1,
+	const fgcad_point3* control2,
+	const fgcad_point3* end,
+	double outer_radius,
+	fgcad_bezier_evaluation* evaluation
+)
+{
+	return guarded([&]()
+	{
+		if (entry_frame == nullptr || control1 == nullptr || control2 == nullptr
+			|| end == nullptr || evaluation == nullptr)
+		{
+			throw std::invalid_argument("Cubic Bezier evaluation arguments cannot be null.");
+		}
+		*evaluation = evaluate_cubic_bezier_internal(
+			*entry_frame, *control1, *control2, *end, outer_radius);
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_evaluate_runner_features(
+	const fgcad_frame* start_frame,
+	const fgcad_runner_profile* start_profile,
+	const fgcad_runner_feature_spec* specifications,
+	size_t specification_count,
+	fgcad_runner_feature* evaluated_features,
+	size_t evaluated_capacity,
+	size_t* evaluated_count
+)
+{
+	return guarded([&]()
+	{
+		if (start_frame == nullptr || start_profile == nullptr || specifications == nullptr
+			|| evaluated_features == nullptr || evaluated_count == nullptr)
+		{
+			throw std::invalid_argument("Runner feature evaluation arguments cannot be null.");
+		}
+		*evaluated_count = 0;
+		if (specification_count == 0 || evaluated_capacity < specification_count)
+		{
+			throw std::invalid_argument("The evaluated feature array has insufficient capacity.");
+		}
+
+		fgcad_frame frame = *start_frame;
+		fgcad_runner_profile profile = *start_profile;
+		std::unique_ptr<BRepBuilderAPI_MakeWire> transported_span;
+		fgcad_frame transported_span_entry{};
+		for (size_t index = 0; index < specification_count; ++index)
+		{
+			const fgcad_runner_feature_spec& specification = specifications[index];
+			if (specification.kind != FGCAD_FEATURE_LOFT_TRANSITION && !transported_span)
+			{
+				size_t span_end = index;
+				bool contains_bezier = false;
+				while (span_end < specification_count
+					&& specifications[span_end].kind != FGCAD_FEATURE_LOFT_TRANSITION)
+				{
+					contains_bezier = contains_bezier
+						|| specifications[span_end].kind == FGCAD_FEATURE_CUBIC_BEZIER;
+					++span_end;
+				}
+				if (contains_bezier)
+				{
+					transported_span = std::make_unique<BRepBuilderAPI_MakeWire>();
+					transported_span_entry = frame;
+				}
+			}
+			fgcad_runner_feature feature{};
+			feature.kind = specification.kind;
+			copy_id(feature.source_node_id, specification.source_node_id);
+			feature.entry_frame = frame;
+			feature.input_profile = profile;
+			feature.output_profile = profile;
+			feature.rotation_radians = specification.rotation_radians;
+
+			gp_Pnt origin = point(frame.origin);
+			gp_Dir tangent = unit(frame.tangent);
+			gp_Dir normal = unit(frame.normal);
+			if (specification.kind == FGCAD_FEATURE_STRAIGHT)
+			{
+				if (!(specification.length > 0) || !std::isfinite(specification.length))
+				{
+					throw std::invalid_argument("Straight length must be positive and finite.");
+				}
+				frame.origin = point(origin.Translated(gp_Vec(tangent) * specification.length));
+				feature.length = specification.length;
+			}
+			else if (specification.kind == FGCAD_FEATURE_BEND)
+			{
+				if (!(specification.radius > 0) || !(specification.sweep_radians > 0)
+					|| specification.sweep_radians > pi || !std::isfinite(specification.rotation_radians))
+				{
+					throw std::invalid_argument("Bend radius, angle, or rotation is invalid.");
+				}
+				double outer_radius = profile.kind == FGCAD_PROFILE_CIRCULAR
+					? profile.outer_diameter * 0.5
+					: profile.equivalent_radius + profile.wall_thickness;
+				if (!(specification.radius > outer_radius))
+				{
+					throw std::invalid_argument("Centreline bend radius must exceed the active outer profile radius.");
+				}
+				gp_Vec radial(normal);
+				gp_Trsf plane_rotation;
+				plane_rotation.SetRotation(gp_Ax1(origin, tangent), specification.rotation_radians);
+				radial.Transform(plane_rotation);
+				gp_Pnt center = origin.Translated(radial * specification.radius);
+				gp_Vec start_radius(center, origin);
+				gp_Dir axis = gp_Dir(start_radius).Crossed(tangent);
+				gp_Trsf sweep;
+				sweep.SetRotation(gp_Ax1(center, axis), specification.sweep_radians);
+				gp_Pnt exit = origin.Transformed(sweep);
+				gp_Dir exit_tangent = tangent.Transformed(sweep);
+				gp_Dir exit_normal = normal.Transformed(sweep);
+				feature.center = point(center);
+				feature.radius = specification.radius;
+				feature.sweep_radians = specification.sweep_radians;
+				feature.length = specification.radius * specification.sweep_radians;
+				frame.origin = point(exit);
+				frame.tangent = direction(exit_tangent);
+				frame.normal = direction(exit_normal);
+			}
+			else if (specification.kind == FGCAD_FEATURE_LOFT_TRANSITION)
+			{
+				if (!(specification.length > 0) || !std::isfinite(specification.length)
+					|| !std::isfinite(specification.rotation_radians))
+				{
+					throw std::invalid_argument("Loft length and rotation must be finite and valid.");
+				}
+				gp_Trsf rotation;
+				rotation.SetRotation(gp_Ax1(origin, tangent), specification.rotation_radians);
+				frame.origin = point(origin.Translated(gp_Vec(tangent) * specification.length));
+				frame.normal = direction(normal.Transformed(rotation));
+				profile = specification.output_profile;
+				feature.output_profile = profile;
+				feature.length = specification.length;
+				transported_span.reset();
+			}
+			else if (specification.kind == FGCAD_FEATURE_CUBIC_BEZIER)
+			{
+				if (!(specification.start_handle_length > 0)
+					|| !std::isfinite(specification.start_handle_length))
+				{
+					throw std::invalid_argument("Cubic Bezier start handle must be positive and finite.");
+				}
+				gp_Vec t(tangent);
+				gp_Vec u(normal);
+				gp_Vec v = t.Crossed(u);
+				auto local_point = [&](const fgcad_point3& local)
+				{
+					return origin.Translated(t * local.x + u * local.y + v * local.z);
+				};
+				gp_Pnt control1 = origin.Translated(t * specification.start_handle_length);
+				gp_Pnt control2 = local_point(specification.control2_local);
+				gp_Pnt end = local_point(specification.end_local);
+				double outer_radius = profile.kind == FGCAD_PROFILE_CIRCULAR
+					? profile.outer_diameter * 0.5
+					: profile.equivalent_radius + profile.wall_thickness;
+				fgcad_point3 control1_value = point(control1);
+				fgcad_point3 control2_value = point(control2);
+				fgcad_point3 end_value = point(end);
+				fgcad_bezier_evaluation evaluation = evaluate_cubic_bezier_internal(
+					frame, control1_value, control2_value, end_value, outer_radius);
+				feature.control1 = control1_value;
+				feature.control2 = control2_value;
+				feature.length = evaluation.length;
+				feature.radius = evaluation.minimum_radius;
+				frame = evaluation.exit_frame;
+			}
+			else
+			{
+				throw std::invalid_argument("Unknown runner feature specification kind.");
+			}
+
+			if (transported_span && specification.kind != FGCAD_FEATURE_LOFT_TRANSITION)
+			{
+				TopoDS_Edge edge;
+				if (specification.kind == FGCAD_FEATURE_STRAIGHT)
+				{
+					edge = BRepBuilderAPI_MakeEdge(
+						point(feature.entry_frame.origin),
+						point(frame.origin)
+					).Edge();
+				}
+				else if (specification.kind == FGCAD_FEATURE_BEND)
+				{
+					gp_Pnt start = point(feature.entry_frame.origin);
+					gp_Pnt center = point(feature.center);
+					gp_Vec start_radius(center, start);
+					gp_Dir axis = gp_Dir(start_radius).Crossed(unit(feature.entry_frame.tangent));
+					gp_Trsf half_rotation;
+					half_rotation.SetRotation(
+						gp_Ax1(center, axis),
+						feature.sweep_radians * 0.5
+					);
+					Handle(Geom_TrimmedCurve) arc = GC_MakeArcOfCircle(
+						start,
+						start.Transformed(half_rotation),
+						point(frame.origin)
+					);
+					edge = BRepBuilderAPI_MakeEdge(arc).Edge();
+				}
+				else
+				{
+					edge = BRepBuilderAPI_MakeEdge(make_bezier(
+						feature.entry_frame,
+						feature.control1,
+						feature.control2,
+						frame.origin
+					)).Edge();
+				}
+				transported_span->Add(edge);
+				if (!transported_span->IsDone())
+				{
+					throw std::runtime_error("The transported runner span could not form a G1 wire.");
+				}
+				frame = transport_frame(
+					transported_span->Wire(),
+					transported_span_entry,
+					point(frame.origin),
+					unit(frame.tangent)
+				);
+			}
+
+			feature.exit_frame = frame;
+			evaluated_features[index] = feature;
+			*evaluated_count = index + 1;
+		}
+		return FGCAD_STATUS_OK;
+	});
 }
 
 fgcad_status fgcad_document_create(fgcad_document** document)
@@ -1280,6 +1950,25 @@ fgcad_status fgcad_document_build_runner(
 					start, middle, point(feature.exit_frame.origin));
 				return BRepBuilderAPI_MakeEdge(arc).Edge();
 			}
+			if (feature.kind == FGCAD_FEATURE_CUBIC_BEZIER)
+			{
+				fgcad_bezier_evaluation evaluation = evaluate_cubic_bezier_internal(
+					feature.entry_frame,
+					feature.control1,
+					feature.control2,
+					feature.exit_frame.origin,
+					feature.input_profile.kind == FGCAD_PROFILE_CIRCULAR
+						? feature.input_profile.outer_diameter * 0.5
+						: feature.input_profile.equivalent_radius + feature.input_profile.wall_thickness
+				);
+				(void)evaluation;
+				return BRepBuilderAPI_MakeEdge(make_bezier(
+					feature.entry_frame,
+					feature.control1,
+					feature.control2,
+					feature.exit_frame.origin
+				)).Edge();
+			}
 			throw std::invalid_argument("A profile transition does not have a sweep edge.");
 		};
 
@@ -1316,6 +2005,7 @@ fgcad_status fgcad_document_build_runner(
 			std::vector<TopoDS_Edge> edges;
 			edges.reserve(last - first);
 			const fgcad_runner_profile& profile = features[first].input_profile;
+			bool contains_bezier = false;
 
 			for (size_t index = first; index < last; ++index)
 			{
@@ -1326,15 +2016,20 @@ fgcad_status fgcad_document_build_runner(
 				{
 					throw std::invalid_argument("A constant-profile sweep group contains incompatible features.");
 				}
+				contains_bezier = contains_bezier || feature.kind == FGCAD_FEATURE_CUBIC_BEZIER;
 				edges.push_back(feature_edge(feature));
 				wire.Add(edges.back());
 			}
 
 			if (!wire.IsDone()) throw std::runtime_error("The grouped runner spine could not be built.");
-			BRepOffsetAPI_MakePipe pipe(
-				wire.Wire(),
-				annular_face(profile_at(profile, features[first].entry_frame))
-			);
+			TopoDS_Face section_face = annular_face(profile_at(profile, features[first].entry_frame));
+			BRepOffsetAPI_MakePipe pipe = contains_bezier
+				? BRepOffsetAPI_MakePipe(
+					wire.Wire(),
+					section_face,
+					GeomFill_IsDiscreteTrihedron,
+					true)
+				: BRepOffsetAPI_MakePipe(wire.Wire(), section_face);
 			if (!pipe.IsDone()) throw std::runtime_error("Open CASCADE could not sweep a grouped runner spine.");
 			trace("grouped sweep");
 

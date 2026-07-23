@@ -45,6 +45,7 @@ typedef enum fgcad_feature_kind
 	FGCAD_FEATURE_STRAIGHT = 0,
 	FGCAD_FEATURE_BEND = 1,
 	FGCAD_FEATURE_LOFT_TRANSITION = 2,
+	FGCAD_FEATURE_CUBIC_BEZIER = 3,
 } fgcad_feature_kind;
 
 typedef enum fgcad_profile_kind
@@ -122,6 +123,7 @@ typedef struct fgcad_runner_profile
 	char mate_id[40];
 	double outer_diameter;
 	double wall_thickness;
+	double equivalent_radius;
 } fgcad_runner_profile;
 
 typedef struct fgcad_runner_feature
@@ -133,13 +135,54 @@ typedef struct fgcad_runner_feature
 	fgcad_runner_profile input_profile;
 	fgcad_runner_profile output_profile;
 	fgcad_point3 center;
+	double length;
 	double radius;
 	double sweep_radians;
 	double rotation_radians;
+	fgcad_point3 control1;
+	fgcad_point3 control2;
 } fgcad_runner_feature;
+
+typedef struct fgcad_bezier_evaluation
+{
+	fgcad_frame exit_frame;
+	double length;
+	double minimum_radius;
+} fgcad_bezier_evaluation;
+
+typedef struct fgcad_runner_feature_spec
+{
+	fgcad_feature_kind kind;
+	char source_node_id[40];
+	double length;
+	double radius;
+	double sweep_radians;
+	double rotation_radians;
+	double start_handle_length;
+	fgcad_point3 control2_local;
+	fgcad_point3 end_local;
+	fgcad_runner_profile output_profile;
+} fgcad_runner_feature_spec;
 
 FGCAD_API uint32_t fgcad_api_version(void);
 FGCAD_API const char* fgcad_last_error(void);
+FGCAD_API fgcad_status fgcad_evaluate_cubic_bezier(
+	const fgcad_frame* entry_frame,
+	const fgcad_point3* control1,
+	const fgcad_point3* control2,
+	const fgcad_point3* end,
+	double outer_radius,
+	fgcad_bezier_evaluation* evaluation
+);
+FGCAD_API fgcad_status fgcad_evaluate_runner_features(
+	const fgcad_frame* start_frame,
+	const fgcad_runner_profile* start_profile,
+	const fgcad_runner_feature_spec* specifications,
+	size_t specification_count,
+	fgcad_runner_feature* evaluated_features,
+	size_t evaluated_capacity,
+	size_t* evaluated_count
+);
 
 FGCAD_API fgcad_status fgcad_document_create(fgcad_document** document);
 FGCAD_API void fgcad_document_destroy(fgcad_document* document);

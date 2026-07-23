@@ -16,6 +16,7 @@ internal sealed class CadNodeCanvas
 		RunnerNodes.StartRunner,
 		RunnerNodes.Straight,
 		RunnerNodes.Bend,
+		RunnerNodes.CubicBezier,
 		RunnerNodes.CircularPipe,
 		RunnerNodes.LoftTransition,
 		RunnerNodes.RunnerLength,
@@ -65,7 +66,8 @@ internal sealed class CadNodeCanvas
 	internal void Update(RunnerGraph graph, CadRect bounds, InputManager input, Vector2 mouse, float scrollDelta)
 	{
 		currentMouse = mouse;
-		if (!bounds.Contains(mouse)) return;
+		if (!bounds.Contains(mouse))
+			return;
 
 		if (paletteOpen)
 		{
@@ -77,8 +79,10 @@ internal sealed class CadNodeCanvas
 			if (input.WasMouseButtonPressed(MouseButton.Left))
 			{
 				int index = PaletteIndex(mouse);
-				if (index >= 0) CreateFromPalette(graph, PaletteDefinitions[index]);
-				else paletteOpen = false;
+				if (index >= 0)
+					CreateFromPalette(graph, PaletteDefinitions[index]);
+				else
+					paletteOpen = false;
 			}
 			return;
 		}
@@ -119,8 +123,10 @@ internal sealed class CadNodeCanvas
 			panStart = mouse;
 			panOrigin = pan;
 		}
-		if (panning && input.IsMouseButtonDown(MouseButton.Middle)) pan = panOrigin + mouse - panStart;
-		if (input.WasMouseButtonReleased(MouseButton.Middle)) panning = false;
+		if (panning && input.IsMouseButtonDown(MouseButton.Middle))
+			pan = panOrigin + mouse - panStart;
+		if (input.WasMouseButtonReleased(MouseButton.Middle))
+			panning = false;
 
 		if (input.WasMouseButtonPressed(MouseButton.Left))
 		{
@@ -192,19 +198,22 @@ internal sealed class CadNodeCanvas
 		pass.DrawRectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height, 1, new Color(72, 78, 88));
 		DrawGrid(pass, bounds);
 
-		foreach (RunnerConnection connection in graph.Connections) DrawConnection(pass, graph, bounds, connection);
+		foreach (RunnerConnection connection in graph.Connections)
+			DrawConnection(pass, graph, bounds, connection);
 		if (draggedPort != null)
 		{
 			Vector2 start = WorldToScreen(bounds, PortPosition(draggedPort.Node, draggedPort.Port));
 			pass.DrawLine(new Vertex2(start, PortColor(draggedPort.Port.Type)),
 				new Vertex2(currentMouse, PortColor(draggedPort.Port.Type)), 2);
 		}
-		foreach (RunnerNode node in graph.Nodes) DrawNode(pass, bounds, font, node, evaluation);
+		foreach (RunnerNode node in graph.Nodes)
+			DrawNode(pass, bounds, font, node, evaluation);
 
 		pass.DrawText(font, new Vector2(bounds.X + 12, bounds.Y + bounds.Height - 24),
 			"RUNNER GRAPH  |  right click/Add Node, drag ports, Delete, wheel zoom, middle pan",
 			new Color(155, 166, 180), 15);
-		if (paletteOpen) DrawPalette(pass, font);
+		if (paletteOpen)
+			DrawPalette(pass, font);
 	}
 
 	internal string[] EditableProperties()
@@ -214,6 +223,7 @@ internal sealed class CadNodeCanvas
 			RunnerNodes.StartRunner => new[] { "wallThickness" },
 			RunnerNodes.Straight => new[] { "length" },
 			RunnerNodes.Bend => new[] { "radius", "angle", "rotation" },
+			RunnerNodes.CubicBezier => new[] { "startHandleLength", "control2T", "endT" },
 			RunnerNodes.CircularPipe => new[] { "outerDiameter", "wallThickness" },
 			RunnerNodes.LoftTransition => new[] { "length", "rotation" },
 			_ => Array.Empty<string>(),
@@ -241,7 +251,7 @@ internal sealed class CadNodeCanvas
 
 		RunnerNode node;
 		if (paletteConnectionId.HasValue && definitionId is RunnerNodes.Straight
-			or RunnerNodes.Bend or RunnerNodes.LoftTransition)
+			or RunnerNodes.Bend or RunnerNodes.LoftTransition or RunnerNodes.CubicBezier)
 		{
 			if (!graph.TrySpliceConnection(paletteConnectionId.Value, definitionId, paletteWorld.X, paletteWorld.Y,
 				out node, out string error))
@@ -278,7 +288,8 @@ internal sealed class CadNodeCanvas
 		int hover = PaletteIndex(currentMouse);
 		for (int index = 0; index < PaletteDefinitions.Length; index++)
 		{
-			if (index == hover) pass.FillRectangle(paletteScreen.X + 1, paletteScreen.Y + index * 28 + 1,
+			if (index == hover)
+				pass.FillRectangle(paletteScreen.X + 1, paletteScreen.Y + index * 28 + 1,
 				208, 26, new Color(58, 76, 96));
 			RunnerNodes.TryGet(PaletteDefinitions[index], out RunnerNodeDefinition definition);
 			pass.DrawText(font, paletteScreen + new Vector2(10, index * 28 + 7), definition.Title, Color.White, 13);
@@ -308,10 +319,12 @@ internal sealed class CadNodeCanvas
 		RunnerNode output = graph.Nodes.FirstOrDefault(node => node.Id == connection.OutputNodeId);
 		RunnerNode input = graph.Nodes.FirstOrDefault(node => node.Id == connection.InputNodeId);
 		if (output == null || input == null || !RunnerNodes.TryGet(output.DefinitionId, out RunnerNodeDefinition outputDefinition)
-			|| !RunnerNodes.TryGet(input.DefinitionId, out RunnerNodeDefinition inputDefinition)) return;
+			|| !RunnerNodes.TryGet(input.DefinitionId, out RunnerNodeDefinition inputDefinition))
+			return;
 		RunnerPortDefinition outputPort = outputDefinition.FindPort(connection.OutputPort, RunnerPortDirection.Output);
 		RunnerPortDefinition inputPort = inputDefinition.FindPort(connection.InputPort, RunnerPortDirection.Input);
-		if (outputPort == null || inputPort == null) return;
+		if (outputPort == null || inputPort == null)
+			return;
 		Vector2 start = WorldToScreen(bounds, PortPosition(output, outputPort));
 		Vector2 end = WorldToScreen(bounds, PortPosition(input, inputPort));
 		Vector2 middleA = new((start.X + end.X) * 0.5f, start.Y);
@@ -329,16 +342,19 @@ internal sealed class CadNodeCanvas
 			RunnerNode output = graph.Nodes.FirstOrDefault(node => node.Id == connection.OutputNodeId);
 			RunnerNode input = graph.Nodes.FirstOrDefault(node => node.Id == connection.InputNodeId);
 			if (output == null || input == null || !RunnerNodes.TryGet(output.DefinitionId, out RunnerNodeDefinition od)
-				|| !RunnerNodes.TryGet(input.DefinitionId, out RunnerNodeDefinition id)) continue;
+				|| !RunnerNodes.TryGet(input.DefinitionId, out RunnerNodeDefinition id))
+				continue;
 			RunnerPortDefinition op = od.FindPort(connection.OutputPort, RunnerPortDirection.Output);
 			RunnerPortDefinition ip = id.FindPort(connection.InputPort, RunnerPortDirection.Input);
-			if (op == null || ip == null) continue;
+			if (op == null || ip == null)
+				continue;
 			Vector2 a = WorldToScreen(bounds, PortPosition(output, op));
 			Vector2 d = WorldToScreen(bounds, PortPosition(input, ip));
 			Vector2 b = new((a.X + d.X) * 0.5f, a.Y);
 			Vector2 c = new(b.X, d.Y);
 			if (DistanceToSegment(screen, a, b) <= 6 || DistanceToSegment(screen, b, c) <= 6
-				|| DistanceToSegment(screen, c, d) <= 6) return connection;
+				|| DistanceToSegment(screen, c, d) <= 6)
+				return connection;
 		}
 		return null;
 	}
@@ -347,7 +363,8 @@ internal sealed class CadNodeCanvas
 	{
 		foreach (RunnerNode node in graph.Nodes.Reverse())
 		{
-			if (!RunnerNodes.TryGet(node.DefinitionId, out RunnerNodeDefinition definition)) continue;
+			if (!RunnerNodes.TryGet(node.DefinitionId, out RunnerNodeDefinition definition))
+				continue;
 			foreach (RunnerPortDefinition port in definition.Ports)
 			{
 				if (Vector2.Distance(WorldToScreen(bounds, PortPosition(node, port)), screen) <= PortRadius + 4)
@@ -369,7 +386,8 @@ internal sealed class CadNodeCanvas
 
 	private void Select(RunnerNode node)
 	{
-		if (ReferenceEquals(SelectedNode, node)) return;
+		if (ReferenceEquals(SelectedNode, node))
+			return;
 		SelectedNode = node;
 		SelectionChanged?.Invoke(node);
 	}
@@ -401,6 +419,7 @@ internal sealed class CadNodeCanvas
 			RunnerNodes.StartRunner => "wall " + Property(node, "wallThickness") + " mm",
 			RunnerNodes.Straight => Property(node, "length") + " mm",
 			RunnerNodes.Bend => $"R {Property(node, "radius")} | {Property(node, "angle")} deg | rot {Property(node, "rotation")}",
+			RunnerNodes.CubicBezier => $"P1 {Property(node, "startHandleLength")} | P2T {Property(node, "control2T")} | P3T {Property(node, "endT")}",
 			RunnerNodes.CircularPipe => $"OD {Property(node, "outerDiameter")} | wall {Property(node, "wallThickness")}",
 			RunnerNodes.LoftTransition => $"{Property(node, "length")} mm | rot {Property(node, "rotation")}",
 			RunnerNodes.RunnerLength or RunnerNodes.RunnerOutput => evaluation?.Chain == null ? "-- mm"
@@ -456,7 +475,8 @@ internal sealed class CadNodeCanvas
 	{
 		Vector2 delta = end - start;
 		float lengthSquared = delta.LengthSquared();
-		if (lengthSquared <= 0.0001f) return Vector2.Distance(point, start);
+		if (lengthSquared <= 0.0001f)
+			return Vector2.Distance(point, start);
 		float amount = Math.Clamp(Vector2.Dot(point - start, delta) / lengthSquared, 0, 1);
 		return Vector2.Distance(point, start + delta * amount);
 	}

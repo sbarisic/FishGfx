@@ -48,6 +48,7 @@ internal sealed partial class CadViewport
 
 		DrawMateGlyphs(pass);
 		DrawMateCandidates(pass);
+		DrawBezierEditor(pass);
 		DrawPartGizmo(pass);
 		DrawDebugPickingRay(pass);
 

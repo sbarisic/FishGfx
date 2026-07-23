@@ -131,7 +131,10 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 
-		string[] properties = nodeCanvas.EditableProperties();
+		string[] properties = node.DefinitionId == RunnerNodes.CubicBezier
+			&& bezierInspectorProperties.Length > 0
+				? bezierInspectorProperties
+				: nodeCanvas.EditableProperties();
 
 		if (index >= properties.Length)
 		{
@@ -139,7 +142,12 @@ internal sealed partial class ManifoldCadApplication
 		}
 
 		node.Properties[properties[index]] = value.ToString("G17", CultureInfo.InvariantCulture);
-		if (ActiveRunner != null) RegenerateRunner(ActiveRunner);
+		if (ActiveRunner != null)
+		{
+			viewport.ReloadBezierCommittedProperties(ActiveRunner.Id, node);
+			ActiveRunner.CommitEdit();
+			RegenerateRunner(ActiveRunner);
+		}
 	}
 
 	private void FlipMate()
@@ -195,7 +203,8 @@ internal sealed partial class ManifoldCadApplication
 	private void DeleteActiveRunner()
 	{
 		CadRunner runner = ActiveRunner;
-		if (runner == null) return;
+		if (runner == null)
+			return;
 		TryOperation(() =>
 		{
 			document.RemoveRunnerAsync(runner.Id).GetAwaiter().GetResult();
@@ -203,7 +212,9 @@ internal sealed partial class ManifoldCadApplication
 			evaluations.Remove(runner.Id);
 			runnerBuildErrors.Remove(runner.Id);
 			viewport.RemoveRunner(runner.Id);
-			evaluation = ActiveRunner != null ? project.EvaluateRunner(ActiveRunner) : null;
+			evaluation = ActiveRunner != null
+				? project.EvaluateRunnerAsync(document, ActiveRunner).GetAwaiter().GetResult()
+				: null;
 			nodeCanvas.ClearSelection();
 			viewport.SetActiveRunner(ActiveRunner?.Id);
 			RefreshUi();
@@ -212,9 +223,11 @@ internal sealed partial class ManifoldCadApplication
 
 	private void RenameRunner(string name)
 	{
-		if (ActiveRunner == null || string.IsNullOrWhiteSpace(name)) return;
+		if (ActiveRunner == null || string.IsNullOrWhiteSpace(name))
+			return;
 		string normalized = name.Trim();
-		if (string.Equals(ActiveRunner.Name, normalized, StringComparison.Ordinal)) return;
+		if (string.Equals(ActiveRunner.Name, normalized, StringComparison.Ordinal))
+			return;
 		TryOperation(() =>
 		{
 			CadRunner pending = new() { Id = ActiveRunner.Id, Name = normalized };
@@ -239,9 +252,10 @@ internal sealed partial class ManifoldCadApplication
 
 	private void SelectRunner(Guid runnerId)
 	{
-		if (!project.SetActiveRunner(runnerId)) return;
+		if (!project.SetActiveRunner(runnerId))
+			return;
 		evaluation = evaluations.TryGetValue(runnerId, out RunnerEvaluationResult value)
-			? value : project.EvaluateRunner(ActiveRunner);
+			? value : project.EvaluateRunnerAsync(document, ActiveRunner).GetAwaiter().GetResult();
 		nodeCanvas.ClearSelection();
 		viewport.SetActiveRunner(runnerId);
 		RefreshUi();
@@ -250,16 +264,21 @@ internal sealed partial class ManifoldCadApplication
 	private void RegenerateRunner(CadRunner runner)
 	{
 		Stopwatch timing = Stopwatch.StartNew();
-		RunnerEvaluationResult result = project.EvaluateRunner(runner);
+		RunnerEvaluationResult result = project.EvaluateRunnerAsync(document, runner).GetAwaiter().GetResult();
 		long evaluationMilliseconds = timing.ElapsedMilliseconds;
 		evaluations[runner.Id] = result;
-		if (runner == ActiveRunner) evaluation = result;
+		if (runner == ActiveRunner)
+			evaluation = result;
 
 		if (!result.Success)
 		{
 			runnerBuildErrors[runner.Id] = string.Join(Environment.NewLine,
 				result.Diagnostics.Select(item => item.Message));
 			viewport.MarkRunnerStale(runner.Id);
+			viewport.SetBezierInvalid(
+				runner.Id,
+				result.Diagnostics.FirstOrDefault(item => item.NodeId.HasValue)?.NodeId
+			);
 			ui.SetStatus(runnerBuildErrors[runner.Id], true);
 			return;
 		}
@@ -284,6 +303,10 @@ internal sealed partial class ManifoldCadApplication
 
 			timing.Restart();
 			viewport.AddOrReplace(null, runner.Id, preview.Value, true);
+			if (runner == ActiveRunner)
+			{
+				UpdateBezierEditor(nodeCanvas.SelectedNode);
+			}
 			long uploadMilliseconds = timing.ElapsedMilliseconds;
 			runnerBuildErrors.Remove(runner.Id);
 			Console.WriteLine(
@@ -291,7 +314,10 @@ internal sealed partial class ManifoldCadApplication
 				+ $"build={buildMilliseconds} ms, mesh={tessellationMilliseconds} ms, "
 				+ $"upload={uploadMilliseconds} ms"
 			);
-			ui.SetStatus($"{runner.Name} {result.LengthMillimetres:F2} mm | exact solid valid | "
+			string lengthDescription = result.LengthIsToleranceControlled
+				? "tolerance-controlled kernel length"
+				: "exact line/arc length";
+			ui.SetStatus($"{runner.Name} {result.LengthMillimetres:F2} mm | {lengthDescription} | exact solid valid | "
 				+ $"eval {evaluationMilliseconds} ms, build {buildMilliseconds} ms, "
 				+ $"mesh {tessellationMilliseconds} ms, upload {uploadMilliseconds} ms");
 		}
@@ -322,7 +348,8 @@ internal sealed partial class ManifoldCadApplication
 
 	private void RegenerateAllRunners()
 	{
-		foreach (CadRunner runner in project.Runners) RegenerateRunner(runner);
+		foreach (CadRunner runner in project.Runners)
+			RegenerateRunner(runner);
 	}
 
 	private void UploadPart(CadPart part)

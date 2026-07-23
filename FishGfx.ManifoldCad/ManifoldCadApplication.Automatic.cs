@@ -44,15 +44,15 @@ internal sealed partial class ManifoldCadApplication
 		int count = 0;
 
 		for (int y = 20; y < window.Height; y += 80)
-		for (int x = 20; x < window.Width; x += 80)
-		{
-			Color color = window.GetPixel(x, y);
-
-			if (color.A != 0 && (color.R != 0 || color.G != 0 || color.B != 0))
+			for (int x = 20; x < window.Width; x += 80)
 			{
-				count++;
+				Color color = window.GetPixel(x, y);
+
+				if (color.A != 0 && (color.R != 0 || color.G != 0 || color.B != 0))
+				{
+					count++;
+				}
 			}
-		}
 
 		return count;
 	}
@@ -93,9 +93,27 @@ internal sealed partial class ManifoldCadApplication
 		}
 
 		CadRunner runner = project.AddRunner(mate.Id);
+		RunnerNode automaticTail = runner.Graph.Nodes.Last(node => node.DefinitionId == RunnerNodes.Straight);
+		RunnerNode automaticOutput = runner.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.RunnerOutput);
+		RunnerConnection automaticConnection = runner.Graph.Connections.Single(connection =>
+			connection.OutputNodeId == automaticTail.Id && connection.InputNodeId == automaticOutput.Id);
+		if (!runner.Graph.TrySpliceConnection(
+			automaticConnection.Id,
+			RunnerNodes.CubicBezier,
+			1320,
+			220,
+			out RunnerNode automaticBezier,
+			out string spliceError
+		))
+		{
+			throw new InvalidOperationException(spliceError);
+		}
+		automaticBezier.Properties["control2U"] = "10";
+		automaticBezier.Properties["endU"] = "20";
+		runner.CommitEdit();
 		selectedPart = part;
 		selectedMate = mate;
-		evaluation = project.EvaluateRunner(runner);
+		evaluation = project.EvaluateRunnerAsync(document, runner).GetAwaiter().GetResult();
 		evaluations[runner.Id] = evaluation;
 		Stopwatch automaticTiming = Stopwatch.StartNew();
 		document.BuildRunnerAsync(runner, evaluation).GetAwaiter().GetResult();
@@ -130,7 +148,10 @@ internal sealed partial class ManifoldCadApplication
 			);
 			document.BindMateSelectorAsync(additionalMate).GetAwaiter().GetResult();
 			CadRunner additionalRunner = project.AddRunner(additionalMate.Id);
-			RunnerEvaluationResult additionalEvaluation = project.EvaluateRunner(additionalRunner);
+			RunnerEvaluationResult additionalEvaluation = project
+				.EvaluateRunnerAsync(document, additionalRunner)
+				.GetAwaiter()
+				.GetResult();
 			evaluations[additionalRunner.Id] = additionalEvaluation;
 			automaticTiming.Restart();
 			document.BuildRunnerAsync(additionalRunner, additionalEvaluation).GetAwaiter().GetResult();
@@ -153,7 +174,7 @@ internal sealed partial class ManifoldCadApplication
 
 		if (string.IsNullOrWhiteSpace(stepPath))
 		{
-			viewport.SetView(CadStandardView.Right);
+			viewport.SetOrbit(38, 24, false);
 		}
 		else
 		{
@@ -168,8 +189,7 @@ internal sealed partial class ManifoldCadApplication
 			throw new InvalidOperationException("Automatic fixture could not capture its debug picking ray.");
 		}
 
-		RunnerNode bend = runner.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.Bend);
-		nodeCanvas.SelectBySource(bend.Id, runner.Graph);
+		nodeCanvas.SelectBySource(automaticBezier.Id, runner.Graph);
 	}
 
 	private unsafe void CaptureScreenshot(string path)

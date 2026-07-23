@@ -43,6 +43,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private int autoRenderedFrames;
 	private int autoVisibleSamples;
 	private string autoScreenshotPath;
+	private string[] bezierInspectorProperties = Array.Empty<string>();
 
 	internal ManifoldCadApplication(string[] args)
 	{
@@ -68,7 +69,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 			ConfigureAutomaticFixture();
 		}
 
-		evaluation = ActiveRunner != null ? project.EvaluateRunner(ActiveRunner) : null;
+		evaluation = ActiveRunner != null
+			? project.EvaluateRunnerAsync(document, ActiveRunner).GetAwaiter().GetResult()
+			: null;
 		RefreshUi();
 		previousTime = timer.Elapsed.TotalSeconds;
 
@@ -175,10 +178,18 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		nodeCanvas.SelectionChanged += node =>
 		{
 			ui.SetNode(node);
+			UpdateBezierEditor(node);
 		};
+		viewport.BezierCommitRequested += CommitBezierDraft;
+		viewport.BezierDraftCancelled += RestoreCommittedBezierDraft;
+		viewport.BezierDraftPreviewChanged += ShowBezierDraftInInspector;
 		nodeCanvas.GraphChanged += () =>
 		{
-			if (ActiveRunner != null) RegenerateRunner(ActiveRunner);
+			if (ActiveRunner != null)
+			{
+				ActiveRunner.CommitEdit();
+				RegenerateRunner(ActiveRunner);
+			}
 		};
 		nodeCanvas.StatusChanged += ui.SetStatus;
 	}
@@ -187,7 +198,10 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	{
 		if (input.WasKeyPressed(Key.Escape))
 		{
-			window.IsCloseRequested = true;
+			if (!viewport.CancelBezierDraft())
+			{
+				window.IsCloseRequested = true;
+			}
 		}
 
 		CadRect viewportBounds = CadLayout.Viewport(window.Width, window.Height);

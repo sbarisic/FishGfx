@@ -102,6 +102,8 @@ internal sealed partial class CadViewport : IDisposable
 		activeRunnerId = null;
 		hasDebugPickingRay = false;
 		debugPickingHit = null;
+		bezierDraft = null;
+		activeBezierHandle = null;
 	}
 
 	internal void SetSelectedPart(CadPart part, CadPoint3 euler)
@@ -214,6 +216,15 @@ internal sealed partial class CadViewport : IDisposable
 		}
 	}
 
+	internal void MarkRunnerCurrent(Guid runnerId)
+	{
+		foreach (SceneItem item in items.Where(item => item.IsRunner && item.RunnerId == runnerId))
+		{
+			item.SetStale(false);
+			item.SetColor(RunnerColor(item.RunnerId, false));
+		}
+	}
+
 	internal void Update(CadRect bounds, InputManager input, Vector2 mouse)
 	{
 		Vector2 delta = mouse - previousMouse;
@@ -253,8 +264,14 @@ internal sealed partial class CadViewport : IDisposable
 			UpdateGizmo(bounds, mouse);
 		}
 
+		if (activeBezierHandle.HasValue && input.IsMouseButtonDown(MouseButton.Left))
+		{
+			UpdateBezierDrag(bounds, mouse);
+		}
+
 		if (input.WasMouseButtonReleased(MouseButton.Left))
 		{
+			CompleteBezierDrag();
 			activeGizmoAxis = -1;
 		}
 
@@ -263,7 +280,9 @@ internal sealed partial class CadViewport : IDisposable
 			PickContext context = CreatePickContext(bounds, mouse);
 			CaptureDebugPickingRay(context);
 
-			if (TryPickMateGlyph(context) || TryPickMateCandidate(context))
+			if (TryBeginBezierHandle(context)
+				|| TryPickMateGlyph(context)
+				|| TryPickMateCandidate(context))
 			{
 				return;
 			}
@@ -320,7 +339,8 @@ internal sealed partial class CadViewport : IDisposable
 
 	private Color RunnerColor(Guid? runnerId, bool stale)
 	{
-		if (stale) return new Color(140, 80, 45, 115);
+		if (stale)
+			return new Color(140, 80, 45, 115);
 		return runnerId == activeRunnerId ? new Color(220, 132, 55) : new Color(142, 102, 72);
 	}
 
