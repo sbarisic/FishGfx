@@ -6,6 +6,22 @@ namespace FishGfx.ManifoldCad.Tests;
 public sealed class ExportReadinessTests
 {
 	[Fact]
+	public void ReplacedPartImmediatelyDisablesProjectExport()
+	{
+		(ManifoldProject project, _, CadRunner runner) = RunnerGraphTests.CreateProject();
+		RunnerEvaluationResult evaluation = project.EvaluateRunner(runner);
+		Dictionary<Guid, RunnerEvaluationResult> evaluations = new()
+		{
+			[runner.Id] = evaluation,
+		};
+		Dictionary<Guid, string> errors = new();
+
+		Assert.True(ManifoldCadApplication.CanExportProject(project, evaluations, errors));
+		project.ReplacePart(project.Parts[0].Id, "replacement.step");
+		Assert.False(ManifoldCadApplication.CanExportProject(project, evaluations, errors));
+	}
+
+	[Fact]
 	public async Task CurrentNativeBezierEvaluationAllowsExport()
 	{
 		CancellationToken cancellationToken = TestContext.Current.CancellationToken;

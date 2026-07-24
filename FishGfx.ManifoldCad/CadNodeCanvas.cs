@@ -17,6 +17,7 @@ internal sealed class CadNodeCanvas
 		RunnerNodes.Straight,
 		RunnerNodes.Bend,
 		RunnerNodes.CubicBezier,
+		RunnerNodes.ClockingTransition,
 		RunnerNodes.CircularPipe,
 		RunnerNodes.LoftTransition,
 		RunnerNodes.RunnerLength,
@@ -251,7 +252,8 @@ internal sealed class CadNodeCanvas
 
 		RunnerNode node;
 		if (paletteConnectionId.HasValue && definitionId is RunnerNodes.Straight
-			or RunnerNodes.Bend or RunnerNodes.LoftTransition or RunnerNodes.CubicBezier)
+			or RunnerNodes.Bend or RunnerNodes.LoftTransition or RunnerNodes.CubicBezier
+			or RunnerNodes.ClockingTransition)
 		{
 			if (!graph.TrySpliceConnection(paletteConnectionId.Value, definitionId, paletteWorld.X, paletteWorld.Y,
 				out node, out string error))

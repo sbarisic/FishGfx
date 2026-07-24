@@ -46,6 +46,8 @@ internal sealed partial class CadViewport
 			pass.DrawMesh(selectedFaceMesh);
 		}
 
+		DrawCollectorDraftCurves(pass);
+		DrawCollectorGlyphs(pass);
 		DrawMateGlyphs(pass);
 		DrawMateCandidates(pass);
 		DrawBezierEditor(pass);
@@ -166,6 +168,42 @@ internal sealed partial class CadViewport
 			pass.DrawLine(new Vertex3(origin, Color.Green), new Vertex3(origin + ToVector(mate.Frame.Binormal) * scale, Color.Green), 3);
 			pass.DrawLine(new Vertex3(origin, Color.Blue), new Vertex3(origin + ToVector(mate.Frame.Tangent) * scale, Color.Blue), 3);
 			pass.DrawPoint(new Vertex3(origin, Color.Yellow), 8);
+		}
+	}
+
+	private void DrawCollectorGlyphs(RenderPass pass)
+	{
+		foreach (CollectorGlyph glyph in collectorGlyphs)
+		{
+			Vector3 origin = ToVector(glyph.Frame.Origin);
+			float scale = Math.Max(distance * 0.025f, 6);
+			Color color = glyph.InletId.HasValue
+				? new Color(245, 90, 210)
+				: new Color(255, 145, 45);
+			pass.DrawPoint(new Vertex3(origin, color), glyph.InletId.HasValue ? 11 : 14);
+			pass.DrawLine(
+				new Vertex3(origin, color),
+				new Vertex3(origin + ToVector(glyph.Frame.Tangent) * scale, color),
+				3
+			);
+		}
+	}
+
+	private void DrawCollectorDraftCurves(RenderPass pass)
+	{
+		Color color = collectorDraftInvalid
+			? new Color(255, 70, 70)
+			: new Color(245, 90, 210);
+		foreach (CadPoint3[] curve in collectorDraftCurves)
+		{
+			for (int index = 1; index < curve.Length; ++index)
+			{
+				pass.DrawLine(
+					new Vertex3(ToVector(curve[index - 1]), color),
+					new Vertex3(ToVector(curve[index]), color),
+					3
+				);
+			}
 		}
 	}
 
@@ -407,6 +445,8 @@ internal sealed partial class CadViewport
 	}
 
 	private readonly record struct MateGlyph(Guid Id, Guid PartId, ulong TopologyId, CadFrame Frame);
+
+	private readonly record struct CollectorGlyph(Guid SystemId, Guid? InletId, CadFrame Frame);
 
 	private readonly record struct PickContext(
 		Vector2 LocalPoint,

@@ -15,7 +15,7 @@ public static class CadProjectArchive
 {
 	public const string Schema = "fishgfx.manifold-cad";
 
-	public const int CurrentVersion = 2;
+	public const int CurrentVersion = 3;
 
 	private const string ManifestEntry = "manifest.json";
 	private const string GraphEntry = "graph.json";
@@ -49,7 +49,7 @@ public static class CadProjectArchive
 			using (ZipArchive archive = new(stream, ZipArchiveMode.Create, false))
 			{
 				WriteText(archive, ManifestEntry, JsonSerializer.Serialize(CreateManifest(project), Options));
-				WriteText(archive, GraphEntry, RunnerCollectionJson.Serialize(project.Runners));
+				WriteText(archive, GraphEntry, RunnerCollectionJson.Serialize(project));
 				WriteText(archive, ViewEntry, JsonSerializer.Serialize(project.View, Options));
 				WriteBytes(archive, ModelEntry, modelDocument);
 			}
@@ -78,7 +78,7 @@ public static class CadProjectArchive
 
 		if (manifest == null
 			|| !string.Equals(manifest.Schema, Schema, StringComparison.Ordinal)
-			|| manifest.Version is not 1 and not CurrentVersion
+			|| manifest.Version is < 1 or > CurrentVersion
 			|| manifest.Id == Guid.Empty)
 		{
 			throw new InvalidDataException("The project schema or version is unsupported.");
@@ -153,11 +153,30 @@ public static class CadProjectArchive
 			}
 			project.AddLoadedRunner(runner);
 		}
+		foreach (CadCollectorSystem system in graphResult.CollectorSystems)
+		{
+			project.AddLoadedCollectorSystem(system);
+		}
 
 		if (project.View.ActiveRunnerId.HasValue
 			&& project.Runners.All(runner => runner.Id != project.View.ActiveRunnerId.Value))
 		{
 			project.View.ActiveRunnerId = project.Runners.FirstOrDefault()?.Id;
+		}
+		if (project.View.ActiveCollectorSystemId.HasValue
+			&& project.CollectorSystems.All(system =>
+				system.Id != project.View.ActiveCollectorSystemId.Value))
+		{
+			project.View.ActiveCollectorSystemId = null;
+			project.View.ActiveCollectorInletId = null;
+		}
+		else if (project.View.ActiveCollectorSystemId.HasValue
+			&& project.View.ActiveCollectorInletId.HasValue
+			&& project.CollectorSystems
+				.Single(system => system.Id == project.View.ActiveCollectorSystemId.Value)
+				.Inlets.All(inlet => inlet.Id != project.View.ActiveCollectorInletId.Value))
+		{
+			project.View.ActiveCollectorInletId = null;
 		}
 
 		return new CadProjectPackage

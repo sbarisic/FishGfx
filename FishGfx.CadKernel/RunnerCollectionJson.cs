@@ -6,6 +6,8 @@ namespace FishGfx.Cad;
 public sealed class RunnerCollectionLoadResult
 {
 	public IReadOnlyList<CadRunner> Runners { get; internal set; } = Array.Empty<CadRunner>();
+	public IReadOnlyList<CadCollectorSystem> CollectorSystems { get; internal set; } =
+		Array.Empty<CadCollectorSystem>();
 	public IReadOnlyList<string> Errors { get; internal set; } = Array.Empty<string>();
 	public bool Success => Errors.Count == 0;
 }
@@ -13,7 +15,7 @@ public sealed class RunnerCollectionLoadResult
 public static class RunnerCollectionJson
 {
 	public const string Schema = "fishgfx.runner-collection";
-	public const int CurrentVersion = 2;
+	public const int CurrentVersion = 3;
 
 	private static readonly JsonSerializerOptions Options = new()
 	{
@@ -22,6 +24,20 @@ public static class RunnerCollectionJson
 	};
 
 	public static string Serialize(IEnumerable<CadRunner> runners)
+	{
+		return SerializeCore(runners, Array.Empty<CadCollectorSystem>());
+	}
+
+	public static string Serialize(ManifoldProject project)
+	{
+		ArgumentNullException.ThrowIfNull(project);
+		return SerializeCore(project.Runners, project.CollectorSystems);
+	}
+
+	private static string SerializeCore(
+		IEnumerable<CadRunner> runners,
+		IEnumerable<CadCollectorSystem> collectorSystems
+	)
 	{
 		JsonArray values = new();
 		foreach (CadRunner runner in runners)
@@ -40,12 +56,17 @@ public static class RunnerCollectionJson
 			["schema"] = Schema,
 			["version"] = CurrentVersion,
 			["runners"] = values,
+			["collectorSystems"] = JsonSerializer.SerializeToNode(
+				collectorSystems.Select(ToDto).ToArray(),
+				Options
+			),
 		}.ToJsonString(Options);
 	}
 
 	public static RunnerCollectionLoadResult Deserialize(string json)
 	{
-		if (string.IsNullOrWhiteSpace(json)) return Failure("Runner collection JSON is required.");
+		if (string.IsNullOrWhiteSpace(json))
+			return Failure("Runner collection JSON is required.");
 		JsonDocument document;
 		try
 		{
@@ -75,7 +96,7 @@ public static class RunnerCollectionJson
 				|| !root.TryGetProperty("version", out JsonElement version)
 				|| version.ValueKind != JsonValueKind.Number
 				|| !version.TryGetInt32(out int versionNumber)
-				|| versionNumber != CurrentVersion)
+				|| versionNumber is not 2 and not CurrentVersion)
 			{
 				return Failure("The runner collection schema or version is unsupported.");
 			}
@@ -129,14 +150,161 @@ public static class RunnerCollectionJson
 			{
 				errors.Add("A start mate may own only one runner.");
 			}
-			return new RunnerCollectionLoadResult { Runners = result.AsReadOnly(), Errors = errors.AsReadOnly() };
+			List<CadCollectorSystem> collectors = new();
+			if (versionNumber >= 3)
+			{
+				if (!root.TryGetProperty("collectorSystems", out JsonElement collectorItems)
+					|| collectorItems.ValueKind != JsonValueKind.Array)
+				{
+					errors.Add("The version-three runner collection requires a collectorSystems array.");
+				}
+				else
+				{
+					foreach (JsonElement item in collectorItems.EnumerateArray())
+					{
+						try
+						{
+							CollectorDto dto = JsonSerializer.Deserialize<CollectorDto>(
+								item.GetRawText(),
+								Options
+							);
+							collectors.Add(FromDto(dto));
+						}
+						catch (Exception exception) when (exception is JsonException
+							or ArgumentException or InvalidOperationException or InvalidDataException)
+						{
+							errors.Add("Invalid collector system: " + exception.Message);
+						}
+					}
+				}
+			}
+			if (collectors.Select(system => system.Id).Distinct().Count() != collectors.Count)
+			{
+				errors.Add("Collector system IDs must be unique.");
+			}
+			Guid[] boundRunnerIds = collectors.SelectMany(system => system.Inlets)
+				.Where(inlet => inlet.Binding != null)
+				.Select(inlet => inlet.Binding.RunnerId)
+				.ToArray();
+			if (boundRunnerIds.Distinct().Count() != boundRunnerIds.Length)
+			{
+				errors.Add("A runner may belong to only one collector system.");
+			}
+			HashSet<Guid> runnerIds = result.Select(runner => runner.Id).ToHashSet();
+			if (boundRunnerIds.Any(id => !runnerIds.Contains(id)))
+			{
+				errors.Add("A collector system references a missing runner.");
+			}
+			Dictionary<Guid, RunnerGraph> graphs = result
+				.GroupBy(runner => runner.Id)
+				.ToDictionary(group => group.Key, group => group.First().Graph);
+			foreach (CadCollectorSystem collector in collectors)
+			{
+				if (!CollectorSystemTransaction.ValidateSystem(
+					collector,
+					graphs,
+					out string validationError
+				))
+				{
+					errors.Add(validationError);
+				}
+			}
+			return new RunnerCollectionLoadResult
+			{
+				Runners = result.AsReadOnly(),
+				CollectorSystems = collectors.AsReadOnly(),
+				Errors = errors.AsReadOnly(),
+			};
 		}
+	}
+
+	private static CollectorDto ToDto(CadCollectorSystem system)
+	{
+		return new CollectorDto
+		{
+			Id = system.Id,
+			Name = system.Name,
+			OutletFrame = system.OutletFrame,
+			OutletProfile = system.OutletProfile,
+			OutletStubLength = system.OutletStubLength,
+			MergeLength = system.MergeLength,
+			OverlapLength = system.OverlapLength,
+			BranchEndHandleLength = system.BranchEndHandleLength,
+			GenerationRevision = system.GenerationRevision,
+			Inlets = system.Inlets.Select(inlet => new CollectorInletDto
+			{
+				Id = inlet.Id,
+				Name = inlet.Name,
+				LocalFrame = inlet.LocalFrame,
+				MergeStation = inlet.MergeStation,
+				BranchStartHandleLength = inlet.BranchStartHandleLength,
+				ClockingTransitionLength = inlet.ClockingTransitionLength,
+				Binding = inlet.Binding == null
+					? null
+					: new CollectorBindingDto
+					{
+						RunnerId = inlet.Binding.RunnerId,
+						TerminalBezierNodeId = inlet.Binding.TerminalBezierNodeId,
+						ClockingTransitionNodeId = inlet.Binding.ClockingTransitionNodeId,
+					},
+			}).ToList(),
+		};
+	}
+
+	private static CadCollectorSystem FromDto(CollectorDto dto)
+	{
+		if (dto == null || dto.Id == Guid.Empty || string.IsNullOrWhiteSpace(dto.Name)
+			|| dto.Inlets == null || dto.Inlets.Count < 2)
+		{
+			throw new InvalidDataException("A collector requires an ID, name, and at least two inlets.");
+		}
+		CadCollectorSystem system = new()
+		{
+			Id = dto.Id,
+			Name = dto.Name,
+			OutletFrame = dto.OutletFrame,
+			OutletProfile = dto.OutletProfile,
+			OutletStubLength = dto.OutletStubLength,
+			MergeLength = dto.MergeLength,
+			OverlapLength = dto.OverlapLength,
+			BranchEndHandleLength = dto.BranchEndHandleLength,
+			Inlets = dto.Inlets.Select(item =>
+			{
+				if (item == null
+					|| item.Id == Guid.Empty
+					|| string.IsNullOrWhiteSpace(item.Name)
+					|| item.Binding == null
+					|| item.Binding.RunnerId == Guid.Empty
+					|| item.Binding.TerminalBezierNodeId == Guid.Empty)
+				{
+					throw new InvalidDataException("Every collector inlet requires stable IDs and a binding.");
+				}
+				return new CadCollectorInlet
+				{
+					Id = item.Id,
+					Name = item.Name,
+					LocalFrame = item.LocalFrame,
+					MergeStation = item.MergeStation,
+					BranchStartHandleLength = item.BranchStartHandleLength,
+					ClockingTransitionLength = item.ClockingTransitionLength,
+					Binding = new CadCollectorBinding
+					{
+						RunnerId = item.Binding.RunnerId,
+						TerminalBezierNodeId = item.Binding.TerminalBezierNodeId,
+						ClockingTransitionNodeId = item.Binding.ClockingTransitionNodeId,
+					},
+				};
+			}).ToList(),
+		};
+		system.SetGenerationRevision(dto.GenerationRevision);
+		return system;
 	}
 
 	private static RunnerCollectionLoadResult MigrateVersionOne(string json)
 	{
 		RunnerGraphLoadResult loaded = RunnerGraphJson.Deserialize(json);
-		if (!loaded.Success) return new RunnerCollectionLoadResult { Errors = loaded.Errors };
+		if (!loaded.Success)
+			return new RunnerCollectionLoadResult { Errors = loaded.Errors };
 		RunnerGraph graph = loaded.Graph;
 		RunnerNode[] mateNodes = graph.Nodes.Where(node => node.DefinitionId == RunnerNodes.LegacyMateReference).ToArray();
 		RunnerNode[] startNodes = graph.Nodes.Where(node => node.DefinitionId == RunnerNodes.StartRunner).ToArray();
@@ -159,7 +327,8 @@ public static class RunnerCollectionJson
 		List<RunnerConnection> migrated = new();
 		foreach (RunnerConnection connection in graph.Connections)
 		{
-			if (connection.OutputNodeId == mateNode.Id || connection.InputNodeId == mateNode.Id) continue;
+			if (connection.OutputNodeId == mateNode.Id || connection.InputNodeId == mateNode.Id)
+				continue;
 			if (connection.InputNodeId == outputNode.Id && connection.InputPort == "profile")
 			{
 				migrated.Add(connection with { InputNodeId = startNode.Id, InputPort = "profile" });
@@ -190,5 +359,37 @@ public static class RunnerCollectionJson
 	private static RunnerCollectionLoadResult Failure(string message)
 	{
 		return new RunnerCollectionLoadResult { Errors = new[] { message } };
+	}
+
+	private sealed class CollectorDto
+	{
+		public Guid Id { get; set; }
+		public string Name { get; set; }
+		public CadFrame OutletFrame { get; set; }
+		public PipeProfile OutletProfile { get; set; }
+		public double OutletStubLength { get; set; }
+		public double MergeLength { get; set; }
+		public double OverlapLength { get; set; }
+		public double BranchEndHandleLength { get; set; }
+		public long GenerationRevision { get; set; }
+		public List<CollectorInletDto> Inlets { get; set; }
+	}
+
+	private sealed class CollectorInletDto
+	{
+		public Guid Id { get; set; }
+		public string Name { get; set; }
+		public CadFrame LocalFrame { get; set; }
+		public double MergeStation { get; set; }
+		public double BranchStartHandleLength { get; set; }
+		public double ClockingTransitionLength { get; set; }
+		public CollectorBindingDto Binding { get; set; }
+	}
+
+	private sealed class CollectorBindingDto
+	{
+		public Guid RunnerId { get; set; }
+		public Guid TerminalBezierNodeId { get; set; }
+		public Guid? ClockingTransitionNodeId { get; set; }
 	}
 }

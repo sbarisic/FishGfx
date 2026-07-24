@@ -78,6 +78,27 @@ internal sealed partial class ManifoldCadApplication
 					// A runner that never generated successfully has no archived exact shape.
 				}
 			}
+			foreach (CadCollectorSystem system in project.CollectorSystems)
+			{
+				try
+				{
+					CadTessellation stored = document.TessellateCollectorSystemAsync(
+						system.Id,
+						InteractiveLinearDeflection,
+						InteractiveAngularDeflection
+					)
+						.GetAwaiter().GetResult().Value;
+					viewport.AddOrReplace(null, system.Id, stored, true, true);
+					foreach (CadCollectorInlet inlet in system.Inlets)
+					{
+						viewport.RemoveRunner(inlet.Binding.RunnerId);
+					}
+				}
+				catch (CadKernelException)
+				{
+					// A collector that never generated successfully has no archived exact shape.
+				}
+			}
 
 			RegenerateAllRunners();
 			viewport.SetActiveRunner(ActiveRunner?.Id);
@@ -90,7 +111,7 @@ internal sealed partial class ManifoldCadApplication
 
 	private void ExportStep(string path)
 	{
-		if (!CanExportRunners(project.Runners, evaluations, runnerBuildErrors))
+		if (!CanExportProject(project, evaluations, runnerBuildErrors))
 		{
 			ui.SetStatus("Export is disabled until every runner regenerates successfully.", true);
 			return;
@@ -119,6 +140,40 @@ internal sealed partial class ManifoldCadApplication
 			&& result.Success
 			&& result.RunnerId == runner.Id
 			&& result.EditRevision == runner.EditRevision);
+	}
+
+	internal static bool CanExportProject(
+		ManifoldProject project,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> runnerEvaluations,
+		IReadOnlyDictionary<Guid, string> buildErrors
+	)
+	{
+		ArgumentNullException.ThrowIfNull(project);
+		if (!CanExportRunners(project.Runners, runnerEvaluations, buildErrors)
+			|| project.Runners.Any(runner =>
+				project.Mates.All(mate =>
+					mate.Id != runner.StartMateId || !mate.IsResolved))
+			|| project.CollectorSystems.Any(system => !system.IsResolved))
+		{
+			return false;
+		}
+		foreach (CadCollectorSystem system in project.CollectorSystems)
+		{
+			foreach (CadCollectorInlet inlet in system.Inlets)
+			{
+				if (!runnerEvaluations.TryGetValue(
+					inlet.Binding.RunnerId,
+					out RunnerEvaluationResult evaluation)
+					|| evaluation.GenerationStamp.OwnerKind
+						!= CadGenerationOwnerKind.CollectorSystem
+					|| evaluation.GenerationStamp.OwnerId != system.Id
+					|| evaluation.GenerationStamp.Revision != system.GenerationRevision)
+				{
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 }

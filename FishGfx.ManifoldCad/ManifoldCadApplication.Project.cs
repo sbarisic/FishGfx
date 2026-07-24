@@ -145,7 +145,7 @@ internal sealed partial class ManifoldCadApplication
 		if (ActiveRunner != null)
 		{
 			viewport.ReloadBezierCommittedProperties(ActiveRunner.Id, node);
-			ActiveRunner.CommitEdit();
+			CommitRunnerOrSystemEdit(ActiveRunner);
 			RegenerateRunner(ActiveRunner);
 		}
 	}
@@ -205,6 +205,12 @@ internal sealed partial class ManifoldCadApplication
 		CadRunner runner = ActiveRunner;
 		if (runner == null)
 			return;
+		if (project.CollectorSystems.Any(system =>
+			system.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id)))
+		{
+			ui.SetStatus("Delete or detach the runner's collector system first.", true);
+			return;
+		}
 		TryOperation(() =>
 		{
 			document.RemoveRunnerAsync(runner.Id).GetAwaiter().GetResult();
@@ -239,12 +245,16 @@ internal sealed partial class ManifoldCadApplication
 
 	private void SelectPart(Guid partId)
 	{
+		DiscardCollectorDraft();
+		project.SetActiveCollector(null);
 		selectedPart = project.Parts.FirstOrDefault(part => part.Id == partId);
 		RefreshUi();
 	}
 
 	private void SelectMate(Guid mateId)
 	{
+		DiscardCollectorDraft();
+		project.SetActiveCollector(null);
 		selectedMate = project.Mates.FirstOrDefault(mate => mate.Id == mateId);
 		selectedPart = selectedMate == null ? selectedPart : project.Parts.FirstOrDefault(part => part.Id == selectedMate.PartId);
 		RefreshUi();
@@ -252,8 +262,14 @@ internal sealed partial class ManifoldCadApplication
 
 	private void SelectRunner(Guid runnerId)
 	{
+		DiscardCollectorDraft();
 		if (!project.SetActiveRunner(runnerId))
 			return;
+		CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
+			candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == runnerId));
+		CadCollectorInlet inlet = system?.Inlets.FirstOrDefault(
+			item => item.Binding?.RunnerId == runnerId);
+		project.SetActiveCollector(system?.Id, inlet?.Id);
 		evaluation = evaluations.TryGetValue(runnerId, out RunnerEvaluationResult value)
 			? value : project.EvaluateRunnerAsync(document, ActiveRunner).GetAwaiter().GetResult();
 		nodeCanvas.ClearSelection();
@@ -263,6 +279,14 @@ internal sealed partial class ManifoldCadApplication
 
 	private void RegenerateRunner(CadRunner runner)
 	{
+		CadCollectorSystem collector = project.CollectorSystems.FirstOrDefault(system =>
+			system.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
+		if (collector != null)
+		{
+			RegenerateCollectorSystem(collector);
+			return;
+		}
+
 		Stopwatch timing = Stopwatch.StartNew();
 		RunnerEvaluationResult result = project.EvaluateRunnerAsync(document, runner).GetAwaiter().GetResult();
 		long evaluationMilliseconds = timing.ElapsedMilliseconds;
@@ -329,27 +353,75 @@ internal sealed partial class ManifoldCadApplication
 		}
 	}
 
+	private void CommitRunnerOrSystemEdit(CadRunner runner)
+	{
+		CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
+			candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
+		if (system == null)
+		{
+			runner.CommitEdit();
+		}
+		else
+		{
+			system.CommitEdit();
+		}
+	}
+
 	private void RegenerateRunnersForPart(Guid partId)
 	{
 		HashSet<Guid> mateIds = project.Mates.Where(mate => mate.PartId == partId).Select(mate => mate.Id).ToHashSet();
+		HashSet<Guid> committedSystems = new();
 		foreach (CadRunner runner in project.Runners.Where(item => mateIds.Contains(item.StartMateId)))
 		{
-			RegenerateRunner(runner);
+			CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
+				candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
+			if (system != null && committedSystems.Add(system.Id))
+			{
+				system.CommitEdit();
+				RegenerateCollectorSystem(system);
+			}
+			else if (system == null)
+			{
+				RegenerateRunner(runner);
+			}
 		}
 	}
 
 	private void RegenerateRunnersForMate(Guid mateId)
 	{
+		HashSet<Guid> committedSystems = new();
 		foreach (CadRunner runner in project.Runners.Where(item => item.StartMateId == mateId))
 		{
-			RegenerateRunner(runner);
+			CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
+				candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
+			if (system != null && committedSystems.Add(system.Id))
+			{
+				system.CommitEdit();
+				RegenerateCollectorSystem(system);
+			}
+			else if (system == null)
+			{
+				RegenerateRunner(runner);
+			}
 		}
 	}
 
 	private void RegenerateAllRunners()
 	{
+		HashSet<Guid> regeneratedCollectors = new();
 		foreach (CadRunner runner in project.Runners)
-			RegenerateRunner(runner);
+		{
+			CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
+				candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
+			if (system == null)
+			{
+				RegenerateRunner(runner);
+			}
+			else if (regeneratedCollectors.Add(system.Id))
+			{
+				RegenerateCollectorSystem(system);
+			}
+		}
 	}
 
 	private void UploadPart(CadPart part)
@@ -374,7 +446,35 @@ internal sealed partial class ManifoldCadApplication
 
 	private void SelectViewportItem(CadViewportSelection selection)
 	{
-		if (selection.RunnerId.HasValue)
+		CadGeometrySourceRef? source = selection.Sources?
+			.OrderBy(item => item.SourceKind switch
+			{
+				CadGeometrySourceKind.RunnerNode => 0,
+				CadGeometrySourceKind.CollectorInlet => 1,
+				CadGeometrySourceKind.CollectorOutlet => 2,
+				_ => 3,
+			})
+			.Cast<CadGeometrySourceRef?>()
+			.FirstOrDefault();
+		if (source.HasValue && source.Value.SourceKind == CadGeometrySourceKind.RunnerNode)
+		{
+			SelectRunner(source.Value.OwnerId);
+			if (source.Value.ElementGuid.HasValue)
+			{
+				nodeCanvas.SelectBySource(source.Value.ElementGuid, ActiveGraph);
+			}
+		}
+		else if (source.HasValue && source.Value.SourceKind == CadGeometrySourceKind.CollectorInlet
+			&& source.Value.ElementGuid.HasValue)
+		{
+			SelectCollectorInlet(source.Value.ElementGuid.Value);
+		}
+		else if (source.HasValue && source.Value.OwnerId != Guid.Empty)
+		{
+			SelectCollector(source.Value.OwnerId);
+		}
+		else if (selection.RunnerId.HasValue
+			&& project.Runners.Any(runner => runner.Id == selection.RunnerId.Value))
 		{
 			SelectRunner(selection.RunnerId.Value);
 		}

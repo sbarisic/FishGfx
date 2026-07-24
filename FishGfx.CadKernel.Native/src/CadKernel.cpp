@@ -18,6 +18,11 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <BOPAlgo_GlueEnum.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -30,6 +35,7 @@
 #include <BRepOffsetAPI_MakePipe.hxx>
 #include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepTools.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <BRep_Builder.hxx>
@@ -43,6 +49,7 @@
 #include <GeomAbs_SurfaceType.hxx>
 #include <GeomAbs_JoinType.hxx>
 #include <GeomAdaptor_Curve.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
 #include <GeomFill_Trihedron.hxx>
 #include <Geom_BezierCurve.hxx>
 #include <Geom_Curve.hxx>
@@ -82,6 +89,7 @@
 #include <XCAFDoc_Editor.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pln.hxx>
@@ -117,6 +125,8 @@ struct runner_source
 	std::string id;
 	fgcad_runner_feature feature{};
 	std::vector<TopoDS_Face> faces;
+	fgcad_geometry_source_kind kind{ FGCAD_SOURCE_RUNNER_NODE };
+	std::string owner_id;
 };
 
 struct runner_record
@@ -125,6 +135,16 @@ struct runner_record
 	std::string name;
 	TopoDS_Shape shape;
 	std::vector<runner_source> sources;
+};
+
+struct collector_record
+{
+	std::string id;
+	std::string name;
+	uint64_t generation_revision{};
+	TopoDS_Shape shape;
+	std::vector<runner_source> sources;
+	std::vector<std::string> runner_ids;
 };
 
 struct selector_record
@@ -172,6 +192,47 @@ std::string require_text(const char* value, const char* parameter)
 TCollection_ExtendedString extended(const std::string& value)
 {
 	return TCollection_ExtendedString(value.c_str(), true);
+}
+
+std::string encode_label_text(const std::string& value)
+{
+	static constexpr char digits[] = "0123456789ABCDEF";
+	std::string result;
+	result.reserve(value.size() * 2);
+	for (unsigned char character : value)
+	{
+		result.push_back(digits[character >> 4]);
+		result.push_back(digits[character & 0x0f]);
+	}
+	return result;
+}
+
+std::string decode_label_text(const std::string& value)
+{
+	auto digit = [](char character)
+	{
+		if (character >= '0' && character <= '9') return character - '0';
+		if (character >= 'A' && character <= 'F') return character - 'A' + 10;
+		if (character >= 'a' && character <= 'f') return character - 'a' + 10;
+		return -1;
+	};
+	if (value.size() % 2 != 0)
+	{
+		throw std::invalid_argument("An encoded XCAF label field has an invalid length.");
+	}
+	std::string result;
+	result.reserve(value.size() / 2);
+	for (size_t index = 0; index < value.size(); index += 2)
+	{
+		int high = digit(value[index]);
+		int low = digit(value[index + 1]);
+		if (high < 0 || low < 0)
+		{
+			throw std::invalid_argument("An encoded XCAF label field contains invalid hexadecimal text.");
+		}
+		result.push_back(static_cast<char>((high << 4) | low));
+	}
+	return result;
 }
 
 gp_Trsf transform(const fgcad_transform& value)
@@ -394,7 +455,9 @@ void import_step(part_record& part, const std::string& path)
 Handle(TDocStd_Document) make_xcaf_document(
 	const std::unordered_map<std::string, part_record>& parts,
 	const std::unordered_map<std::string, runner_record>& runners,
-	const std::unordered_map<std::string, selector_record>& selectors
+	const std::unordered_map<std::string, selector_record>& selectors,
+	const std::unordered_map<std::string, collector_record>& collectors,
+	bool include_hidden_member_definitions
 )
 {
 	Handle(TDocStd_Document) result;
@@ -467,13 +530,53 @@ Handle(TDocStd_Document) make_xcaf_document(
 		}
 	}
 
+	std::vector<std::string> fused_runner_ids;
+	for (const auto& entry : collectors)
+	{
+		fused_runner_ids.insert(
+			fused_runner_ids.end(),
+			entry.second.runner_ids.begin(),
+			entry.second.runner_ids.end()
+		);
+	}
+
 	for (const auto& entry : runners)
 	{
 		const runner_record& runner = entry.second;
+		if (std::find(fused_runner_ids.begin(), fused_runner_ids.end(), runner.id)
+			!= fused_runner_ids.end())
+		{
+			if (include_hidden_member_definitions && !runner.shape.IsNull())
+			{
+				TDF_Label definition = shapes->AddShape(runner.shape, false);
+				TDataStd_Name::Set(
+					definition,
+					extended("FGRUNNERDEF:" + runner.id + ":" + runner.name)
+				);
+			}
+			continue;
+		}
 		if (runner.shape.IsNull()) continue;
 		TDF_Label definition = shapes->AddShape(runner.shape, false);
 		TDF_Label label = shapes->AddComponent(assembly, definition, TopLoc_Location());
 		TDataStd_Name::Set(label, extended("FGRUNNER:" + runner.id + ":" + runner.name));
+	}
+
+	for (const auto& entry : collectors)
+	{
+		const collector_record& collector = entry.second;
+		if (collector.shape.IsNull()) continue;
+		TDF_Label definition = shapes->AddShape(collector.shape, false);
+		TDF_Label label = shapes->AddComponent(assembly, definition, TopLoc_Location());
+		std::string members;
+		for (size_t index = 0; index < collector.runner_ids.size(); ++index)
+		{
+			if (index != 0) members += ",";
+			members += collector.runner_ids[index];
+		}
+		TDataStd_Name::Set(label, extended(
+			"FGCOLLECTOR:V2:" + collector.id + ":"
+				+ encode_label_text(collector.name) + ":" + members));
 	}
 
 	shapes->UpdateAssemblies();
@@ -494,15 +597,7 @@ std::string label_name(const TDF_Label& label)
 	return ascii.ToCString();
 }
 
-double squared_distance(const gp_Pnt& a, const fgcad_point3& b)
-{
-	double x = a.X() - b.x;
-	double y = a.Y() - b.y;
-	double z = a.Z() - b.z;
-	return x * x + y * y + z * z;
-}
-
-std::string closest_source(
+std::vector<const runner_source*> face_sources(
 	const TopoDS_Face& face,
 	const std::vector<runner_source>& sources
 )
@@ -512,42 +607,18 @@ std::string closest_source(
 		return {};
 	}
 
+	std::vector<const runner_source*> result;
 	for (const runner_source& source : sources)
 	{
 		for (const TopoDS_Face& source_face : source.faces)
 		{
 			if (face.IsSame(source_face))
 			{
-				return source.id;
+				result.push_back(&source);
+				break;
 			}
 		}
 	}
-
-	GProp_GProps properties;
-	BRepGProp::SurfaceProperties(face, properties);
-	gp_Pnt center = properties.CentreOfMass();
-	double best = std::numeric_limits<double>::infinity();
-	std::string result;
-
-	for (const runner_source& source : sources)
-	{
-		double distance = std::min(
-			squared_distance(center, source.feature.entry_frame.origin),
-			squared_distance(center, source.feature.exit_frame.origin)
-		);
-
-		if (source.feature.kind == FGCAD_FEATURE_BEND)
-		{
-			distance = std::min(distance, squared_distance(center, source.feature.center));
-		}
-
-		if (distance < best)
-		{
-			best = distance;
-			result = source.id;
-		}
-	}
-
 	return result;
 }
 
@@ -561,25 +632,45 @@ std::vector<TopoDS_Face> shape_faces(const TopoDS_Shape& shape)
 	return faces;
 }
 
-void apply_fuse_history(BRepAlgoAPI_Fuse& fuse, std::vector<runner_source>& sources)
+template<typename operation_type>
+void apply_boolean_history(operation_type& operation, std::vector<runner_source>& sources)
 {
 	for (runner_source& source : sources)
 	{
 		std::vector<TopoDS_Face> mapped;
-		for (const TopoDS_Face& face : source.faces)
+		auto append_unique = [&](const NCollection_List<TopoDS_Shape>& values)
 		{
-			const NCollection_List<TopoDS_Shape>& modified = fuse.Modified(face);
-			if (!modified.IsEmpty())
+			for (NCollection_List<TopoDS_Shape>::Iterator iterator(values);
+				iterator.More();
+				iterator.Next())
 			{
-				for (NCollection_List<TopoDS_Shape>::Iterator iterator(modified); iterator.More(); iterator.Next())
+				if (iterator.Value().ShapeType() != TopAbs_FACE)
 				{
-					if (iterator.Value().ShapeType() == TopAbs_FACE)
+					continue;
+				}
+				TopoDS_Face candidate = TopoDS::Face(iterator.Value());
+				if (std::none_of(
+					mapped.begin(),
+					mapped.end(),
+					[&](const TopoDS_Face& existing)
 					{
-						mapped.push_back(TopoDS::Face(iterator.Value()));
-					}
+						return existing.IsSame(candidate);
+					}))
+				{
+					mapped.push_back(candidate);
 				}
 			}
-			else if (!fuse.IsDeleted(face))
+		};
+		for (const TopoDS_Face& face : source.faces)
+		{
+			const NCollection_List<TopoDS_Shape>& modified = operation.Modified(face);
+			const NCollection_List<TopoDS_Shape>& generated = operation.Generated(face);
+			if (!modified.IsEmpty() || !generated.IsEmpty())
+			{
+				append_unique(modified);
+				append_unique(generated);
+			}
+			else if (!operation.IsDeleted(face))
 			{
 				mapped.push_back(face);
 			}
@@ -629,6 +720,10 @@ struct fgcad_document
 {
 	std::unordered_map<std::string, part_record> parts;
 	std::unordered_map<std::string, runner_record> runners;
+	std::unordered_map<std::string, collector_record> collectors;
+	std::unordered_map<std::string, runner_record> staged_runners;
+	std::string staged_collector_id;
+	uint64_t staged_generation_revision{};
 	std::unordered_map<std::string, selector_record> selectors;
 };
 
@@ -637,6 +732,7 @@ struct fgcad_tessellation
 	std::vector<fgcad_mesh_vertex> vertices;
 	std::vector<uint32_t> indices;
 	std::vector<fgcad_face_range> faces;
+	std::vector<fgcad_geometry_source_ref> sources;
 	std::vector<fgcad_edge_range> edges;
 	std::vector<fgcad_point3> edge_points;
 	fgcad_point3 minimum{};
@@ -756,7 +852,16 @@ std::unique_ptr<fgcad_tessellation> tessellate(
 		range.topology_id = topology_id;
 		range.first_index = first_index;
 		range.index_count = static_cast<uint32_t>(result->indices.size()) - first_index;
-		copy_id(range.source_node_id, closest_source(face, sources));
+		range.first_source = static_cast<uint32_t>(result->sources.size());
+		for (const runner_source* source : face_sources(face, sources))
+		{
+			fgcad_geometry_source_ref reference{};
+			reference.kind = source->kind;
+			copy_id(reference.owner_id, source->owner_id);
+			copy_id(reference.element_id, source->id);
+			result->sources.push_back(reference);
+		}
+		range.source_count = static_cast<uint32_t>(result->sources.size()) - range.first_source;
 		result->faces.push_back(range);
 	}
 
@@ -1234,7 +1339,7 @@ extern "C"
 {
 uint32_t fgcad_api_version(void)
 {
-	return 4;
+	return 5;
 }
 
 const char* fgcad_last_error(void)
@@ -1294,12 +1399,15 @@ fgcad_status fgcad_evaluate_runner_features(
 		for (size_t index = 0; index < specification_count; ++index)
 		{
 			const fgcad_runner_feature_spec& specification = specifications[index];
-			if (specification.kind != FGCAD_FEATURE_LOFT_TRANSITION && !transported_span)
+			const bool transition = specification.kind == FGCAD_FEATURE_LOFT_TRANSITION
+				|| specification.kind == FGCAD_FEATURE_CLOCKING_TRANSITION;
+			if (!transition && !transported_span)
 			{
 				size_t span_end = index;
 				bool contains_bezier = false;
 				while (span_end < specification_count
-					&& specifications[span_end].kind != FGCAD_FEATURE_LOFT_TRANSITION)
+					&& specifications[span_end].kind != FGCAD_FEATURE_LOFT_TRANSITION
+					&& specifications[span_end].kind != FGCAD_FEATURE_CLOCKING_TRANSITION)
 				{
 					contains_bezier = contains_bezier
 						|| specifications[span_end].kind == FGCAD_FEATURE_CUBIC_BEZIER;
@@ -1396,8 +1504,25 @@ fgcad_status fgcad_evaluate_runner_features(
 					return origin.Translated(t * local.x + u * local.y + v * local.z);
 				};
 				gp_Pnt control1 = origin.Translated(t * specification.start_handle_length);
-				gp_Pnt control2 = local_point(specification.control2_local);
-				gp_Pnt end = local_point(specification.end_local);
+				gp_Pnt control2;
+				gp_Pnt end;
+				if (specification.has_constrained_end_frame != 0)
+				{
+					if (!(specification.end_handle_length > 0)
+						|| !std::isfinite(specification.end_handle_length))
+					{
+						throw std::invalid_argument(
+							"Constrained cubic Bezier end handle must be positive and finite.");
+					}
+					end = point(specification.constrained_end_frame.origin);
+					gp_Dir end_tangent = unit(specification.constrained_end_frame.tangent);
+					control2 = end.Translated(-gp_Vec(end_tangent) * specification.end_handle_length);
+				}
+				else
+				{
+					control2 = local_point(specification.control2_local);
+					end = local_point(specification.end_local);
+				}
 				double outer_radius = profile.kind == FGCAD_PROFILE_CIRCULAR
 					? profile.outer_diameter * 0.5
 					: profile.equivalent_radius + profile.wall_thickness;
@@ -1412,12 +1537,53 @@ fgcad_status fgcad_evaluate_runner_features(
 				feature.radius = evaluation.minimum_radius;
 				frame = evaluation.exit_frame;
 			}
+			else if (specification.kind == FGCAD_FEATURE_CLOCKING_TRANSITION)
+			{
+				if (!(specification.length > 0) || !std::isfinite(specification.length))
+				{
+					throw std::invalid_argument("Clocking-transition length must be positive and finite.");
+				}
+				double rotation = specification.rotation_radians;
+				gp_Pnt exit = origin.Translated(gp_Vec(tangent) * specification.length);
+				if (specification.has_constrained_end_frame != 0)
+				{
+					gp_Pnt target = point(specification.constrained_end_frame.origin);
+					gp_Vec displacement(origin, target);
+					double axial = displacement.Dot(gp_Vec(tangent));
+					gp_Vec lateral = displacement - gp_Vec(tangent) * axial;
+					if (std::abs(axial - specification.length) > Precision::Confusion()
+						|| lateral.Magnitude() > Precision::Confusion())
+					{
+						throw std::invalid_argument(
+							"Clocking-transition target must lie on its incoming axis.");
+					}
+					gp_Dir target_tangent = unit(specification.constrained_end_frame.tangent);
+					if (gp_Vec(tangent).Dot(gp_Vec(target_tangent)) < 1.0 - Precision::Angular())
+					{
+						throw std::invalid_argument(
+							"Clocking-transition target tangent must match its incoming tangent.");
+					}
+					gp_Dir target_normal = unit(specification.constrained_end_frame.normal);
+					rotation = std::atan2(
+						gp_Vec(tangent).Dot(gp_Vec(normal).Crossed(gp_Vec(target_normal))),
+						gp_Vec(normal).Dot(gp_Vec(target_normal))
+					);
+					exit = target;
+				}
+				gp_Trsf roll;
+				roll.SetRotation(gp_Ax1(origin, tangent), rotation);
+				frame.origin = point(exit);
+				frame.normal = direction(normal.Transformed(roll));
+				feature.rotation_radians = rotation;
+				feature.length = specification.length;
+				transported_span.reset();
+			}
 			else
 			{
 				throw std::invalid_argument("Unknown runner feature specification kind.");
 			}
 
-			if (transported_span && specification.kind != FGCAD_FEATURE_LOFT_TRANSITION)
+			if (transported_span && !transition)
 			{
 				TopoDS_Edge edge;
 				if (specification.kind == FGCAD_FEATURE_STRAIGHT)
@@ -1905,7 +2071,31 @@ fgcad_status fgcad_document_build_runner(
 			{
 				throw std::runtime_error("The selected mate topology has no usable closed profile wire.");
 			}
-			return TopoDS::Wire(result.Moved(TopLoc_Location(part.placement)));
+			fgcad_frame source_frame{};
+			source_frame.origin = topology->info.center;
+			source_frame.tangent = topology->info.axis;
+			if (topology->info.kind == FGCAD_TOPOLOGY_CIRCULAR_EDGE)
+			{
+				source_frame.normal = direction(
+					BRepAdaptor_Curve(TopoDS::Edge(topology->shape)).Circle().XAxis().Direction());
+			}
+			else
+			{
+				gp_Ax2 axes(
+					point(source_frame.origin),
+					unit(source_frame.tangent)
+				);
+				source_frame.normal = direction(axes.XDirection());
+			}
+			gp_Pnt source_origin = point(source_frame.origin).Transformed(part.placement);
+			gp_Dir source_tangent = unit(source_frame.tangent).Transformed(part.placement);
+			gp_Dir source_normal = unit(source_frame.normal).Transformed(part.placement);
+			gp_Ax3 from(source_origin, source_tangent, source_normal);
+			gp_Ax3 to(point(frame.origin), unit(frame.tangent), unit(frame.normal));
+			gp_Trsf displacement;
+			displacement.SetDisplacement(from, to);
+			TopoDS_Shape placed_wire = result.Moved(TopLoc_Location(part.placement));
+			return TopoDS::Wire(placed_wire.Moved(TopLoc_Location(displacement)));
 		};
 
 		auto profile_at = [&](const fgcad_runner_profile& profile, const fgcad_frame& frame)
@@ -2025,6 +2215,7 @@ fgcad_status fgcad_document_build_runner(
 			{
 				const fgcad_runner_feature& feature = features[index];
 				if (feature.kind == FGCAD_FEATURE_LOFT_TRANSITION
+					|| feature.kind == FGCAD_FEATURE_CLOCKING_TRANSITION
 					|| !same_profile(profile, feature.input_profile)
 					|| !same_profile(profile, feature.output_profile))
 				{
@@ -2059,75 +2250,154 @@ fgcad_status fgcad_document_build_runner(
 				{
 					append_faces(iterator.Value(), source.faces);
 				}
+				const NCollection_List<TopoDS_Shape>& modified = pipe.Modified(edges[index - first]);
+				for (NCollection_List<TopoDS_Shape>::Iterator iterator(modified); iterator.More(); iterator.Next())
+				{
+					append_faces(iterator.Value(), source.faces);
+				}
 				section.sources.push_back(std::move(source));
+			}
+			std::vector<TopoDS_Face> sweep_faces = shape_faces(section.shape);
+			auto face_is_claimed = [&](const TopoDS_Face& face)
+			{
+				return std::any_of(
+					section.sources.begin(),
+					section.sources.end(),
+					[&](const runner_source& source)
+					{
+						return std::any_of(
+							source.faces.begin(),
+							source.faces.end(),
+							[&](const TopoDS_Face& source_face)
+							{
+								return source_face.IsSame(face);
+							});
+					});
+			};
+			auto distance_to_spine_edge = [&](const gp_Pnt& value, size_t edge_index)
+			{
+				double edge_first = 0;
+				double edge_last = 0;
+				Handle(Geom_Curve) curve = BRep_Tool::Curve(
+					edges[edge_index],
+					edge_first,
+					edge_last);
+				if (curve.IsNull())
+				{
+					return std::numeric_limits<double>::infinity();
+				}
+				GeomAPI_ProjectPointOnCurve projection(
+					value,
+					curve,
+					edge_first,
+					edge_last);
+				return projection.NbPoints() > 0
+					? projection.LowerDistance() * projection.LowerDistance()
+					: std::numeric_limits<double>::infinity();
+			};
+			auto append_face = [](runner_source& source, const TopoDS_Face& face)
+			{
+				if (std::none_of(
+					source.faces.begin(),
+					source.faces.end(),
+					[&](const TopoDS_Face& existing)
+					{
+						return existing.IsSame(face);
+					}))
+				{
+					source.faces.push_back(face);
+				}
+			};
+
+			for (const TopoDS_Face& face : sweep_faces)
+			{
+				if (face_is_claimed(face))
+				{
+					continue;
+				}
+				GProp_GProps properties;
+				BRepGProp::SurfaceProperties(face, properties);
+				gp_Pnt center = properties.CentreOfMass();
+				std::vector<double> distances;
+				distances.reserve(edges.size());
+				double best = std::numeric_limits<double>::infinity();
+				for (size_t edge_index = 0; edge_index < edges.size(); ++edge_index)
+				{
+					double distance = distance_to_spine_edge(center, edge_index);
+					distances.push_back(distance);
+					best = std::min(best, distance);
+				}
+				double tie_tolerance = std::max(
+					Precision::SquareConfusion(),
+					best * 1.0e-9);
+				for (size_t source_index = 0; source_index < section.sources.size(); ++source_index)
+				{
+					if (distances[source_index] <= best + tie_tolerance)
+					{
+						append_face(section.sources[source_index], face);
+					}
+				}
+			}
+
+			for (size_t source_index = 0; source_index < section.sources.size(); ++source_index)
+			{
+				if (!section.sources[source_index].faces.empty())
+				{
+					continue;
+				}
+				double best = std::numeric_limits<double>::infinity();
+				const TopoDS_Face* nearest = nullptr;
+				for (const TopoDS_Face& face : sweep_faces)
+				{
+					GProp_GProps properties;
+					BRepGProp::SurfaceProperties(face, properties);
+					double distance = distance_to_spine_edge(
+						properties.CentreOfMass(),
+						source_index);
+					if (distance < best)
+					{
+						best = distance;
+						nearest = &face;
+					}
+				}
+				if (nearest != nullptr)
+				{
+					append_face(section.sources[source_index], *nearest);
+				}
 			}
 			return section;
 		};
 
 		auto make_loft = [&](const fgcad_runner_feature& feature)
 		{
-			auto canonical_profile_frame = [](fgcad_frame frame)
-			{
-				const double components[] = {
-					frame.tangent.x,
-					frame.tangent.y,
-					frame.tangent.z
-				};
-				bool reverse = false;
-				for (double component : components)
-				{
-					if (std::abs(component) <= 1.0e-12) continue;
-					reverse = component < 0;
-					break;
-				}
-				if (reverse)
-				{
-					frame.tangent.x = -frame.tangent.x;
-					frame.tangent.y = -frame.tangent.y;
-					frame.tangent.z = -frame.tangent.z;
-				}
-				return frame;
-			};
-			fgcad_frame entry_frame = canonical_profile_frame(feature.entry_frame);
-			fgcad_frame exit_frame = canonical_profile_frame(feature.exit_frame);
-			profile_wires input = profile_at(feature.input_profile, entry_frame);
-			profile_wires output = profile_at(feature.output_profile, exit_frame);
+			profile_wires input = profile_at(feature.input_profile, feature.entry_frame);
+			profile_wires output = profile_at(feature.output_profile, feature.exit_frame);
 			trace("loft profiles");
-			BRepOffsetAPI_ThruSections outer(false, false);
+			BRepOffsetAPI_ThruSections outer(true, false);
 			outer.CheckCompatibility(true);
 			outer.AddWire(input.outer);
 			outer.AddWire(output.outer);
 			outer.Build();
-			BRepOffsetAPI_ThruSections inner(false, false);
+			BRepOffsetAPI_ThruSections inner(true, false);
 			inner.CheckCompatibility(true);
 			inner.AddWire(input.inner);
 			inner.AddWire(output.inner);
 			inner.Build();
-			if (!outer.IsDone() || !inner.IsDone()) throw std::runtime_error("Open CASCADE could not loft the profile transition.");
-			trace("loft shells");
-			TopoDS_Face entry = annular_face(input);
-			entry.Reverse();
-			TopoDS_Face exit = annular_face(output);
-			TopoDS_Shape inner_shell = inner.Shape().Reversed();
-			BRepBuilderAPI_Sewing sewing;
-			sewing.Add(outer.Shape());
-			sewing.Add(inner_shell);
-			sewing.Add(entry);
-			sewing.Add(exit);
-			sewing.Perform();
-			TopoDS_Shape sewed = sewing.SewedShape();
-			if (sewed.IsNull() || sewed.ShapeType() != TopAbs_SHELL)
+			if (!outer.IsDone() || !inner.IsDone())
 			{
-				throw std::runtime_error("The hollow profile transition could not be sewn.");
+				throw std::runtime_error(
+					"Open CASCADE could not loft the profile-transition volumes.");
 			}
-			TopoDS_Shell shell = TopoDS::Shell(sewed);
-			ShapeFix_Shell orientation;
-			orientation.FixFaceOrientation(shell, false, false);
-			if (orientation.NbShells() == 1) shell = orientation.Shell();
-			BRepBuilderAPI_MakeSolid solid(shell);
-			if (!solid.IsDone()) throw std::runtime_error("The hollow profile transition could not form a solid.");
-			trace("loft solid");
-			return solid.Solid();
+			trace("loft volumes");
+			BRepAlgoAPI_Cut hollow(outer.Shape(), inner.Shape());
+			hollow.Build();
+			if (!hollow.IsDone() || hollow.Shape().IsNull())
+			{
+				throw std::runtime_error(
+					"The inner profile-transition volume could not be subtracted.");
+			}
+			trace("loft hollow cut");
+			return hollow.Shape();
 		};
 
 		runner_record replacement;
@@ -2216,7 +2486,7 @@ fgcad_status fgcad_document_build_runner(
 				fuse.Build();
 				if (!fuse.IsDone()) throw std::runtime_error("Adjacent runner features could not be joined.");
 				trace("section fuse");
-				apply_fuse_history(fuse, replacement.sources);
+				apply_boolean_history(fuse, replacement.sources);
 				result = fuse.Shape();
 				if (result.IsNull() || !BRepCheck_Analyzer(result, true).IsValid())
 				{
@@ -2228,7 +2498,8 @@ fgcad_status fgcad_document_build_runner(
 
 		for (size_t index = 0; index < feature_count;)
 		{
-			if (features[index].kind == FGCAD_FEATURE_LOFT_TRANSITION)
+			if (features[index].kind == FGCAD_FEATURE_LOFT_TRANSITION
+				|| features[index].kind == FGCAD_FEATURE_CLOCKING_TRANSITION)
 			{
 				generated_section section;
 				section.shape = make_loft(features[index]);
@@ -2243,7 +2514,9 @@ fgcad_status fgcad_document_build_runner(
 			}
 
 			size_t end = index + 1;
-			while (end < feature_count && features[end].kind != FGCAD_FEATURE_LOFT_TRANSITION
+			while (end < feature_count
+				&& features[end].kind != FGCAD_FEATURE_LOFT_TRANSITION
+				&& features[end].kind != FGCAD_FEATURE_CLOCKING_TRANSITION
 				&& same_profile(features[index].input_profile, features[end].input_profile))
 			{
 				++end;
@@ -2259,7 +2532,19 @@ fgcad_status fgcad_document_build_runner(
 		trace("final validation");
 
 		replacement.shape = result;
-		document->runners[replacement.id] = std::move(replacement);
+		for (runner_source& source : replacement.sources)
+		{
+			source.kind = FGCAD_SOURCE_RUNNER_NODE;
+			source.owner_id = replacement.id;
+		}
+		if (!document->staged_collector_id.empty())
+		{
+			document->staged_runners[replacement.id] = std::move(replacement);
+		}
+		else
+		{
+			document->runners[replacement.id] = std::move(replacement);
+		}
 		return FGCAD_STATUS_OK;
 	});
 }
@@ -2290,6 +2575,669 @@ fgcad_status fgcad_document_rename_runner(
 		if (found != document->runners.end())
 		{
 			found->second.name = std::move(name);
+		}
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_build_collector_system(
+	fgcad_document* document,
+	const fgcad_collector_system_spec* system,
+	const fgcad_collector_inlet* inlets,
+	size_t inlet_count
+)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr || system == nullptr || inlets == nullptr || inlet_count < 2)
+		{
+			throw std::invalid_argument(
+				"A collector system requires a document, system specification, and at least two inlets.");
+		}
+		if (!(system->outlet_stub_length > 0) || !(system->merge_length > 0)
+			|| !(system->overlap_length > 0) || !(system->branch_end_handle_length > 0))
+		{
+			throw std::invalid_argument("Collector lengths and handles must be positive.");
+		}
+		if (system->outlet_profile.kind != FGCAD_PROFILE_CIRCULAR)
+		{
+			throw std::invalid_argument("The collector outlet profile must be circular.");
+		}
+
+		auto radii = [](const fgcad_runner_profile& profile)
+		{
+			double outer = profile.kind == FGCAD_PROFILE_CIRCULAR
+				? profile.outer_diameter * 0.5
+				: profile.equivalent_radius + profile.wall_thickness;
+			double inner = profile.kind == FGCAD_PROFILE_CIRCULAR
+				? outer - profile.wall_thickness
+				: profile.equivalent_radius;
+			if (!(outer > 0) || !(inner > 0) || !(profile.wall_thickness > 0))
+			{
+				throw std::invalid_argument("A collector circular profile is invalid.");
+			}
+			return std::pair<double, double>(outer, inner);
+		};
+		auto disk = [](const fgcad_frame& frame, double radius)
+		{
+			gp_Ax2 axes(point(frame.origin), unit(frame.tangent), unit(frame.normal));
+			TopoDS_Wire wire = BRepBuilderAPI_MakeWire(
+				BRepBuilderAPI_MakeEdge(gp_Circ(axes, radius))).Wire();
+			BRepBuilderAPI_MakeFace face(wire, true);
+			if (!face.IsDone()) throw std::runtime_error("A collector section disk could not be built.");
+			return face.Face();
+		};
+		struct collector_profile_faces
+		{
+			TopoDS_Face outer;
+			TopoDS_Face inner;
+		};
+		auto wire_area = [](const TopoDS_Wire& wire)
+		{
+			BRepBuilderAPI_MakeFace face(wire, true);
+			if (!face.IsDone()) return 0.0;
+			GProp_GProps properties;
+			BRepGProp::SurfaceProperties(face.Face(), properties);
+			return std::abs(properties.Mass());
+		};
+		auto outward_offset = [&](const TopoDS_Wire& inner, double wall)
+		{
+			double inner_area = wire_area(inner);
+			TopoDS_Wire best;
+			double best_area = inner_area;
+			for (double sign : { 1.0, -1.0 })
+			{
+				BRepOffsetAPI_MakeOffset offset(inner, GeomAbs_Arc, false);
+				offset.Perform(sign * wall);
+				if (!offset.IsDone()) continue;
+				std::vector<TopoDS_Wire> candidates;
+				for (TopExp_Explorer explorer(offset.Shape(), TopAbs_WIRE);
+					explorer.More(); explorer.Next())
+				{
+					candidates.push_back(TopoDS::Wire(explorer.Current()));
+				}
+				if (candidates.size() != 1) continue;
+				double area = wire_area(candidates.front());
+				if (area > best_area)
+				{
+					best_area = area;
+					best = candidates.front();
+				}
+			}
+			if (best.IsNull())
+			{
+				throw std::runtime_error(
+					"An arbitrary collector inlet could not produce one enclosing wall offset.");
+			}
+			return best;
+		};
+		auto mate_wire_at = [&](const fgcad_runner_profile& profile,
+			const fgcad_frame& reference,
+			const fgcad_frame& target)
+		{
+			auto selector = document->selectors.find(std::string(profile.mate_id));
+			if (selector == document->selectors.end())
+			{
+				throw std::out_of_range(
+					"The arbitrary collector inlet profile selector was not found.");
+			}
+			part_record& part = find_part(*document, selector->second.part_id);
+			auto topology = std::find_if(
+				part.topology.begin(),
+				part.topology.end(),
+				[&](const topology_record& item)
+				{
+					return item.info.id == selector->second.topology_id;
+				});
+			if (topology == part.topology.end())
+			{
+				throw std::out_of_range(
+					"The arbitrary collector inlet profile topology was not found.");
+			}
+			TopoDS_Wire wire;
+			if (topology->shape.ShapeType() == TopAbs_WIRE)
+			{
+				wire = TopoDS::Wire(topology->shape);
+			}
+			else if (topology->shape.ShapeType() == TopAbs_EDGE)
+			{
+				wire = BRepBuilderAPI_MakeWire(TopoDS::Edge(topology->shape)).Wire();
+			}
+			else if (topology->shape.ShapeType() == TopAbs_FACE)
+			{
+				for (TopExp_Explorer explorer(topology->shape, TopAbs_WIRE);
+					explorer.More(); explorer.Next())
+				{
+					TopoDS_Wire candidate = TopoDS::Wire(explorer.Current());
+					if (wire.IsNull() || wire_area(candidate) > wire_area(wire))
+					{
+						wire = candidate;
+					}
+				}
+			}
+			if (wire.IsNull())
+			{
+				throw std::runtime_error(
+					"The arbitrary collector inlet has no usable exact closed wire.");
+			}
+			wire = TopoDS::Wire(wire.Moved(TopLoc_Location(part.placement)));
+			gp_Ax3 from(
+				point(reference.origin),
+				unit(reference.tangent),
+				unit(reference.normal)
+			);
+			gp_Ax3 to(
+				point(target.origin),
+				unit(target.tangent),
+				unit(target.normal)
+			);
+			gp_Trsf displacement;
+			displacement.SetDisplacement(from, to);
+			return TopoDS::Wire(wire.Moved(TopLoc_Location(displacement)));
+		};
+		auto profile_faces = [&](const fgcad_collector_inlet& inlet)
+		{
+			collector_profile_faces result;
+			if (inlet.profile.kind == FGCAD_PROFILE_CIRCULAR)
+			{
+				auto profile_radii = radii(inlet.profile);
+				result.outer = disk(inlet.frame, profile_radii.first);
+				result.inner = disk(inlet.frame, profile_radii.second);
+			}
+			else
+			{
+				TopoDS_Wire inner = mate_wire_at(
+					inlet.profile,
+					inlet.profile_reference_frame,
+					inlet.frame
+				);
+				TopoDS_Wire outer = outward_offset(inner, inlet.profile.wall_thickness);
+				BRepBuilderAPI_MakeFace outer_face(outer, true);
+				BRepBuilderAPI_MakeFace inner_face(inner, true);
+				if (!outer_face.IsDone() || !inner_face.IsDone()
+					|| wire_area(outer) <= wire_area(inner)
+					|| !BRepCheck_Analyzer(outer_face.Face(), true).IsValid()
+					|| !BRepCheck_Analyzer(inner_face.Face(), true).IsValid())
+				{
+					throw std::runtime_error(
+						"The arbitrary collector inlet profile is invalid or collapsed.");
+				}
+				result.outer = outer_face.Face();
+				result.inner = inner_face.Face();
+			}
+			return result;
+		};
+		auto swept_volume = [&](const fgcad_frame& frame,
+			const gp_Pnt& control1,
+			const gp_Pnt& control2,
+			const gp_Pnt& end,
+			const TopoDS_Face& section,
+			double interface_overlap)
+		{
+			fgcad_point3 c1 = point(control1);
+			fgcad_point3 c2 = point(control2);
+			fgcad_point3 p3 = point(end);
+			Handle(Geom_BezierCurve) curve = make_bezier(frame, c1, c2, p3);
+			TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(curve).Edge();
+			gp_Vec lead = -gp_Vec(unit(frame.tangent)) * interface_overlap;
+			gp_Pnt lead_start = point(frame.origin).Translated(lead);
+			BRepBuilderAPI_MakeWire wire_builder;
+			wire_builder.Add(BRepBuilderAPI_MakeEdge(lead_start, point(frame.origin)).Edge());
+			wire_builder.Add(edge);
+			if (!wire_builder.IsDone())
+			{
+				throw std::runtime_error("A collector branch lead-in could not be built.");
+			}
+			TopoDS_Wire wire = wire_builder.Wire();
+			gp_Trsf section_translation;
+			section_translation.SetTranslation(lead);
+			TopoDS_Face lead_section = TopoDS::Face(
+				section.Moved(TopLoc_Location(section_translation)));
+			BRepOffsetAPI_MakePipe pipe(
+				wire,
+				lead_section,
+				GeomFill_IsDiscreteTrihedron,
+				true
+			);
+			if (!pipe.IsDone() || pipe.Shape().IsNull())
+			{
+				throw std::runtime_error("Open CASCADE could not sweep a collector branch volume.");
+			}
+			return pipe.Shape();
+		};
+		auto fuse_all = [](const std::vector<TopoDS_Shape>& values,
+			bool glue,
+			std::vector<runner_source>* sources)
+		{
+			if (values.empty()) throw std::invalid_argument("A collector fusion cannot be empty.");
+			if (values.size() == 1) return values.front();
+			NCollection_List<TopoDS_Shape> arguments;
+			NCollection_List<TopoDS_Shape> tools;
+			arguments.Append(values.front());
+			for (size_t index = 1; index < values.size(); ++index)
+			{
+				tools.Append(values[index]);
+			}
+			BRepAlgoAPI_Fuse fuse;
+			fuse.SetArguments(arguments);
+			fuse.SetTools(tools);
+			fuse.SetNonDestructive(true);
+			fuse.SetRunParallel(true);
+			if (glue) fuse.SetGlue(BOPAlgo_GlueFull);
+			fuse.SetFuzzyValue(Precision::Confusion());
+			fuse.Build();
+			if (!fuse.IsDone() || fuse.Shape().IsNull())
+			{
+				throw std::runtime_error("Collector volume fusion failed.");
+			}
+			if (sources != nullptr)
+			{
+				apply_boolean_history(fuse, *sources);
+			}
+			return fuse.Shape();
+		};
+		auto solid_count = [](const TopoDS_Shape& shape)
+		{
+			size_t count = 0;
+			for (TopExp_Explorer explorer(shape, TopAbs_SOLID); explorer.More(); explorer.Next()) ++count;
+			return count;
+		};
+		auto positive_common_volume = [](const TopoDS_Shape& left,
+			const TopoDS_Shape& right,
+			double scale)
+		{
+			BRepAlgoAPI_Common common(left, right);
+			common.SetRunParallel(true);
+			common.Build();
+			if (!common.IsDone() || common.Shape().IsNull()) return false;
+			GProp_GProps properties;
+			BRepGProp::VolumeProperties(common.Shape(), properties);
+			double tolerance = std::max(
+				std::pow(Precision::Confusion(), 3),
+				std::pow(std::max(scale, 1.0), 3) * 1.0e-12
+			);
+			return std::abs(properties.Mass()) > tolerance;
+		};
+		auto section_inside_point = [](const TopoDS_Face& face)
+		{
+			double u_min = 0;
+			double u_max = 0;
+			double v_min = 0;
+			double v_max = 0;
+			BRepTools::UVBounds(face, u_min, u_max, v_min, v_max);
+			BRepAdaptor_Surface surface(face);
+			for (int row = 1; row < 16; ++row)
+			{
+				double v = v_min + (v_max - v_min) * row / 16.0;
+				for (int column = 1; column < 16; ++column)
+				{
+					double u = u_min + (u_max - u_min) * column / 16.0;
+					BRepClass_FaceClassifier classifier(
+						face,
+						gp_Pnt2d(u, v),
+						Precision::Confusion()
+					);
+					if (classifier.State() == TopAbs_IN)
+					{
+						return surface.Value(u, v);
+					}
+				}
+			}
+			throw std::runtime_error(
+				"A collector opening has no classifiable interior sample point.");
+		};
+
+		std::string system_id = require_text(system->system_id, "system_id");
+		if (document->staged_collector_id.empty())
+		{
+			throw std::invalid_argument(
+				"A collector system must be built inside an active staged generation.");
+		}
+		if (document->staged_collector_id != system_id
+			|| document->staged_generation_revision != system->generation_revision)
+		{
+			throw std::invalid_argument(
+				"The collector build does not match the active native staging generation.");
+		}
+		collector_record replacement;
+		replacement.id = system_id;
+		replacement.name = require_text(system->name, "name");
+		replacement.generation_revision = system->generation_revision;
+		if (!std::isfinite(system->outlet_stub_length)
+			|| !std::isfinite(system->merge_length)
+			|| !std::isfinite(system->overlap_length)
+			|| !std::isfinite(system->branch_end_handle_length)
+			|| !(system->outlet_stub_length > 0)
+			|| !(system->merge_length > 0)
+			|| !(system->overlap_length > 0)
+			|| !(system->branch_end_handle_length > 0))
+		{
+			throw std::invalid_argument(
+				"Collector stub, merge, overlap, and terminal-handle lengths must be finite and positive.");
+		}
+
+		auto outlet_radii = radii(system->outlet_profile);
+		gp_Pnt outlet_origin = point(system->outlet_frame.origin);
+		gp_Dir outlet_tangent = unit(system->outlet_frame.tangent);
+		double trunk_length = system->outlet_stub_length
+			+ system->merge_length
+			+ system->overlap_length;
+		gp_Pnt trunk_start = outlet_origin.Translated(-gp_Vec(outlet_tangent) * trunk_length);
+		gp_Ax2 trunk_axes(trunk_start, outlet_tangent, unit(system->outlet_frame.normal));
+		TopoDS_Shape outer_union = BRepPrimAPI_MakeCylinder(
+			trunk_axes,
+			outlet_radii.first,
+			trunk_length
+		).Shape();
+		TopoDS_Shape inner_trunk = BRepPrimAPI_MakeCylinder(
+			trunk_axes,
+			outlet_radii.second,
+			trunk_length
+		).Shape();
+		std::vector<TopoDS_Shape> outer_volumes{ outer_union };
+		std::vector<TopoDS_Shape> inner_volumes{ inner_trunk };
+		std::vector<gp_Pnt> flow_samples;
+		flow_samples.push_back(outlet_origin.Translated(
+			-gp_Vec(outlet_tangent)
+				* std::max(Precision::Confusion() * 100.0, outlet_radii.second * 0.1)));
+		runner_source trunk_source;
+		trunk_source.id = "trunk";
+		trunk_source.kind = FGCAD_SOURCE_COLLECTOR_TRUNK;
+		trunk_source.owner_id = system_id;
+		runner_source outlet_source;
+		outlet_source.id = "outlet";
+		outlet_source.kind = FGCAD_SOURCE_COLLECTOR_OUTLET;
+		outlet_source.owner_id = system_id;
+		outlet_source.feature.entry_frame = system->outlet_frame;
+		outlet_source.feature.exit_frame = system->outlet_frame;
+		auto append_trunk_face = [&](const TopoDS_Face& face)
+		{
+			bool is_outlet = false;
+			BRepAdaptor_Surface surface(face);
+			if (surface.GetType() == GeomAbs_Plane)
+			{
+				GProp_GProps properties;
+				BRepGProp::SurfaceProperties(face, properties);
+				gp_Vec from_outlet(outlet_origin, properties.CentreOfMass());
+				is_outlet = std::abs(from_outlet.Dot(gp_Vec(outlet_tangent)))
+					<= Precision::Confusion() * 100.0;
+			}
+			(is_outlet ? outlet_source.faces : trunk_source.faces).push_back(face);
+		};
+		for (const TopoDS_Face& face : shape_faces(outer_union))
+		{
+			append_trunk_face(face);
+		}
+		for (const TopoDS_Face& face : shape_faces(inner_trunk))
+		{
+			append_trunk_face(face);
+		}
+		if (outlet_source.faces.empty())
+		{
+			throw std::runtime_error("The collector trunk has no identifiable outlet opening face.");
+		}
+		replacement.sources.push_back(std::move(trunk_source));
+		replacement.sources.push_back(std::move(outlet_source));
+
+		for (size_t index = 0; index < inlet_count; ++index)
+		{
+			const fgcad_collector_inlet& inlet = inlets[index];
+			if (!(inlet.merge_station > 0 && inlet.merge_station < 1)
+				|| !(inlet.branch_start_handle_length > 0)
+				|| !std::isfinite(inlet.merge_station)
+				|| !std::isfinite(inlet.branch_start_handle_length))
+			{
+				throw std::invalid_argument(
+					"Collector merge stations must lie in (0,1) and branch handles must be positive.");
+			}
+			auto inlet_radii = radii(inlet.profile);
+			collector_profile_faces inlet_faces = profile_faces(inlet);
+			double interface_overlap = std::max(
+				0.5,
+				inlet.profile.equivalent_radius > 0
+					? inlet.profile.equivalent_radius * 0.02
+					: inlet.profile.outer_diameter * 0.02
+			);
+			gp_Pnt p0 = point(inlet.frame.origin);
+			gp_Dir inlet_tangent = unit(inlet.frame.tangent);
+			gp_Pnt p1 = p0.Translated(
+				gp_Vec(inlet_tangent) * inlet.branch_start_handle_length);
+			gp_Pnt junction = outlet_origin.Translated(
+				-gp_Vec(outlet_tangent)
+				* (system->outlet_stub_length + inlet.merge_station * system->merge_length));
+			gp_Pnt p3 = junction.Translated(
+				gp_Vec(outlet_tangent) * system->overlap_length);
+			double outlet_depth = gp_Vec(p3, outlet_origin).Dot(gp_Vec(outlet_tangent));
+			if (!(outlet_depth > Precision::Confusion())
+				|| outlet_depth >= trunk_length - Precision::Confusion())
+			{
+				throw std::invalid_argument(
+					"Collector branch overlap must place P3 strictly inside the trunk.");
+			}
+			gp_Pnt p2 = p3.Translated(
+				-gp_Vec(outlet_tangent) * system->branch_end_handle_length);
+			double outer_radius = inlet_radii.first;
+			fgcad_bezier_evaluation evaluation = evaluate_cubic_bezier_internal(
+				inlet.frame,
+				point(p1),
+				point(p2),
+				point(p3),
+				outer_radius
+			);
+			(void)evaluation;
+
+			TopoDS_Shape branch_outer = swept_volume(
+				inlet.frame,
+				p1,
+				p2,
+				p3,
+				inlet_faces.outer,
+				interface_overlap
+			);
+			TopoDS_Shape branch_inner = swept_volume(
+				inlet.frame,
+				p1,
+				p2,
+				p3,
+				inlet_faces.inner,
+				interface_overlap
+			);
+			gp_Pnt inlet_sample = section_inside_point(inlet_faces.inner);
+			flow_samples.push_back(inlet_sample.Translated(
+				gp_Vec(inlet_tangent)
+					* std::max(Precision::Confusion() * 100.0, inlet_radii.second * 0.1)));
+			if (!positive_common_volume(
+				branch_inner,
+				inner_trunk,
+				std::max(trunk_length, inlet.profile.outer_diameter)))
+			{
+				throw std::runtime_error(
+					"A collector branch has no positive gas-volume overlap with the trunk.");
+			}
+			outer_volumes.push_back(branch_outer);
+			inner_volumes.push_back(branch_inner);
+			replacement.runner_ids.push_back(require_text(inlet.runner_id, "runner_id"));
+
+			runner_source inlet_source;
+			inlet_source.id = require_text(inlet.inlet_id, "inlet_id");
+			inlet_source.feature.kind = FGCAD_FEATURE_CUBIC_BEZIER;
+			inlet_source.feature.entry_frame = inlet.frame;
+			inlet_source.feature.exit_frame = system->outlet_frame;
+			inlet_source.feature.control1 = point(p1);
+			inlet_source.feature.control2 = point(p2);
+			inlet_source.faces = shape_faces(branch_outer);
+			for (const TopoDS_Face& face : shape_faces(branch_inner))
+			{
+				inlet_source.faces.push_back(face);
+			}
+			inlet_source.kind = FGCAD_SOURCE_COLLECTOR_INLET;
+			inlet_source.owner_id = system_id;
+			replacement.sources.push_back(std::move(inlet_source));
+		}
+
+		outer_union = fuse_all(outer_volumes, false, &replacement.sources);
+		TopoDS_Shape inner_union = fuse_all(inner_volumes, false, nullptr);
+		if (solid_count(inner_union) != 1)
+		{
+			throw std::runtime_error(
+				"The collector gas-flow union is not one connected solid.");
+		}
+		TopExp_Explorer gas_solid(inner_union, TopAbs_SOLID);
+		if (!gas_solid.More())
+		{
+			throw std::runtime_error("The collector gas-flow union contains no solid.");
+		}
+		TopoDS_Solid connected_gas = TopoDS::Solid(gas_solid.Current());
+		for (const gp_Pnt& sample : flow_samples)
+		{
+			BRepClass3d_SolidClassifier classifier(
+				connected_gas,
+				sample,
+				Precision::Confusion()
+			);
+			if (classifier.State() != TopAbs_IN)
+			{
+				throw std::runtime_error(
+					"A collector opening does not lead into the connected gas-flow solid.");
+			}
+		}
+		BRepAlgoAPI_Cut wall_cut(outer_union, inner_union);
+		wall_cut.SetRunParallel(true);
+		wall_cut.Build();
+		if (!wall_cut.IsDone() || wall_cut.Shape().IsNull())
+		{
+			throw std::runtime_error("The collector wall subtraction failed.");
+		}
+		apply_boolean_history(wall_cut, replacement.sources);
+		if (solid_count(wall_cut.Shape()) != 1)
+		{
+			throw std::runtime_error(
+				"The collector wall is not one connected solid before runner fusion.");
+		}
+		std::vector<TopoDS_Shape> fused_volumes{ wall_cut.Shape() };
+		for (size_t index = 0; index < replacement.runner_ids.size(); ++index)
+		{
+			const std::string& runner_id = replacement.runner_ids[index];
+			auto staged_runner = document->staged_runners.find(runner_id);
+			auto runner = document->runners.find(runner_id);
+			if (staged_runner == document->staged_runners.end())
+			{
+				throw std::runtime_error(
+					"Every collector member runner must be rebuilt in the staged generation.");
+			}
+			const runner_record* member = staged_runner != document->staged_runners.end()
+				? &staged_runner->second
+				: runner != document->runners.end() ? &runner->second : nullptr;
+			if (member == nullptr || member->shape.IsNull())
+			{
+				throw std::out_of_range("A collector member runner has no valid exact solid.");
+			}
+			for (const runner_source& source : member->sources)
+			{
+				replacement.sources.push_back(source);
+			}
+			fused_volumes.push_back(member->shape);
+		}
+		if (document->staged_runners.size() != replacement.runner_ids.size())
+		{
+			throw std::runtime_error(
+				"The staged generation contains runners outside this collector system.");
+		}
+		TopoDS_Shape fused = fuse_all(fused_volumes, true, &replacement.sources);
+		if (!BRepCheck_Analyzer(fused, true).IsValid() || solid_count(fused) != 1)
+		{
+			throw std::runtime_error(
+				"The fused runner/collector system is not one valid connected solid (solid count "
+				+ std::to_string(solid_count(fused)) + ").");
+		}
+		replacement.shape = fused;
+		for (const std::string& runner_id : replacement.runner_ids)
+		{
+			auto staged = document->staged_runners.find(runner_id);
+			if (staged != document->staged_runners.end())
+			{
+				document->runners[runner_id] = std::move(staged->second);
+			}
+		}
+		document->staged_runners.clear();
+		document->staged_collector_id.clear();
+		document->staged_generation_revision = 0;
+		document->collectors[system_id] = std::move(replacement);
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_begin_collector_system_build(
+	fgcad_document* document,
+	const char* system_id,
+	uint64_t generation_revision
+)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		std::string id = require_text(system_id, "system_id");
+		if (!document->staged_collector_id.empty())
+		{
+			throw std::invalid_argument("Another collector-system build is already staged.");
+		}
+		document->staged_collector_id = std::move(id);
+		document->staged_generation_revision = generation_revision;
+		document->staged_runners.clear();
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_abort_collector_system_build(
+	fgcad_document* document,
+	const char* system_id,
+	uint64_t generation_revision
+)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		std::string id = require_text(system_id, "system_id");
+		if (!document->staged_collector_id.empty()
+			&& (document->staged_collector_id != id
+				|| document->staged_generation_revision != generation_revision))
+		{
+			throw std::invalid_argument(
+				"The collector staging abort does not match the active generation.");
+		}
+		document->staged_runners.clear();
+		document->staged_collector_id.clear();
+		document->staged_generation_revision = 0;
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_remove_collector_system(
+	fgcad_document* document,
+	const char* system_id
+)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		document->collectors.erase(require_text(system_id, "system_id"));
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_rename_collector_system(
+	fgcad_document* document,
+	const char* system_id,
+	const char* name
+)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		auto found = document->collectors.find(require_text(system_id, "system_id"));
+		if (found != document->collectors.end())
+		{
+			found->second.name = require_text(name, "name");
 		}
 		return FGCAD_STATUS_OK;
 	});
@@ -2343,6 +3291,36 @@ fgcad_status fgcad_document_tessellate_runner(
 	});
 }
 
+fgcad_status fgcad_document_tessellate_collector_system(
+	fgcad_document* document,
+	const char* system_id,
+	double linear_deflection,
+	double angular_deflection,
+	fgcad_tessellation** output
+)
+{
+	return not_found_guarded([&]()
+	{
+		if (document == nullptr || output == nullptr)
+		{
+			throw std::invalid_argument("Tessellation arguments cannot be null.");
+		}
+		auto found = document->collectors.find(require_text(system_id, "system_id"));
+		if (found == document->collectors.end())
+		{
+			throw std::out_of_range("The collector system was not found.");
+		}
+		auto result = tessellate(
+			found->second.shape,
+			linear_deflection,
+			angular_deflection,
+			found->second.sources
+		);
+		*output = result.release();
+		return FGCAD_STATUS_OK;
+	});
+}
+
 void fgcad_tessellation_destroy(fgcad_tessellation* tessellation)
 {
 	delete tessellation;
@@ -2351,6 +3329,7 @@ void fgcad_tessellation_destroy(fgcad_tessellation* tessellation)
 size_t fgcad_tessellation_vertex_count(const fgcad_tessellation* value) { return value == nullptr ? 0 : value->vertices.size(); }
 size_t fgcad_tessellation_index_count(const fgcad_tessellation* value) { return value == nullptr ? 0 : value->indices.size(); }
 size_t fgcad_tessellation_face_count(const fgcad_tessellation* value) { return value == nullptr ? 0 : value->faces.size(); }
+size_t fgcad_tessellation_source_count(const fgcad_tessellation* value) { return value == nullptr ? 0 : value->sources.size(); }
 size_t fgcad_tessellation_edge_count(const fgcad_tessellation* value) { return value == nullptr ? 0 : value->edges.size(); }
 size_t fgcad_tessellation_edge_point_count(const fgcad_tessellation* value) { return value == nullptr ? 0 : value->edge_points.size(); }
 
@@ -2362,6 +3341,8 @@ fgcad_status fgcad_tessellation_copy(
 	size_t index_capacity,
 	fgcad_face_range* faces,
 	size_t face_capacity,
+	fgcad_geometry_source_ref* sources,
+	size_t source_capacity,
 	fgcad_edge_range* edges,
 	size_t edge_capacity,
 	fgcad_point3* edge_points,
@@ -2380,6 +3361,7 @@ fgcad_status fgcad_tessellation_copy(
 		if (vertex_capacity < value->vertices.size()
 			|| index_capacity < value->indices.size()
 			|| face_capacity < value->faces.size()
+			|| source_capacity < value->sources.size()
 			|| edge_capacity < value->edges.size()
 			|| edge_point_capacity < value->edge_points.size())
 		{
@@ -2389,6 +3371,7 @@ fgcad_status fgcad_tessellation_copy(
 		std::copy(value->vertices.begin(), value->vertices.end(), vertices);
 		std::copy(value->indices.begin(), value->indices.end(), indices);
 		std::copy(value->faces.begin(), value->faces.end(), faces);
+		std::copy(value->sources.begin(), value->sources.end(), sources);
 		std::copy(value->edges.begin(), value->edges.end(), edges);
 		std::copy(value->edge_points.begin(), value->edge_points.end(), edge_points);
 		*minimum = value->minimum;
@@ -2407,7 +3390,13 @@ fgcad_status fgcad_document_save_xcaf(fgcad_document* document, const char* path
 		}
 
 		std::string path = require_text(path_utf8, "path_utf8");
-		Handle(TDocStd_Document) xcaf = make_xcaf_document(document->parts, document->runners, document->selectors);
+		Handle(TDocStd_Document) xcaf = make_xcaf_document(
+			document->parts,
+			document->runners,
+			document->selectors,
+			document->collectors,
+			true
+		);
 		Handle(XCAFApp_Application) application = XCAFApp_Application::GetApplication();
 		PCDM_StoreStatus status = application->SaveAs(xcaf, extended(path));
 		application->Close(xcaf);
@@ -2459,13 +3448,24 @@ fgcad_status fgcad_document_load_xcaf(fgcad_document* document, const char* path
 			TopoDS_Shape shape = shapes->GetShape(is_reference ? referred : label);
 			gp_Trsf placement = XCAFDoc_ShapeTool::GetLocation(label).Transformation();
 
-			if (name == "FGRUNNER" || name.rfind("FGRUNNER:", 0) == 0)
+			if (name == "FGRUNNER" || name.rfind("FGRUNNER:", 0) == 0
+				|| name.rfind("FGRUNNERDEF:", 0) == 0)
 			{
 				runner_record runner;
 				if (name == "FGRUNNER")
 				{
 					runner.id = "legacy-runner";
 					runner.name = "Runner 1";
+				}
+				else if (name.rfind("FGRUNNERDEF:", 0) == 0)
+				{
+					size_t separator = name.find(':', 12);
+					runner.id = separator == std::string::npos
+						? name.substr(12)
+						: name.substr(12, separator - 12);
+					runner.name = separator == std::string::npos
+						? "Runner"
+						: name.substr(separator + 1);
 				}
 				else
 				{
@@ -2475,6 +3475,48 @@ fgcad_status fgcad_document_load_xcaf(fgcad_document* document, const char* path
 				}
 				runner.shape = shape.Moved(TopLoc_Location(placement));
 				replacement.runners[runner.id] = std::move(runner);
+				return;
+			}
+
+			if (name.rfind("FGCOLLECTOR:", 0) == 0)
+			{
+				std::string fields = name.substr(12);
+				bool version_two = fields.rfind("V2:", 0) == 0;
+				if (version_two)
+				{
+					fields = fields.substr(3);
+				}
+				size_t first = fields.find(':');
+				size_t second = fields.find(':', first == std::string::npos ? first : first + 1);
+				collector_record collector;
+				collector.id = first == std::string::npos ? fields : fields.substr(0, first);
+				collector.name = first == std::string::npos
+					? "Collector"
+					: version_two
+						? decode_label_text(fields.substr(
+							first + 1,
+							second == std::string::npos
+								? std::string::npos
+								: second - first - 1))
+						: fields.substr(first + 1, second == std::string::npos
+							? std::string::npos
+							: second - first - 1);
+				if (second != std::string::npos)
+				{
+					std::string members = fields.substr(second + 1);
+					size_t begin = 0;
+					while (begin < members.size())
+					{
+						size_t comma = members.find(',', begin);
+						collector.runner_ids.push_back(members.substr(
+							begin,
+							comma == std::string::npos ? std::string::npos : comma - begin));
+						if (comma == std::string::npos) break;
+						begin = comma + 1;
+					}
+				}
+				collector.shape = shape.Moved(TopLoc_Location(placement));
+				replacement.collectors[collector.id] = std::move(collector);
 				return;
 			}
 
@@ -2543,6 +3585,7 @@ fgcad_status fgcad_document_load_xcaf(fgcad_document* document, const char* path
 		document->parts = std::move(replacement.parts);
 		document->runners = std::move(replacement.runners);
 		document->selectors = std::move(replacement.selectors);
+		document->collectors = std::move(replacement.collectors);
 
 		return FGCAD_STATUS_OK;
 	});
@@ -2552,7 +3595,7 @@ fgcad_status fgcad_document_export_step_ap242(fgcad_document* document, const ch
 {
 	return guarded([&]()
 	{
-		if (document == nullptr || document->runners.empty()
+		if (document == nullptr || document->runners.empty() && document->collectors.empty()
 			|| std::any_of(document->runners.begin(), document->runners.end(), [](const auto& item)
 			{
 				return item.second.shape.IsNull();
@@ -2561,7 +3604,13 @@ fgcad_status fgcad_document_export_step_ap242(fgcad_document* document, const ch
 			throw std::invalid_argument("A valid exact runner is required before STEP export.");
 		}
 
-		Handle(TDocStd_Document) xcaf = make_xcaf_document(document->parts, document->runners, document->selectors);
+		Handle(TDocStd_Document) xcaf = make_xcaf_document(
+			document->parts,
+			document->runners,
+			document->selectors,
+			document->collectors,
+			false
+		);
 		Interface_Static::SetCVal("write.step.schema", "AP242DIS");
 		STEPCAFControl_Writer writer;
 

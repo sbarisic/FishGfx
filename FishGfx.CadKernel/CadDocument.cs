@@ -43,7 +43,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			await document.InvokeAsync(() =>
 			{
-				const uint requiredApiVersion = 4;
+				const uint requiredApiVersion = 5;
 				uint apiVersion = NativeMethods.ApiVersion();
 
 				if (apiVersion != requiredApiVersion)
@@ -165,6 +165,34 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		CancellationToken cancellationToken = default
 	)
 	{
+		if (evaluation?.GenerationStamp.OwnerKind == CadGenerationOwnerKind.CollectorSystem)
+		{
+			throw new ArgumentException(
+				"A bound runner build requires its collector-system generation owner.",
+				nameof(evaluation)
+			);
+		}
+		return BuildRunnerCoreAsync(runner, evaluation, null, cancellationToken);
+	}
+
+	public Task<long> BuildRunnerAsync(
+		CadRunner runner,
+		RunnerEvaluationResult evaluation,
+		CadCollectorSystem collectorSystem,
+		CancellationToken cancellationToken = default
+	)
+	{
+		ArgumentNullException.ThrowIfNull(collectorSystem);
+		return BuildRunnerCoreAsync(runner, evaluation, collectorSystem, cancellationToken);
+	}
+
+	private Task<long> BuildRunnerCoreAsync(
+		CadRunner runner,
+		RunnerEvaluationResult evaluation,
+		CadCollectorSystem collectorSystem,
+		CancellationToken cancellationToken
+	)
+	{
 		ArgumentNullException.ThrowIfNull(runner);
 		ArgumentNullException.ThrowIfNull(evaluation);
 
@@ -172,9 +200,18 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			throw new ArgumentException("Only a valid evaluation of the selected runner can be built.", nameof(evaluation));
 		}
-		if (evaluation.EditRevision != runner.EditRevision)
+		if (evaluation.GenerationStamp.OwnerKind == CadGenerationOwnerKind.Runner
+			&& evaluation.EditRevision != runner.EditRevision)
 		{
 			throw new InvalidOperationException("A stale runner evaluation cannot replace current exact geometry.");
+		}
+		if (evaluation.GenerationStamp.OwnerKind == CadGenerationOwnerKind.CollectorSystem
+			&& (collectorSystem == null
+				|| evaluation.GenerationStamp.OwnerId != collectorSystem.Id
+				|| evaluation.GenerationStamp.Revision != collectorSystem.GenerationRevision))
+		{
+			throw new InvalidOperationException(
+				"A stale collector-system runner evaluation cannot replace current exact geometry.");
 		}
 
 		long expectedEditRevision = evaluation.EditRevision;
@@ -186,9 +223,18 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 
 		return MutateAsync(() =>
 		{
-			if (runner.EditRevision != expectedEditRevision)
+			if (evaluation.GenerationStamp.OwnerKind == CadGenerationOwnerKind.Runner
+				&& runner.EditRevision != expectedEditRevision)
 			{
 				throw new InvalidOperationException("A stale runner evaluation cannot replace current exact geometry.");
+			}
+			if (evaluation.GenerationStamp.OwnerKind == CadGenerationOwnerKind.CollectorSystem
+				&& (collectorSystem == null
+					|| evaluation.GenerationStamp.OwnerId != collectorSystem.Id
+					|| evaluation.GenerationStamp.Revision != collectorSystem.GenerationRevision))
+			{
+				throw new InvalidOperationException(
+					"A stale collector-system runner evaluation cannot replace current exact geometry.");
 			}
 
 			unsafe
@@ -211,10 +257,11 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		CadRunner runner,
 		IReadOnlyDictionary<Guid, CadMate> mates,
 		IReadOnlyDictionary<Guid, CadPart> parts,
+		RunnerEndpointConstraint? endpointConstraint = null,
 		CancellationToken cancellationToken = default
 	)
 	{
-		RunnerGraphPlan plan = RunnerGraphPlanner.Plan(runner, mates, parts);
+		RunnerGraphPlan plan = RunnerGraphPlanner.Plan(runner, mates, parts, endpointConstraint);
 		if (!plan.Success)
 		{
 			return Task.FromResult(new RunnerEvaluationResult
@@ -222,6 +269,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 				RunnerId = runner.Id,
 				OutputNodeId = plan.OutputNodeId,
 				EditRevision = plan.EditRevision,
+				GenerationStamp = plan.GenerationStamp,
 				Diagnostics = plan.Diagnostics,
 			});
 		}
@@ -244,6 +292,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 			RunnerId = runner.Id,
 			OutputNodeId = plan.OutputNodeId,
 			EditRevision = plan.EditRevision,
+			GenerationStamp = plan.GenerationStamp,
 			Diagnostics = new[]
 			{
 				new CadDiagnostic("RUN051", exception.Message, CadDiagnosticSeverity.Error, nodeId),
@@ -323,6 +372,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 			RunnerId = runner.Id,
 			OutputNodeId = plan.OutputNodeId,
 			EditRevision = plan.EditRevision,
+			GenerationStamp = plan.GenerationStamp,
 			Chain = chain,
 			Diagnostics = Array.Empty<CadDiagnostic>(),
 		};
@@ -342,6 +392,132 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		return MutateAsync(() => Check(
 			NativeMethods.DocumentRenameRunner(handle, runner.Id.ToString("D"), runner.Name),
 			"Rename exact runner"
+		), cancellationToken);
+	}
+
+	public Task<long> BuildCollectorSystemAsync(
+		CadCollectorSystem system,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> memberEvaluations,
+		CancellationToken cancellationToken = default
+	)
+	{
+		ArgumentNullException.ThrowIfNull(system);
+		ArgumentNullException.ThrowIfNull(memberEvaluations);
+		if (system.Inlets.Count < 2)
+		{
+			throw new ArgumentException("A collector system requires at least two inlets.", nameof(system));
+		}
+		long expectedRevision = system.GenerationRevision;
+		NativeCollectorSystemSpec specification = NativeCollectorSystemSpec.FromManaged(system);
+		NativeCollectorInlet[] inlets = system.Inlets.Select(inlet =>
+		{
+			if (inlet.Binding == null
+				|| !memberEvaluations.TryGetValue(inlet.Binding.RunnerId, out RunnerEvaluationResult evaluation)
+				|| !evaluation.Success
+				|| evaluation.GenerationStamp.OwnerKind != CadGenerationOwnerKind.CollectorSystem
+				|| evaluation.GenerationStamp.OwnerId != system.Id
+				|| evaluation.GenerationStamp.Revision != expectedRevision)
+			{
+				throw new ArgumentException(
+					$"Collector inlet '{inlet.Name}' requires a current successful member evaluation.",
+					nameof(memberEvaluations)
+				);
+			}
+			return NativeCollectorInlet.FromManaged(
+				system,
+				inlet,
+				evaluation.Chain.ActiveProfile,
+				evaluation.Chain.Features[0].EntryFrame
+			);
+		}).ToArray();
+
+		return MutateAsync(() =>
+		{
+			if (system.GenerationRevision != expectedRevision)
+			{
+				throw new InvalidOperationException(
+					"A stale collector-system generation cannot replace current exact geometry.");
+			}
+			unsafe
+			{
+				fixed (NativeCollectorInlet* inletPointer = inlets)
+				{
+					Check(NativeMethods.DocumentBuildCollectorSystem(
+						handle,
+						in specification,
+						inletPointer,
+						(nuint)inlets.Length
+					), "Build exact collector system");
+				}
+			}
+		}, cancellationToken);
+	}
+
+	public Task<long> BeginCollectorSystemBuildAsync(
+		CadCollectorSystem system,
+		CancellationToken cancellationToken = default
+	)
+	{
+		ArgumentNullException.ThrowIfNull(system);
+		long expectedRevision = system.GenerationRevision;
+		return MutateAsync(() =>
+		{
+			if (system.GenerationRevision != expectedRevision)
+			{
+				throw new InvalidOperationException(
+					"A stale collector-system generation cannot begin staging.");
+			}
+			Check(
+				NativeMethods.DocumentBeginCollectorSystemBuild(
+					handle,
+					system.Id.ToString("D"),
+					checked((ulong)expectedRevision)
+				),
+				"Begin exact collector-system build"
+			);
+		}, cancellationToken);
+	}
+
+	public Task<long> AbortCollectorSystemBuildAsync(
+		Guid systemId,
+		long generationRevision,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentAbortCollectorSystemBuild(
+				handle,
+				systemId.ToString("D"),
+				checked((ulong)generationRevision)
+			),
+			"Abort exact collector-system build"
+		), cancellationToken);
+	}
+
+	public Task<long> RemoveCollectorSystemAsync(
+		Guid systemId,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentRemoveCollectorSystem(handle, systemId.ToString("D")),
+			"Remove exact collector system"
+		), cancellationToken);
+	}
+
+	public Task<long> RenameCollectorSystemAsync(
+		CadCollectorSystem system,
+		CancellationToken cancellationToken = default
+	)
+	{
+		ArgumentNullException.ThrowIfNull(system);
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentRenameCollectorSystem(
+				handle,
+				system.Id.ToString("D"),
+				system.Name
+			),
+			"Rename exact collector system"
 		), cancellationToken);
 	}
 
@@ -406,6 +582,27 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 			), "Tessellate runner");
 			using CadTessellationSafeHandle tessellation = new(nativeTessellation);
 
+			return new CadRevisioned<CadTessellation>(Revision, CopyTessellation(tessellation));
+		}, cancellationToken);
+	}
+
+	public Task<CadRevisioned<CadTessellation>> TessellateCollectorSystemAsync(
+		Guid systemId,
+		double linearDeflection = 0.1,
+		double angularDeflection = Math.PI / 18,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return InvokeAsync(() =>
+		{
+			Check(NativeMethods.DocumentTessellateCollectorSystem(
+				handle,
+				systemId.ToString("D"),
+				linearDeflection,
+				angularDeflection,
+				out nint nativeTessellation
+			), "Tessellate collector system");
+			using CadTessellationSafeHandle tessellation = new(nativeTessellation);
 			return new CadRevisioned<CadTessellation>(Revision, CopyTessellation(tessellation));
 		}, cancellationToken);
 	}
@@ -529,12 +726,15 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		NativeMeshVertex[] vertices = new NativeMeshVertex[checked((int)NativeMethods.TessellationVertexCount(handle))];
 		uint[] indices = new uint[checked((int)NativeMethods.TessellationIndexCount(handle))];
 		NativeFaceRange[] faces = new NativeFaceRange[checked((int)NativeMethods.TessellationFaceCount(handle))];
+		NativeGeometrySourceRef[] sources = new NativeGeometrySourceRef[
+			checked((int)NativeMethods.TessellationSourceCount(handle))];
 		NativeEdgeRange[] edges = new NativeEdgeRange[checked((int)NativeMethods.TessellationEdgeCount(handle))];
 		NativePoint3[] edgePoints = new NativePoint3[checked((int)NativeMethods.TessellationEdgePointCount(handle))];
 
 		fixed (NativeMeshVertex* vertexPointer = vertices)
 		fixed (uint* indexPointer = indices)
 		fixed (NativeFaceRange* facePointer = faces)
+		fixed (NativeGeometrySourceRef* sourcePointer = sources)
 		fixed (NativeEdgeRange* edgePointer = edges)
 		fixed (NativePoint3* edgePointPointer = edgePoints)
 		{
@@ -546,6 +746,8 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 				(nuint)indices.Length,
 				facePointer,
 				(nuint)faces.Length,
+				sourcePointer,
+				(nuint)sources.Length,
 				edgePointer,
 				(nuint)edges.Length,
 				edgePointPointer,
@@ -565,12 +767,25 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 					vertex.NormalZ
 				)).ToArray(),
 				Indices = indices,
-				Faces = faces.Select(face => new CadFaceRange(
-					face.TopologyId,
-					face.GetSourceNodeId(),
-					checked((int)face.FirstIndex),
-					checked((int)face.IndexCount)
-				)).ToArray(),
+				Faces = faces.Select(face =>
+				{
+					CadGeometrySourceRef[] faceSources = sources
+						.Skip(checked((int)face.FirstSource))
+						.Take(checked((int)face.SourceCount))
+						.Select(source => source.ToManaged())
+						.ToArray();
+					Guid? sourceNodeId = faceSources.FirstOrDefault(source =>
+						source.SourceKind == CadGeometrySourceKind.RunnerNode).ElementGuid;
+					return new CadFaceRange(
+						face.TopologyId,
+						sourceNodeId,
+						checked((int)face.FirstIndex),
+						checked((int)face.IndexCount)
+					)
+					{
+						Sources = faceSources,
+					};
+				}).ToArray(),
 				Edges = edges.Select(edge => new CadEdgePolyline(
 					edge.TopologyId,
 					edge.Kind,

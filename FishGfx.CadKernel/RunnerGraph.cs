@@ -50,6 +50,7 @@ public static class RunnerNodes
 	public const string CubicBezier = "cad.cubic-bezier";
 	public const string CircularPipe = "cad.circular-pipe";
 	public const string LoftTransition = "cad.loft-transition";
+	public const string ClockingTransition = "cad.clocking-transition";
 	public const string RunnerOutput = "cad.runner-output";
 	public const string RunnerLength = "cad.runner-length";
 
@@ -94,6 +95,12 @@ public static class RunnerNodes
 				"Loft Transition",
 				In("runner", RunnerPortType.RunnerFeatures),
 				In("targetProfile", RunnerPortType.PipeProfile),
+				Out("runner", RunnerPortType.RunnerFeatures)
+			),
+			[ClockingTransition] = new RunnerNodeDefinition(
+				ClockingTransition,
+				"Clocking Transition",
+				In("runner", RunnerPortType.RunnerFeatures),
 				Out("runner", RunnerPortType.RunnerFeatures)
 			),
 			[RunnerOutput] = new RunnerNodeDefinition(
@@ -181,6 +188,7 @@ public sealed class RunnerNode
 				properties["endT"] = "100";
 				properties["endU"] = "0";
 				properties["endV"] = "0";
+				properties["endHandleLength"] = "33.333333333333336";
 				break;
 			case RunnerNodes.CircularPipe:
 				properties["outerDiameter"] = "42.4";
@@ -188,6 +196,10 @@ public sealed class RunnerNode
 				break;
 			case RunnerNodes.LoftTransition:
 				properties["length"] = "30";
+				properties["rotation"] = "0";
+				break;
+			case RunnerNodes.ClockingTransition:
+				properties["length"] = "20";
 				properties["rotation"] = "0";
 				break;
 		}
@@ -337,6 +349,22 @@ public sealed class RunnerGraph
 	public bool RemoveConnection(Guid connectionId)
 	{
 		return connections.RemoveAll(connection => connection.Id == connectionId) > 0;
+	}
+
+	public RunnerGraph DeepClone()
+	{
+		RunnerGraph clone = new(Id);
+		foreach (RunnerNode source in nodes)
+		{
+			RunnerNode node = new(source.DefinitionId, source.X, source.Y, source.Id);
+			node.ReplaceProperties(source.Properties);
+			clone.AddLoadedNode(node);
+		}
+		foreach (RunnerConnection connection in connections)
+		{
+			clone.AddLoadedConnection(connection with { });
+		}
+		return clone;
 	}
 
 	public static RunnerGraph CreateDefault(CadTopologyKind mateKind)

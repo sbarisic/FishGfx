@@ -44,6 +44,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private int autoVisibleSamples;
 	private string autoScreenshotPath;
 	private string[] bezierInspectorProperties = Array.Empty<string>();
+	private CollectorDraftState collectorDraft;
 
 	internal ManifoldCadApplication(string[] args)
 	{
@@ -129,8 +130,10 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		ui.CreateMateRequested += CreateOrRebindMate;
 		ui.FlipMateRequested += FlipMate;
 		ui.MateNameChanged += RenameMate;
-		ui.TransformChanged += TransformPart;
+		ui.CollectorNameChanged += RenameCollector;
+		ui.TransformChanged += TransformSelection;
 		ui.NodeParameterChanged += ChangeNodeParameter;
+		ui.CollectorParameterChanged += ChangeCollectorParameter;
 		ui.AddNodeRequested += () =>
 		{
 			if (ActiveRunner == null)
@@ -143,10 +146,15 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		};
 		ui.AddRunnerRequested += AddRunner;
 		ui.DeleteRunnerRequested += DeleteActiveRunner;
+		ui.AddCollectorRequested += AddCollector;
+		ui.DeleteCollectorRequested += DeleteActiveCollector;
+		ui.CollectorPresetRequested += ApplyCollectorPreset;
 		ui.RunnerNameChanged += RenameRunner;
 		ui.PartSelected += SelectPart;
 		ui.MateSelected += SelectMate;
 		ui.RunnerSelected += SelectRunner;
+		ui.CollectorSelected += SelectCollector;
+		ui.CollectorInletSelected += SelectCollectorInlet;
 		ui.FitRequested += viewport.Fit;
 		ui.OrthographicRequested += viewport.ToggleOrthographic;
 		ui.ViewRequested += viewport.SetView;
@@ -163,18 +171,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 				: "Pick-ray debug disabled.");
 		};
 		viewport.SelectionChanged += SelectViewportItem;
-		viewport.GizmoTranslationChanged += translation =>
-		{
-			CadPoint3 euler = selectedPart != null && eulerByPart.TryGetValue(selectedPart.Id, out CadPoint3 value)
-				? value
-				: default;
-			TransformPart(translation, euler);
-		};
-		viewport.GizmoRotationChanged += euler =>
-		{
-			CadPoint3 translation = selectedPart?.Transform.Translation ?? default;
-			TransformPart(translation, euler);
-		};
+		viewport.GizmoTranslationChanged += PreviewGizmoTranslation;
+		viewport.GizmoRotationChanged += PreviewGizmoRotation;
+		viewport.GizmoCommitRequested += CommitCollectorDraft;
 		nodeCanvas.SelectionChanged += node =>
 		{
 			ui.SetNode(node);
@@ -187,7 +186,16 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		{
 			if (ActiveRunner != null)
 			{
-				ActiveRunner.CommitEdit();
+				CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
+					candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == ActiveRunner.Id));
+				if (system == null)
+				{
+					ActiveRunner.CommitEdit();
+				}
+				else
+				{
+					system.CommitEdit();
+				}
 				RegenerateRunner(ActiveRunner);
 			}
 		};
@@ -198,7 +206,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	{
 		if (input.WasKeyPressed(Key.Escape))
 		{
-			if (!viewport.CancelBezierDraft())
+			if (!CancelCollectorDraft() && !viewport.CancelBezierDraft())
 			{
 				window.IsCloseRequested = true;
 			}
@@ -274,13 +282,47 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private void RefreshUi()
 	{
 		viewport.SetMates(project);
+		viewport.SetCollectors(project);
 		CadPoint3 euler = selectedPart != null && eulerByPart.TryGetValue(selectedPart.Id, out CadPoint3 value)
 			? value
 			: default;
-		viewport.SetSelectedPart(selectedPart, euler);
+		if (project.ActiveCollectorSystem != null)
+		{
+			CadCollectorInlet activeInlet = project.ActiveCollectorSystem.Inlets.FirstOrDefault(
+				inlet => inlet.Id == project.View.ActiveCollectorInletId);
+			CadFrame frame = collectorDraft?.SystemId == project.ActiveCollectorSystem.Id
+				&& collectorDraft.InletId == activeInlet?.Id
+				? collectorDraft.Frame
+				: activeInlet == null
+					? project.ActiveCollectorSystem.OutletFrame
+					: project.ActiveCollectorSystem.GetWorldInletFrame(activeInlet);
+			viewport.SetSelectedFrame(frame, collectorDraft?.EulerDegrees ?? default);
+		}
+		else
+		{
+			viewport.SetSelectedPart(selectedPart, euler);
+		}
 		ui.SetModel(project, selectedPart?.Id, selectedMate?.Id, ActiveRunner?.Id);
-		ui.SetPart(selectedPart, euler);
-		ui.SetNode(nodeCanvas.SelectedNode);
+		if (project.ActiveCollectorSystem != null)
+		{
+			CadCollectorInlet inlet = project.ActiveCollectorSystem.Inlets.FirstOrDefault(
+				item => item.Id == project.View.ActiveCollectorInletId);
+			CadFrame frame = inlet?.LocalFrame ?? project.ActiveCollectorSystem.OutletFrame;
+			ui.SetCollector(
+				project.ActiveCollectorSystem,
+				inlet,
+				frame.Origin,
+				frame.ToEulerDegrees()
+			);
+		}
+		else
+		{
+			ui.SetPart(selectedPart, euler);
+		}
+		if (project.ActiveCollectorSystem == null)
+		{
+			ui.SetNode(nodeCanvas.SelectedNode);
+		}
 	}
 
 	private void TryOperation(Action action)

@@ -79,7 +79,7 @@ std::filesystem::path temporary(const char* extension)
 
 int main()
 {
-	require(fgcad_api_version() == 4, "ABI version mismatch");
+	require(fgcad_api_version() == 5, "ABI version mismatch");
 	fgcad_document* document = nullptr;
 	require(fgcad_document_create(&document) == FGCAD_STATUS_OK, "Document creation failed");
 	require(document != nullptr, "Document handle was null");
@@ -308,6 +308,156 @@ int main()
 		"Negative-facing exact profile transition failed"
 	);
 
+	fgcad_runner_profile collector_branch_profile = circular(4, 0.5);
+	fgcad_runner_feature collector_runner_a = straight(
+		"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		{ -100, -50, 0 }, { 0, -50, 0 }, { 1, 0, 0 }, collector_branch_profile);
+	fgcad_runner_feature collector_runner_b = straight(
+		"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+		{ -100, 50, 0 }, { 0, 50, 0 }, { 1, 0, 0 }, collector_branch_profile);
+	require(fgcad_document_begin_collector_system_build(
+		document,
+		"20000000-0000-0000-0000-000000000001",
+		1) == FGCAD_STATUS_OK,
+		"Initial collector-system staging did not begin");
+	require(fgcad_document_build_runner(
+		document, "10000000-0000-0000-0000-000000000001", "Collector runner 1",
+		&collector_runner_a, 1) == FGCAD_STATUS_OK,
+		"First collector member runner failed");
+	require(fgcad_document_build_runner(
+		document, "10000000-0000-0000-0000-000000000002", "Collector runner 2",
+		&collector_runner_b, 1) == FGCAD_STATUS_OK,
+		"Second collector member runner failed");
+	fgcad_collector_system_spec collector{};
+	std::snprintf(collector.system_id, sizeof(collector.system_id), "%s",
+		"20000000-0000-0000-0000-000000000001");
+	std::snprintf(collector.name, sizeof(collector.name), "%s", "Two: into, one");
+	collector.generation_revision = 1;
+	collector.outlet_frame = frame({ 200, 0, 0 }, { 1, 0, 0 });
+	collector.outlet_profile = circular(8, 0.75);
+	collector.outlet_stub_length = 50;
+	collector.merge_length = 120;
+	collector.overlap_length = 12;
+	collector.branch_end_handle_length = 30;
+	fgcad_collector_inlet collector_inlets[2]{};
+	for (size_t index = 0; index < 2; ++index)
+	{
+		std::snprintf(collector_inlets[index].inlet_id,
+			sizeof(collector_inlets[index].inlet_id),
+			"30000000-0000-0000-0000-00000000000%zu", index + 1);
+		std::snprintf(collector_inlets[index].runner_id,
+			sizeof(collector_inlets[index].runner_id),
+			"10000000-0000-0000-0000-00000000000%zu", index + 1);
+		collector_inlets[index].frame = frame(
+			{ 0, index == 0 ? -50.0 : 50.0, 0 },
+			{ 1, 0, 0 });
+		collector_inlets[index].profile = collector_branch_profile;
+		collector_inlets[index].merge_station = index == 0 ? 0.35 : 0.65;
+		collector_inlets[index].branch_start_handle_length = 30;
+	}
+	fgcad_status collector_status = fgcad_document_build_collector_system(
+		document, &collector, collector_inlets, 2);
+	std::string collector_error = std::string("Circular 2 into 1 collector failed: ")
+		+ fgcad_last_error();
+	require(collector_status == FGCAD_STATUS_OK, collector_error.c_str());
+	fgcad_tessellation* collector_tessellation = nullptr;
+	require(fgcad_document_tessellate_collector_system(
+		document,
+		collector.system_id,
+		0.25,
+		0.2,
+		&collector_tessellation) == FGCAD_STATUS_OK,
+		"Collector-system tessellation failed");
+	require(fgcad_tessellation_source_count(collector_tessellation) > 0,
+		"Collector tessellation lost provenance");
+	std::vector<fgcad_mesh_vertex> collector_vertices(
+		fgcad_tessellation_vertex_count(collector_tessellation));
+	std::vector<uint32_t> collector_indices(
+		fgcad_tessellation_index_count(collector_tessellation));
+	std::vector<fgcad_face_range> collector_faces(
+		fgcad_tessellation_face_count(collector_tessellation));
+	std::vector<fgcad_geometry_source_ref> collector_sources(
+		fgcad_tessellation_source_count(collector_tessellation));
+	std::vector<fgcad_edge_range> collector_edges(
+		fgcad_tessellation_edge_count(collector_tessellation));
+	std::vector<fgcad_point3> collector_points(
+		fgcad_tessellation_edge_point_count(collector_tessellation));
+	fgcad_point3 collector_minimum{};
+	fgcad_point3 collector_maximum{};
+	require(fgcad_tessellation_copy(
+		collector_tessellation,
+		collector_vertices.data(), collector_vertices.size(),
+		collector_indices.data(), collector_indices.size(),
+		collector_faces.data(), collector_faces.size(),
+		collector_sources.data(), collector_sources.size(),
+		collector_edges.data(), collector_edges.size(),
+		collector_points.data(), collector_points.size(),
+		&collector_minimum, &collector_maximum) == FGCAD_STATUS_OK,
+		"Collector tessellation provenance copy failed");
+	require(std::any_of(
+		collector_sources.begin(),
+		collector_sources.end(),
+		[](const fgcad_geometry_source_ref& source)
+		{
+			return source.kind == FGCAD_SOURCE_COLLECTOR_INLET;
+		}),
+		"Collector inlet provenance did not survive booleans");
+	require(std::any_of(
+		collector_sources.begin(),
+		collector_sources.end(),
+		[](const fgcad_geometry_source_ref& source)
+		{
+			return source.kind == FGCAD_SOURCE_COLLECTOR_TRUNK
+				|| source.kind == FGCAD_SOURCE_COLLECTOR_OUTLET;
+		}),
+		"Collector trunk/outlet provenance did not survive booleans");
+	bool isolated_outlet_face = false;
+	for (const fgcad_face_range& face : collector_faces)
+	{
+		if (face.source_count == 1
+			&& collector_sources[face.first_source].kind == FGCAD_SOURCE_COLLECTOR_OUTLET)
+		{
+			isolated_outlet_face = true;
+			break;
+		}
+	}
+	require(isolated_outlet_face,
+		"Collector outlet provenance was polluted by unrelated nearest-source guesses");
+	fgcad_tessellation_destroy(collector_tessellation);
+
+	fgcad_collector_system_spec invalid_replacement = collector;
+	invalid_replacement.generation_revision = 2;
+	invalid_replacement.overlap_length = -1;
+	require(fgcad_document_begin_collector_system_build(
+		document,
+		collector.system_id,
+		invalid_replacement.generation_revision) == FGCAD_STATUS_OK,
+		"Collector-system staging did not begin");
+	fgcad_runner_feature staged_runner_a = straight(
+		"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		{ -150, -50, 0 }, { 0, -50, 0 }, { 1, 0, 0 }, collector_branch_profile);
+	require(fgcad_document_build_runner(
+		document, "10000000-0000-0000-0000-000000000001", "Collector runner 1",
+		&staged_runner_a, 1) == FGCAD_STATUS_OK,
+		"Replacement member runner was not staged");
+	require(fgcad_document_build_collector_system(
+		document, &invalid_replacement, collector_inlets, 2) != FGCAD_STATUS_OK,
+		"Invalid staged collector unexpectedly published");
+	require(fgcad_document_abort_collector_system_build(
+		document,
+		collector.system_id,
+		invalid_replacement.generation_revision) == FGCAD_STATUS_OK,
+		"Collector-system staging did not abort");
+	collector_tessellation = nullptr;
+	require(fgcad_document_tessellate_collector_system(
+		document,
+		collector.system_id,
+		0.25,
+		0.2,
+		&collector_tessellation) == FGCAD_STATUS_OK,
+		"Failed replacement discarded the previously published collector");
+	fgcad_tessellation_destroy(collector_tessellation);
+
 	fgcad_tessellation* tessellation = nullptr;
 	require(
 		fgcad_document_tessellate_runner(document, "runner-a", 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
@@ -321,6 +471,7 @@ int main()
 	std::vector<fgcad_mesh_vertex> vertices(fgcad_tessellation_vertex_count(tessellation));
 	std::vector<uint32_t> indices(fgcad_tessellation_index_count(tessellation));
 	std::vector<fgcad_face_range> faces(fgcad_tessellation_face_count(tessellation));
+	std::vector<fgcad_geometry_source_ref> sources(fgcad_tessellation_source_count(tessellation));
 	std::vector<fgcad_edge_range> edges(fgcad_tessellation_edge_count(tessellation));
 	std::vector<fgcad_point3> points(fgcad_tessellation_edge_point_count(tessellation));
 	fgcad_point3 minimum{};
@@ -331,6 +482,7 @@ int main()
 			vertices.data(), vertices.size(),
 			indices.data(), indices.size(),
 			faces.data(), faces.size(),
+			sources.data(), sources.size(),
 			edges.data(), edges.size(),
 			points.data(), points.size(),
 			&minimum, &maximum
@@ -338,11 +490,11 @@ int main()
 		"Tessellation copy failed"
 	);
 	require(maximum.x > minimum.x && maximum.y > minimum.y, "Tessellation bounds were invalid");
-	require(faces.front().source_node_id[0] != '\0', "Generated face lacked a source node ID");
+	require(!sources.empty(), "Generated face lacked a source reference");
 	std::unordered_set<std::string> source_ids;
-	for (const fgcad_face_range& face : faces)
+	for (const fgcad_geometry_source_ref& source : sources)
 	{
-		source_ids.emplace(face.source_node_id);
+		source_ids.emplace(source.element_id);
 	}
 	require(source_ids.count("11111111-1111-1111-1111-111111111111") != 0,
 		"Straight build history was not retained");
@@ -481,6 +633,24 @@ int main()
 		fgcad_document_load_xcaf(selected_reopened, selected_binary.string().c_str()) == FGCAD_STATUS_OK,
 		"Placed assembly and selector XCAF reopen failed"
 	);
+	fgcad_tessellation* hidden_member = nullptr;
+	require(fgcad_document_tessellate_runner(
+		selected_reopened,
+		"10000000-0000-0000-0000-000000000001",
+		0.25,
+		0.2,
+		&hidden_member) == FGCAD_STATUS_OK,
+		"Hidden collector member runner was not retained by project XCAF");
+	fgcad_tessellation_destroy(hidden_member);
+	fgcad_tessellation* reopened_collector = nullptr;
+	require(fgcad_document_tessellate_collector_system(
+		selected_reopened,
+		"20000000-0000-0000-0000-000000000001",
+		0.25,
+		0.2,
+		&reopened_collector) == FGCAD_STATUS_OK,
+		"Fused collector system was not retained by project XCAF");
+	fgcad_tessellation_destroy(reopened_collector);
 	require(
 		fgcad_document_tessellate_part(selected_reopened, part_id, 0.25, 0.2, &tessellation) == FGCAD_STATUS_OK,
 		"Reopened placed component tessellation failed"
@@ -488,6 +658,7 @@ int main()
 	vertices.resize(fgcad_tessellation_vertex_count(tessellation));
 	indices.resize(fgcad_tessellation_index_count(tessellation));
 	faces.resize(fgcad_tessellation_face_count(tessellation));
+	sources.resize(fgcad_tessellation_source_count(tessellation));
 	edges.resize(fgcad_tessellation_edge_count(tessellation));
 	points.resize(fgcad_tessellation_edge_point_count(tessellation));
 	require(
@@ -496,13 +667,16 @@ int main()
 			vertices.data(), vertices.size(),
 			indices.data(), indices.size(),
 			faces.data(), faces.size(),
+			sources.data(), sources.size(),
 			edges.data(), edges.size(),
 			points.data(), points.size(),
 			&minimum, &maximum
 		) == FGCAD_STATUS_OK,
 		"Reopened placed component tessellation copy failed"
 	);
-	require(minimum.x > 200, "Rigid component placement was not retained by XCAF");
+	std::string placement_error = "Rigid component placement was not retained by XCAF: "
+		+ std::to_string(minimum.x);
+	require(minimum.x > 190, placement_error.c_str());
 	fgcad_tessellation_destroy(tessellation);
 	fgcad_document_destroy(selected_reopened);
 

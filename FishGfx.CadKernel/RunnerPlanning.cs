@@ -12,7 +12,9 @@ public sealed record RunnerFeatureSpec(
 	double StartHandleLengthMillimetres,
 	CadPoint3 Control2Local,
 	CadPoint3 EndLocal,
-	RunnerSectionProfile OutputProfile
+	RunnerSectionProfile OutputProfile,
+	CadFrame? ConstrainedEndFrame = null,
+	double EndHandleLengthMillimetres = 0
 );
 
 public sealed class RunnerGraphPlan
@@ -20,6 +22,7 @@ public sealed class RunnerGraphPlan
 	public Guid RunnerId { get; internal set; }
 	public Guid OutputNodeId { get; internal set; }
 	public long EditRevision { get; internal set; }
+	public CadGenerationStamp GenerationStamp { get; internal set; }
 	public CadFrame StartFrame { get; internal set; }
 	public RunnerSectionProfile StartProfile { get; internal set; }
 	public IReadOnlyList<RunnerFeatureSpec> Features { get; internal set; } = Array.Empty<RunnerFeatureSpec>();
@@ -33,13 +36,14 @@ public static class RunnerGraphPlanner
 	public static RunnerGraphPlan Plan(
 		CadRunner runner,
 		IReadOnlyDictionary<Guid, CadMate> mates,
-		IReadOnlyDictionary<Guid, CadPart> parts
+		IReadOnlyDictionary<Guid, CadPart> parts,
+		RunnerEndpointConstraint? endpointConstraint = null
 	)
 	{
 		ArgumentNullException.ThrowIfNull(runner);
 		ArgumentNullException.ThrowIfNull(mates);
 		ArgumentNullException.ThrowIfNull(parts);
-		return new Planner(runner, mates, parts).Run();
+		return new Planner(runner, mates, parts, endpointConstraint).Run();
 	}
 
 	private sealed class Planner
@@ -48,18 +52,21 @@ public static class RunnerGraphPlanner
 		private readonly RunnerGraph graph;
 		private readonly IReadOnlyDictionary<Guid, CadMate> mates;
 		private readonly IReadOnlyDictionary<Guid, CadPart> parts;
+		private readonly RunnerEndpointConstraint? endpointConstraint;
 		private readonly List<CadDiagnostic> diagnostics = new();
 
 		internal Planner(
 			CadRunner runner,
 			IReadOnlyDictionary<Guid, CadMate> mates,
-			IReadOnlyDictionary<Guid, CadPart> parts
+			IReadOnlyDictionary<Guid, CadPart> parts,
+			RunnerEndpointConstraint? endpointConstraint
 		)
 		{
 			this.runner = runner;
 			graph = runner.Graph;
 			this.mates = mates;
 			this.parts = parts;
+			this.endpointConstraint = endpointConstraint;
 		}
 
 		internal RunnerGraphPlan Run()
@@ -75,6 +82,32 @@ public static class RunnerGraphPlanner
 			{
 				Error("RUN001", "A runner graph requires exactly one Runner Output node.", null);
 			}
+			if (endpointConstraint.HasValue
+				&& graph.Nodes.All(node => node.Id != endpointConstraint.Value.TerminalBezierNodeId
+					|| node.DefinitionId != RunnerNodes.CubicBezier))
+			{
+				Error("COL101", "The collector binding references a missing terminal Bézier node.", null);
+			}
+			if (endpointConstraint.HasValue
+				&& !CollectorSystemTransaction.ValidateTerminalPath(
+					graph,
+					new CadCollectorBinding
+					{
+						RunnerId = runner.Id,
+						TerminalBezierNodeId = endpointConstraint.Value.TerminalBezierNodeId,
+						ClockingTransitionNodeId =
+							endpointConstraint.Value.ClockingTransitionNodeId,
+					},
+					"bound runner",
+					out string terminalError
+				))
+			{
+				Error(
+					"COL102",
+					terminalError,
+					endpointConstraint.Value.TerminalBezierNodeId
+				);
+			}
 
 			PlanState state = outputs.Length == 1 && diagnostics.Count == 0
 				? BuildChain(InputNode(outputs[0], "runner"))
@@ -89,6 +122,8 @@ public static class RunnerGraphPlanner
 				RunnerId = runner.Id,
 				OutputNodeId = outputs.Length == 1 ? outputs[0].Id : Guid.Empty,
 				EditRevision = runner.EditRevision,
+				GenerationStamp = endpointConstraint?.Stamp
+					?? new CadGenerationStamp(CadGenerationOwnerKind.Runner, runner.Id, runner.EditRevision),
 				StartFrame = state?.StartFrame ?? default,
 				StartProfile = state?.StartProfile,
 				Features = state == null
@@ -133,6 +168,9 @@ public static class RunnerGraphPlanner
 					break;
 				case RunnerNodes.CubicBezier:
 					AddBezier(state, node);
+					break;
+				case RunnerNodes.ClockingTransition:
+					AddClockingTransition(state, node);
 					break;
 				default:
 					Error("RUN004", $"Node '{node.DefinitionId}' cannot construct the terminal runner chain.", node.Id);
@@ -232,11 +270,64 @@ public static class RunnerGraphPlanner
 			{
 				return;
 			}
+			CadFrame? constrainedFrame = null;
+			double endHandleLength = 0;
+			if (endpointConstraint.HasValue && endpointConstraint.Value.TerminalBezierNodeId == node.Id)
+			{
+				double? constrainedHandle = Number(
+					node,
+					"endHandleLength",
+					value => value > 0,
+					"must be greater than zero"
+				);
+				if (!constrainedHandle.HasValue)
+				{
+					return;
+				}
+				constrainedFrame = endpointConstraint.Value.BezierEndFrame;
+				endHandleLength = endpointConstraint.Value.EndHandleLength > 0
+					? endpointConstraint.Value.EndHandleLength
+					: constrainedHandle.Value;
+			}
 			state.Specifications.Add(new RunnerFeatureSpec(
 				node.Id, RunnerFeatureKind.CubicBezier, 0, 0, 0, 0, handle.Value,
 				new CadPoint3(c2t.Value, c2u.Value, c2v.Value),
 				new CadPoint3(et.Value, eu.Value, ev.Value),
-				state.ActiveProfile));
+				state.ActiveProfile,
+				constrainedFrame,
+				endHandleLength));
+		}
+
+		private void AddClockingTransition(PlanState state, RunnerNode node)
+		{
+			double? length = Number(node, "length", value => value > 0, "must be greater than zero");
+			double? rotation = Number(node, "rotation", _ => true, "must be finite");
+			if (!length.HasValue || !rotation.HasValue)
+			{
+				return;
+			}
+			if (endpointConstraint.HasValue
+				&& endpointConstraint.Value.ClockingTransitionNodeId == node.Id)
+			{
+				length = endpointConstraint.Value.ClockingTransitionLength;
+			}
+			CadFrame? constrainedFrame = endpointConstraint.HasValue
+				&& endpointConstraint.Value.ClockingTransitionNodeId == node.Id
+				? endpointConstraint.Value.TerminalFrame
+				: null;
+			state.Specifications.Add(new RunnerFeatureSpec(
+				node.Id,
+				RunnerFeatureKind.ClockingTransition,
+				length.Value,
+				0,
+				0,
+				rotation.Value * Math.PI / 180,
+				0,
+				CadPoint3.Zero,
+				CadPoint3.Zero,
+				state.ActiveProfile,
+				constrainedFrame
+			));
 		}
 
 		private PipeProfile? CircularProfile(RunnerNode node)

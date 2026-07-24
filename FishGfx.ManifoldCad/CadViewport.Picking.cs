@@ -121,6 +121,50 @@ internal sealed partial class CadViewport
 		return false;
 	}
 
+	private bool TryPickCollectorGlyph(PickContext context)
+	{
+		CollectorGlyph? glyph = collectorGlyphs
+			.Select(item => (Glyph: item, Screen: camera.WorldToScreen(ToVector(item.Frame.Origin))))
+			.Select(item => (
+				item.Glyph,
+				item.Screen,
+				Distance: Vector2.Distance(new Vector2(item.Screen.X, item.Screen.Y), context.LocalPoint)
+			))
+			.Where(item => IsProjectedPointVisible(item.Screen, context.FaceDepth)
+				&& item.Distance <= 13)
+			.OrderBy(item => item.Distance)
+			.ThenBy(item => item.Screen.Z)
+			.Select(item => (CollectorGlyph?)item.Glyph)
+			.FirstOrDefault();
+		if (!glyph.HasValue)
+		{
+			return false;
+		}
+		CollectorGlyph value = glyph.Value;
+		CadGeometrySourceRef source = value.InletId.HasValue
+			? new CadGeometrySourceRef(
+				CadGeometrySourceKind.CollectorInlet,
+				value.SystemId,
+				value.InletId.Value.ToString("D")
+			)
+			: new CadGeometrySourceRef(
+				CadGeometrySourceKind.CollectorOutlet,
+				value.SystemId,
+				"outlet"
+			);
+		SetSelection(new CadViewportSelection(
+			null,
+			null,
+			0,
+			null,
+			value.Frame.Origin,
+			null,
+			false,
+			new[] { source }
+		));
+		return true;
+	}
+
 	private bool TryPickMateCandidate(PickContext context)
 	{
 		if (TryFindMateCandidate(context, out MateCandidateGlyph candidate))
@@ -162,7 +206,9 @@ internal sealed partial class CadViewport
 				context.NearestFace.Value.TopologyId,
 				context.NearestFace.Value.SourceNodeId,
 				CadPoint3.FromVector3(context.Ray.GetPoint(context.NearestFace.Value.Distance)),
-				null
+				null,
+				false,
+				context.NearestFace.Value.Sources
 			)
 			: default);
 	}

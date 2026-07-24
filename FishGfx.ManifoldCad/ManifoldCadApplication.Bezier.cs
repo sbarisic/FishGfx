@@ -12,6 +12,19 @@ internal sealed partial class ManifoldCadApplication
 			viewport.ClearBezierEditor();
 			return;
 		}
+		CadCollectorInlet boundInlet = project.CollectorSystems
+			.SelectMany(system => system.Inlets)
+			.FirstOrDefault(inlet => inlet.Binding?.RunnerId == ActiveRunner.Id
+				&& inlet.Binding.TerminalBezierNodeId == node.Id);
+		if (boundInlet != null)
+		{
+			bezierInspectorProperties = Array.Empty<string>();
+			viewport.ClearBezierEditor();
+			ui.SetStatus(
+				"The terminal Bézier endpoint is collector-constrained; select its inlet glyph to move it."
+			);
+			return;
+		}
 		RunnerFeature feature = evaluation?.Chain?.Features
 			.FirstOrDefault(candidate => candidate.NodeId == node.Id
 				&& candidate.Kind == RunnerFeatureKind.CubicBezier);
@@ -44,7 +57,7 @@ internal sealed partial class ManifoldCadApplication
 		}
 
 		draft.Commit(node);
-		runner.CommitEdit();
+		CommitRunnerOrSystemEdit(runner);
 		RegenerateRunner(runner);
 		if (runner == ActiveRunner)
 		{

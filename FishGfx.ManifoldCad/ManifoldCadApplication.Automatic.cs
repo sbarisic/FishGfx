@@ -8,6 +8,8 @@ internal sealed partial class ManifoldCadApplication
 {
 	private void ValidateAutomaticFrame()
 	{
+		bool exerciseAllProfiles = !string.IsNullOrWhiteSpace(
+			Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_ALL_PROFILES"));
 		if (!ui.InteractionEnabled)
 		{
 			throw new InvalidOperationException("FishUI input must remain enabled in the CAD workspace.");
@@ -18,13 +20,15 @@ internal sealed partial class ManifoldCadApplication
 			throw new InvalidOperationException("Automatic graphical validation captured an empty frame.");
 		}
 
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
+		if (!exerciseAllProfiles
+			&& !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
 			&& viewport.MateCandidateCount == 0)
 		{
 			throw new InvalidOperationException("Automatic STEP validation found no visible mate candidates.");
 		}
 
-		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
+		if (!exerciseAllProfiles
+			&& !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP"))
 			&& !viewport.CanPickMateCandidate(CadLayout.Viewport(window.Width, window.Height)))
 		{
 			throw new InvalidOperationException("Automatic rotated-view validation could not pick a mate candidate.");
@@ -59,6 +63,10 @@ internal sealed partial class ManifoldCadApplication
 
 	private void ConfigureAutomaticFixture()
 	{
+		bool defaultRunnerOnly = !string.IsNullOrWhiteSpace(
+			Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_DEFAULT_RUNNER"));
+		bool exerciseAllProfiles = !string.IsNullOrWhiteSpace(
+			Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_ALL_PROFILES"));
 		CadPart part = project.AddPart("Automated flange fixture");
 		string stepPath = Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_STEP");
 		NativeTopologyDescriptor[] automaticCandidates = null;
@@ -70,10 +78,23 @@ internal sealed partial class ManifoldCadApplication
 		if (!string.IsNullOrWhiteSpace(stepPath))
 		{
 			document.ImportStepAsync(part, stepPath).GetAwaiter().GetResult();
-			automaticCandidates = document.GetTopologyAsync(part.Id).GetAwaiter().GetResult().Value
+			NativeTopologyDescriptor[] allCandidates = document.GetTopologyAsync(part.Id)
+				.GetAwaiter()
+				.GetResult()
+				.Value
 				.Where(item => item.Topology.Kind == CadTopologyKind.ClosedProfile)
 				.OrderByDescending(item => item.RadiusMillimetres)
 				.ToArray();
+			if (allCandidates.Length == 0)
+			{
+				throw new InvalidOperationException(
+					"Automatic STEP validation found no exact closed profiles.");
+			}
+			CadPoint3 preferredAxis = allCandidates[0].Axis;
+			automaticCandidates = exerciseAllProfiles
+				? allCandidates
+				: allCandidates.Where(candidate =>
+					CadPoint3.Dot(candidate.Axis, preferredAxis) > 0.9).ToArray();
 			NativeTopologyDescriptor candidate = automaticCandidates.First();
 			MateFrameResult frame = document.GetMateFrameAsync(candidate.Topology, candidate.Center)
 				.GetAwaiter()
@@ -94,23 +115,30 @@ internal sealed partial class ManifoldCadApplication
 
 		CadRunner runner = project.AddRunner(mate.Id);
 		RunnerNode automaticTail = runner.Graph.Nodes.Last(node => node.DefinitionId == RunnerNodes.Straight);
-		RunnerNode automaticOutput = runner.Graph.Nodes.Single(node => node.DefinitionId == RunnerNodes.RunnerOutput);
-		RunnerConnection automaticConnection = runner.Graph.Connections.Single(connection =>
-			connection.OutputNodeId == automaticTail.Id && connection.InputNodeId == automaticOutput.Id);
-		if (!runner.Graph.TrySpliceConnection(
-			automaticConnection.Id,
-			RunnerNodes.CubicBezier,
-			1320,
-			220,
-			out RunnerNode automaticBezier,
-			out string spliceError
-		))
+		RunnerNode automaticSelectedNode = automaticTail;
+		if (!defaultRunnerOnly)
 		{
-			throw new InvalidOperationException(spliceError);
+			RunnerNode automaticOutput = runner.Graph.Nodes.Single(
+				node => node.DefinitionId == RunnerNodes.RunnerOutput);
+			RunnerConnection automaticConnection = runner.Graph.Connections.Single(connection =>
+				connection.OutputNodeId == automaticTail.Id
+					&& connection.InputNodeId == automaticOutput.Id);
+			if (!runner.Graph.TrySpliceConnection(
+				automaticConnection.Id,
+				RunnerNodes.CubicBezier,
+				1320,
+				220,
+				out RunnerNode automaticBezier,
+				out string spliceError
+			))
+			{
+				throw new InvalidOperationException(spliceError);
+			}
+			automaticBezier.Properties["control2U"] = "10";
+			automaticBezier.Properties["endU"] = "20";
+			runner.CommitEdit();
+			automaticSelectedNode = automaticBezier;
 		}
-		automaticBezier.Properties["control2U"] = "10";
-		automaticBezier.Properties["endU"] = "20";
-		runner.CommitEdit();
 		selectedPart = part;
 		selectedMate = mate;
 		evaluation = project.EvaluateRunnerAsync(document, runner).GetAwaiter().GetResult();
@@ -132,9 +160,25 @@ internal sealed partial class ManifoldCadApplication
 		viewport.AddOrReplace(null, runner.Id, preview.Value, true);
 		viewport.SetActiveRunner(runner.Id);
 
-		for (int candidateIndex = 1; candidateIndex < Math.Min(automaticCandidates?.Length ?? 0, 8); candidateIndex++)
+		int automaticRunnerLimit = exerciseAllProfiles
+			? automaticCandidates?.Length ?? 0
+			: defaultRunnerOnly ? 1 : 8;
+		for (int candidateIndex = 1;
+			candidateIndex < Math.Min(automaticCandidates?.Length ?? 0, automaticRunnerLimit);
+			candidateIndex++)
 		{
 			NativeTopologyDescriptor additionalCandidate = automaticCandidates[candidateIndex];
+			if (exerciseAllProfiles)
+			{
+				Console.WriteLine(
+					$"[Manifold CAD] Automatic candidate {candidateIndex + 1}: "
+						+ $"topology={additionalCandidate.Topology.TopologyId} "
+						+ $"radius={additionalCandidate.RadiusMillimetres:F3} "
+						+ $"axis=({additionalCandidate.Axis.X:F3},"
+						+ $"{additionalCandidate.Axis.Y:F3},"
+						+ $"{additionalCandidate.Axis.Z:F3})"
+				);
+			}
 			CadMate additionalMate = project.AddMate(part.Id, $"Cylinder {candidateIndex + 1}");
 			MateFrameResult additionalFrame = document.GetMateFrameAsync(
 				additionalCandidate.Topology,
@@ -172,6 +216,30 @@ internal sealed partial class ManifoldCadApplication
 		project.SetActiveRunner(runner.Id);
 		viewport.SetActiveRunner(runner.Id);
 
+		if (!defaultRunnerOnly && project.Runners.Count >= 2)
+		{
+			Guid[] collectorMembers = project.Runners.Take(2).Select(item => item.Id).ToArray();
+			if (!project.TryCreateCollectorSystem(
+				collectorMembers,
+				CollectorLayoutPreset.Row,
+				"Automatic 2 into 1",
+				evaluations,
+				out CadCollectorSystem automaticCollector,
+				out string collectorError
+			))
+			{
+				throw new InvalidOperationException(collectorError);
+			}
+			RegenerateCollectorSystem(automaticCollector);
+			if (!automaticCollector.IsResolved)
+			{
+				throw new InvalidOperationException(
+					automaticCollector.Diagnostic ?? "Automatic collector generation failed.");
+			}
+			project.SetActiveRunner(runner.Id);
+			viewport.SetActiveRunner(runner.Id);
+		}
+
 		if (string.IsNullOrWhiteSpace(stepPath))
 		{
 			viewport.SetOrbit(38, 24, false);
@@ -183,13 +251,36 @@ internal sealed partial class ManifoldCadApplication
 
 		viewport.Fit();
 
-		if (!string.IsNullOrWhiteSpace(stepPath)
+		HashSet<Guid> boundRunnerIds = project.CollectorSystems
+			.SelectMany(system => system.Inlets)
+			.Select(inlet => inlet.Binding.RunnerId)
+			.ToHashSet();
+		foreach (CadRunner generatedRunner in project.Runners.Where(
+			runner => !boundRunnerIds.Contains(runner.Id)))
+		{
+			if (!viewport.HasRunnerGeometry(generatedRunner.Id))
+			{
+				throw new InvalidOperationException(
+					$"Automatic runner '{generatedRunner.Name}' has no rendered exact geometry.");
+			}
+		}
+		foreach (CadCollectorSystem generatedSystem in project.CollectorSystems)
+		{
+			if (!viewport.HasRunnerGeometry(generatedSystem.Id))
+			{
+				throw new InvalidOperationException(
+					$"Automatic collector '{generatedSystem.Name}' has no rendered exact geometry.");
+			}
+		}
+
+		if (!exerciseAllProfiles
+			&& !string.IsNullOrWhiteSpace(stepPath)
 			&& !viewport.TryCapturePickingRayToVisibleCandidate(CadLayout.Viewport(window.Width, window.Height)))
 		{
 			throw new InvalidOperationException("Automatic fixture could not capture its debug picking ray.");
 		}
 
-		nodeCanvas.SelectBySource(automaticBezier.Id, runner.Graph);
+		nodeCanvas.SelectBySource(automaticSelectedNode.Id, runner.Graph);
 	}
 
 	private unsafe void CaptureScreenshot(string path)

@@ -9,7 +9,7 @@ internal sealed partial class CadViewport
 {
 	private bool TryBeginGizmo(CadRect bounds, Vector2 mouse)
 	{
-		if (selectedPart == null)
+		if (!hasFrameGizmo)
 		{
 			return false;
 		}
@@ -20,7 +20,7 @@ internal sealed partial class CadViewport
 		}
 
 		Vector2 local = ToCameraPoint(bounds, mouse);
-		Vector3 origin = camera.WorldToScreen(ToVector(selectedPart.Transform.Translation));
+		Vector3 origin = camera.WorldToScreen(ToVector(frameGizmoOrigin));
 		Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
 		float length = Math.Max(distance * 0.08f, 20);
 		float best = 7;
@@ -28,7 +28,7 @@ internal sealed partial class CadViewport
 
 		for (int index = 0; index < axes.Length; index++)
 		{
-			Vector3 end = camera.WorldToScreen(ToVector(selectedPart.Transform.Translation) + axes[index] * length);
+			Vector3 end = camera.WorldToScreen(ToVector(frameGizmoOrigin) + axes[index] * length);
 			float screenDistance = DistanceToSegment(
 				local,
 				new Vector2(origin.X, origin.Y),
@@ -49,7 +49,7 @@ internal sealed partial class CadViewport
 
 		activeGizmoAxis = selected;
 		gizmoDragStart = mouse;
-		gizmoTranslationStart = selectedPart.Transform.Translation;
+		gizmoTranslationStart = frameGizmoOrigin;
 		return true;
 	}
 
@@ -81,7 +81,7 @@ internal sealed partial class CadViewport
 	private bool TryBeginRotationGizmo(CadRect bounds, Vector2 mouse)
 	{
 		Vector2 local = ToCameraPoint(bounds, mouse);
-		Vector3 center = ToVector(selectedPart.Transform.Translation);
+		Vector3 center = ToVector(frameGizmoOrigin);
 		Vector3[] axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
 		float radius = Math.Max(distance * 0.065f, 16);
 		float best = 7;
@@ -231,12 +231,12 @@ internal sealed partial class CadViewport
 
 	private void DrawPartGizmo(RenderPass pass)
 	{
-		if (selectedPart == null)
+		if (!hasFrameGizmo)
 		{
 			return;
 		}
 
-		Vector3 origin = ToVector(selectedPart.Transform.Translation);
+		Vector3 origin = ToVector(frameGizmoOrigin);
 		float length = Math.Max(distance * 0.08f, 20);
 
 		if (rotationGizmo)

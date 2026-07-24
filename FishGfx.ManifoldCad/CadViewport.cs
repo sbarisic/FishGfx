@@ -13,7 +13,8 @@ internal readonly record struct CadViewportSelection(
 	Guid? SourceNodeId,
 	CadPoint3 HitPoint,
 	Guid? MateId,
-	bool IsMateCandidate = false
+	bool IsMateCandidate = false,
+	IReadOnlyList<CadGeometrySourceRef> Sources = null
 );
 
 internal sealed partial class CadViewport : IDisposable
@@ -23,6 +24,9 @@ internal sealed partial class CadViewport : IDisposable
 	private readonly List<SceneItem> items = new();
 	private readonly List<MateGlyph> mates = new();
 	private readonly List<MateCandidateGlyph> mateCandidates = new();
+	private readonly List<CollectorGlyph> collectorGlyphs = new();
+	private readonly List<CadPoint3[]> collectorDraftCurves = new();
+	private bool collectorDraftInvalid;
 	private readonly Mesh3D candidateSphere;
 	private readonly Mesh3D gridMesh;
 	private RenderTarget target;
@@ -34,6 +38,8 @@ internal sealed partial class CadViewport : IDisposable
 	private bool orthographic;
 	private float scrollDelta;
 	private CadPart selectedPart;
+	private bool hasFrameGizmo;
+	private CadPoint3 frameGizmoOrigin;
 	private CadPoint3 selectedEuler;
 	private bool rotationGizmo;
 	private int activeGizmoAxis = -1;
@@ -62,6 +68,7 @@ internal sealed partial class CadViewport : IDisposable
 
 	internal event Action<CadPoint3> GizmoTranslationChanged;
 	internal event Action<CadPoint3> GizmoRotationChanged;
+	internal event Action GizmoCommitRequested;
 
 	internal CadViewportSelection Selection { get; private set; }
 	internal int MateCandidateCount => mateCandidates.Count;
@@ -95,9 +102,11 @@ internal sealed partial class CadViewport : IDisposable
 		items.Clear();
 		mates.Clear();
 		mateCandidates.Clear();
+		collectorGlyphs.Clear();
 		selectedFaceMesh?.Dispose();
 		selectedFaceMesh = null;
 		selectedPart = null;
+		hasFrameGizmo = false;
 		Selection = default;
 		activeRunnerId = null;
 		hasDebugPickingRay = false;
@@ -110,6 +119,63 @@ internal sealed partial class CadViewport : IDisposable
 	{
 		selectedPart = part;
 		selectedEuler = euler;
+		hasFrameGizmo = part != null;
+		frameGizmoOrigin = part?.Transform.Translation ?? default;
+	}
+
+	internal void SetSelectedFrame(CadFrame frame, CadPoint3 euler)
+	{
+		selectedPart = null;
+		hasFrameGizmo = true;
+		frameGizmoOrigin = frame.Origin;
+		selectedEuler = euler;
+	}
+
+	internal void SetCollectorDraft(
+		CadCollectorSystem system,
+		Guid? inletId,
+		CadFrame frame,
+		bool invalid = false
+	)
+	{
+		int index = collectorGlyphs.FindIndex(item =>
+			item.SystemId == system.Id && item.InletId == inletId);
+		if (index >= 0)
+		{
+			collectorGlyphs[index] = new CollectorGlyph(system.Id, inletId, frame);
+		}
+		collectorDraftCurves.Clear();
+		collectorDraftInvalid = invalid;
+		CadFrame outlet = inletId.HasValue ? system.OutletFrame : frame;
+		double trunkLength = system.OutletStubLength
+			+ system.MergeLength
+			+ system.OverlapLength;
+		collectorDraftCurves.Add(new[]
+		{
+			outlet.Origin - outlet.Tangent * trunkLength,
+			outlet.Origin,
+		});
+		foreach (CadCollectorInlet inlet in system.Inlets)
+		{
+			CadFrame inletFrame = inlet.Id == inletId ? frame : system.GetWorldInletFrame(inlet);
+			CadPoint3 p0 = inletFrame.Origin;
+			CadPoint3 p1 = p0 + inletFrame.Tangent * inlet.BranchStartHandleLength;
+			CadPoint3 junction = outlet.Origin - outlet.Tangent
+				* (system.OutletStubLength + inlet.MergeStation * system.MergeLength);
+			CadPoint3 p3 = junction + outlet.Tangent * system.OverlapLength;
+			CadPoint3 p2 = p3 - outlet.Tangent * system.BranchEndHandleLength;
+			CadPoint3[] samples = new CadPoint3[25];
+			for (int sample = 0; sample < samples.Length; ++sample)
+			{
+				double t = sample / (double)(samples.Length - 1);
+				double inverse = 1 - t;
+				samples[sample] = p0 * (inverse * inverse * inverse)
+					+ p1 * (3 * inverse * inverse * t)
+					+ p2 * (3 * inverse * t * t)
+					+ p3 * (t * t * t);
+			}
+			collectorDraftCurves.Add(samples);
+		}
 	}
 
 	internal bool ToggleGizmoMode()
@@ -170,6 +236,15 @@ internal sealed partial class CadViewport : IDisposable
 		}
 	}
 
+	internal bool HasRunnerGeometry(Guid runnerId)
+	{
+		return items.Any(item =>
+			item.IsRunner
+				&& item.RunnerId == runnerId
+				&& item.Tessellation.Vertices.Length > 0
+				&& item.Tessellation.Indices.Length > 0);
+	}
+
 	internal void SetMates(ManifoldProject project)
 	{
 		mates.Clear();
@@ -185,6 +260,30 @@ internal sealed partial class CadViewport : IDisposable
 			.Select(mate => (mate.PartId, mate.Topology.Value.TopologyId))
 			.ToHashSet();
 		mateCandidates.RemoveAll(candidate => bound.Contains((candidate.PartId, candidate.TopologyId)));
+	}
+
+	internal void SetCollectors(ManifoldProject project)
+	{
+		collectorGlyphs.Clear();
+		collectorDraftCurves.Clear();
+		collectorDraftInvalid = false;
+		foreach (CadCollectorSystem system in project.CollectorSystems)
+		{
+			collectorGlyphs.Add(new CollectorGlyph(system.Id, null, system.OutletFrame));
+			foreach (CadCollectorInlet inlet in system.Inlets)
+			{
+				collectorGlyphs.Add(new CollectorGlyph(
+					system.Id,
+					inlet.Id,
+					system.GetWorldInletFrame(inlet)
+				));
+			}
+		}
+		CadCollectorSystem invalid = project.ActiveCollectorSystem;
+		if (invalid?.IsResolved == false)
+		{
+			SetCollectorDraft(invalid, null, invalid.OutletFrame, true);
+		}
 	}
 
 	internal void SetMateCandidates(CadPart part, IReadOnlyList<NativeTopologyDescriptor> topology)
@@ -243,6 +342,10 @@ internal sealed partial class CadViewport : IDisposable
 		if (input.WasMouseButtonReleased(MouseButton.Left))
 		{
 			CompleteBezierDrag();
+			if (activeGizmoAxis >= 0)
+			{
+				GizmoCommitRequested?.Invoke();
+			}
 			activeGizmoAxis = -1;
 		}
 
@@ -281,6 +384,7 @@ internal sealed partial class CadViewport : IDisposable
 			CaptureDebugPickingRay(context);
 
 			if (TryBeginBezierHandle(context)
+				|| TryPickCollectorGlyph(context)
 				|| TryPickMateGlyph(context)
 				|| TryPickMateCandidate(context))
 			{

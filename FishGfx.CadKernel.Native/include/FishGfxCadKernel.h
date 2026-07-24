@@ -46,6 +46,7 @@ typedef enum fgcad_feature_kind
 	FGCAD_FEATURE_BEND = 1,
 	FGCAD_FEATURE_LOFT_TRANSITION = 2,
 	FGCAD_FEATURE_CUBIC_BEZIER = 3,
+	FGCAD_FEATURE_CLOCKING_TRANSITION = 4,
 } fgcad_feature_kind;
 
 typedef enum fgcad_profile_kind
@@ -104,10 +105,26 @@ typedef struct fgcad_mesh_vertex
 typedef struct fgcad_face_range
 {
 	uint64_t topology_id;
-	char source_node_id[40];
+	uint32_t first_source;
+	uint32_t source_count;
 	uint32_t first_index;
 	uint32_t index_count;
 } fgcad_face_range;
+
+typedef enum fgcad_geometry_source_kind
+{
+	FGCAD_SOURCE_RUNNER_NODE = 0,
+	FGCAD_SOURCE_COLLECTOR_INLET = 1,
+	FGCAD_SOURCE_COLLECTOR_TRUNK = 2,
+	FGCAD_SOURCE_COLLECTOR_OUTLET = 3,
+} fgcad_geometry_source_kind;
+
+typedef struct fgcad_geometry_source_ref
+{
+	fgcad_geometry_source_kind kind;
+	char owner_id[40];
+	char element_id[40];
+} fgcad_geometry_source_ref;
 
 typedef struct fgcad_edge_range
 {
@@ -162,7 +179,34 @@ typedef struct fgcad_runner_feature_spec
 	fgcad_point3 control2_local;
 	fgcad_point3 end_local;
 	fgcad_runner_profile output_profile;
+	int32_t has_constrained_end_frame;
+	fgcad_frame constrained_end_frame;
+	double end_handle_length;
 } fgcad_runner_feature_spec;
+
+typedef struct fgcad_collector_inlet
+{
+	char inlet_id[40];
+	char runner_id[40];
+	fgcad_frame frame;
+	fgcad_frame profile_reference_frame;
+	fgcad_runner_profile profile;
+	double merge_station;
+	double branch_start_handle_length;
+} fgcad_collector_inlet;
+
+typedef struct fgcad_collector_system_spec
+{
+	char system_id[40];
+	char name[128];
+	uint64_t generation_revision;
+	fgcad_frame outlet_frame;
+	fgcad_runner_profile outlet_profile;
+	double outlet_stub_length;
+	double merge_length;
+	double overlap_length;
+	double branch_end_handle_length;
+} fgcad_collector_system_spec;
 
 FGCAD_API uint32_t fgcad_api_version(void);
 FGCAD_API const char* fgcad_last_error(void);
@@ -244,6 +288,31 @@ FGCAD_API fgcad_status fgcad_document_rename_runner(
 	const char* runner_id,
 	const char* runner_name
 );
+FGCAD_API fgcad_status fgcad_document_build_collector_system(
+	fgcad_document* document,
+	const fgcad_collector_system_spec* system,
+	const fgcad_collector_inlet* inlets,
+	size_t inlet_count
+);
+FGCAD_API fgcad_status fgcad_document_begin_collector_system_build(
+	fgcad_document* document,
+	const char* system_id,
+	uint64_t generation_revision
+);
+FGCAD_API fgcad_status fgcad_document_abort_collector_system_build(
+	fgcad_document* document,
+	const char* system_id,
+	uint64_t generation_revision
+);
+FGCAD_API fgcad_status fgcad_document_remove_collector_system(
+	fgcad_document* document,
+	const char* system_id
+);
+FGCAD_API fgcad_status fgcad_document_rename_collector_system(
+	fgcad_document* document,
+	const char* system_id,
+	const char* name
+);
 FGCAD_API fgcad_status fgcad_document_tessellate_part(
 	fgcad_document* document,
 	const char* part_id,
@@ -258,10 +327,18 @@ FGCAD_API fgcad_status fgcad_document_tessellate_runner(
 	double angular_deflection,
 	fgcad_tessellation** tessellation
 );
+FGCAD_API fgcad_status fgcad_document_tessellate_collector_system(
+	fgcad_document* document,
+	const char* system_id,
+	double linear_deflection,
+	double angular_deflection,
+	fgcad_tessellation** tessellation
+);
 FGCAD_API void fgcad_tessellation_destroy(fgcad_tessellation* tessellation);
 FGCAD_API size_t fgcad_tessellation_vertex_count(const fgcad_tessellation* tessellation);
 FGCAD_API size_t fgcad_tessellation_index_count(const fgcad_tessellation* tessellation);
 FGCAD_API size_t fgcad_tessellation_face_count(const fgcad_tessellation* tessellation);
+FGCAD_API size_t fgcad_tessellation_source_count(const fgcad_tessellation* tessellation);
 FGCAD_API size_t fgcad_tessellation_edge_count(const fgcad_tessellation* tessellation);
 FGCAD_API size_t fgcad_tessellation_edge_point_count(const fgcad_tessellation* tessellation);
 FGCAD_API fgcad_status fgcad_tessellation_copy(
@@ -272,6 +349,8 @@ FGCAD_API fgcad_status fgcad_tessellation_copy(
 	size_t index_capacity,
 	fgcad_face_range* faces,
 	size_t face_capacity,
+	fgcad_geometry_source_ref* sources,
+	size_t source_capacity,
 	fgcad_edge_range* edges,
 	size_t edge_capacity,
 	fgcad_point3* edge_points,

@@ -8,6 +8,7 @@ public enum RunnerFeatureKind
 	Bend,
 	LoftTransition,
 	CubicBezier,
+	ClockingTransition,
 }
 
 public enum RunnerPathPointKind
@@ -125,6 +126,7 @@ public sealed class RunnerEvaluationResult
 	public Guid RunnerId { get; internal set; }
 	public Guid OutputNodeId { get; internal set; }
 	public long EditRevision { get; internal set; }
+	public CadGenerationStamp GenerationStamp { get; internal set; }
 	public RunnerFeatureChain Chain { get; internal set; }
 	public IReadOnlyList<CadDiagnostic> Diagnostics { get; internal set; } = Array.Empty<CadDiagnostic>();
 	public double LengthMillimetres => Chain?.LengthMillimetres ?? 0;
