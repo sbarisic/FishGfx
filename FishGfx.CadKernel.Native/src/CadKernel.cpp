@@ -2919,9 +2919,10 @@ fgcad_status fgcad_document_build_collector_system(
 		auto outlet_radii = radii(system->outlet_profile);
 		gp_Pnt outlet_origin = point(system->outlet_frame.origin);
 		gp_Dir outlet_tangent = unit(system->outlet_frame.tangent);
-		double trunk_length = system->outlet_stub_length
-			+ system->merge_length
-			+ system->overlap_length;
+		// Keep the cylindrical trunk at the outlet end of the merge. Extending it
+		// through the full merge length produces side branches into an open-looking
+		// header instead of the compact fabricated collector envelope.
+		double trunk_length = system->outlet_stub_length + system->overlap_length;
 		gp_Pnt trunk_start = outlet_origin.Translated(-gp_Vec(outlet_tangent) * trunk_length);
 		gp_Ax2 trunk_axes(trunk_start, outlet_tangent, unit(system->outlet_frame.normal));
 		TopoDS_Shape outer_union = BRepPrimAPI_MakeCylinder(
@@ -3002,11 +3003,14 @@ fgcad_status fgcad_document_build_collector_system(
 			gp_Dir inlet_tangent = unit(inlet.frame.tangent);
 			gp_Pnt p1 = p0.Translated(
 				gp_Vec(inlet_tangent) * inlet.branch_start_handle_length);
-			gp_Pnt junction = outlet_origin.Translated(
+			// All branches converge at the upstream end of the outlet stub. A small
+			// station-dependent axial offset keeps seams deterministic without
+			// spreading the branches along the complete trunk.
+			double merge_stagger =
+				(inlet.merge_station - 0.5) * system->overlap_length;
+			gp_Pnt p3 = outlet_origin.Translated(
 				-gp_Vec(outlet_tangent)
-				* (system->outlet_stub_length + inlet.merge_station * system->merge_length));
-			gp_Pnt p3 = junction.Translated(
-				gp_Vec(outlet_tangent) * system->overlap_length);
+					* (system->outlet_stub_length + merge_stagger));
 			double outlet_depth = gp_Vec(p3, outlet_origin).Dot(gp_Vec(outlet_tangent));
 			if (!(outlet_depth > Precision::Confusion())
 				|| outlet_depth >= trunk_length - Precision::Confusion())

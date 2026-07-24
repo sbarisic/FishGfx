@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -423,6 +424,42 @@ int main()
 	}
 	require(isolated_outlet_face,
 		"Collector outlet provenance was polluted by unrelated nearest-source guesses");
+	double trunk_minimum_x = std::numeric_limits<double>::infinity();
+	for (const fgcad_face_range& face : collector_faces)
+	{
+		bool belongs_to_trunk = false;
+		bool belongs_to_branch = false;
+		for (uint32_t source_index = 0; source_index < face.source_count; ++source_index)
+		{
+			fgcad_geometry_source_kind kind =
+				collector_sources[face.first_source + source_index].kind;
+			belongs_to_trunk = belongs_to_trunk
+				|| kind == FGCAD_SOURCE_COLLECTOR_TRUNK
+				|| kind == FGCAD_SOURCE_COLLECTOR_OUTLET;
+			belongs_to_branch = belongs_to_branch
+				|| kind == FGCAD_SOURCE_COLLECTOR_INLET
+				|| kind == FGCAD_SOURCE_RUNNER_NODE;
+		}
+		if (!belongs_to_trunk || belongs_to_branch)
+		{
+			continue;
+		}
+		for (uint32_t index = face.first_index;
+			index < face.first_index + face.index_count;
+			++index)
+		{
+			trunk_minimum_x = std::min(
+				trunk_minimum_x,
+				static_cast<double>(collector_vertices[collector_indices[index]].x));
+		}
+	}
+	double expected_trunk_start_x = collector.outlet_frame.origin.x
+		- collector.outlet_stub_length
+		- collector.overlap_length;
+	require(
+		std::isfinite(trunk_minimum_x)
+			&& trunk_minimum_x >= expected_trunk_start_x - 1.0,
+		"Collector outlet trunk extends backward through the merge envelope");
 	fgcad_tessellation_destroy(collector_tessellation);
 
 	fgcad_collector_system_spec invalid_replacement = collector;
