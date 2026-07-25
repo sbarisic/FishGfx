@@ -405,8 +405,8 @@ int main()
 		collector_minimum.x < -90,
 		"Collector outlet trimming discarded the upstream member runners");
 	require(
-		collector_maximum.x <= 200.01,
-		"Collector outlet trimming retained the temporary downstream overlap");
+		collector_maximum.x - collector_minimum.x > 250,
+		"Collector outlet trimming collapsed the full runner-to-outlet span");
 	require(std::any_of(
 		collector_sources.begin(),
 		collector_sources.end(),
@@ -448,6 +448,180 @@ int main()
 		}),
 		"Branch-only collector unexpectedly generated a separate trunk");
 	fgcad_tessellation_destroy(collector_tessellation);
+
+	fgcad_runner_profile flange_collector_profile = circular(42.4, 2);
+	fgcad_runner_feature flange_runner_a = straight(
+		"82000000-0000-0000-0000-000000000001",
+		{ -163.5, -39.25, 0 },
+		{ -63.5, -39.25, 0 },
+		{ 1, 0, 0 },
+		flange_collector_profile);
+	fgcad_runner_feature flange_runner_b = straight(
+		"82000000-0000-0000-0000-000000000002",
+		{ -163.5, 39.25, 0 },
+		{ -63.5, 39.25, 0 },
+		{ 1, 0, 0 },
+		flange_collector_profile);
+	fgcad_collector_system_spec flange_collector = collector;
+	std::snprintf(
+		flange_collector.system_id,
+		sizeof(flange_collector.system_id),
+		"80000000-0000-0000-0000-000000000001");
+	std::snprintf(
+		flange_collector.name,
+		sizeof(flange_collector.name),
+		"Full-size flange collector");
+	flange_collector.outlet_frame = frame({ 0, 0, 0 }, { 1, 0, 0 });
+	flange_collector.outlet_profile = circular(63.5, 2);
+	flange_collector.branch_end_handle_length = 35;
+	fgcad_collector_inlet flange_inlets[2]{};
+	for (size_t index = 0; index < 2; ++index)
+	{
+		std::snprintf(
+			flange_inlets[index].inlet_id,
+			sizeof(flange_inlets[index].inlet_id),
+			"83000000-0000-0000-0000-00000000000%zu",
+			index + 1);
+		std::snprintf(
+			flange_inlets[index].runner_id,
+			sizeof(flange_inlets[index].runner_id),
+			"81000000-0000-0000-0000-00000000000%zu",
+			index + 1);
+		flange_inlets[index].frame = frame(
+			{ -63.5, index == 0 ? -39.25 : 39.25, 0 },
+			{ 1, 0, 0 });
+		flange_inlets[index].profile = flange_collector_profile;
+		flange_inlets[index].merge_station = 0.5;
+		flange_inlets[index].branch_start_handle_length = 35;
+	}
+	require(
+		fgcad_document_begin_collector_system_build(
+			document,
+			flange_collector.system_id,
+			flange_collector.generation_revision) == FGCAD_STATUS_OK,
+		"Full-size flange collector staging did not begin");
+	require(
+		fgcad_document_build_runner(
+			document,
+			flange_inlets[0].runner_id,
+			"Full-size flange runner 1",
+			&flange_runner_a,
+			1) == FGCAD_STATUS_OK,
+		"First full-size flange collector runner failed");
+	require(
+		fgcad_document_build_runner(
+			document,
+			flange_inlets[1].runner_id,
+			"Full-size flange runner 2",
+			&flange_runner_b,
+			1) == FGCAD_STATUS_OK,
+		"Second full-size flange collector runner failed");
+	fgcad_status flange_collector_status = fgcad_document_build_collector_system(
+		document,
+		&flange_collector,
+		flange_inlets,
+		2);
+	std::string flange_collector_error =
+		std::string("Full-size flange collector failed: ") + fgcad_last_error();
+	require(
+		flange_collector_status == FGCAD_STATUS_OK,
+		flange_collector_error.c_str());
+	fgcad_tessellation* flange_collector_tessellation = nullptr;
+	require(
+		fgcad_document_tessellate_collector_system(
+			document,
+			flange_collector.system_id,
+			0.25,
+			0.2,
+			&flange_collector_tessellation) == FGCAD_STATUS_OK,
+		"Full-size flange collector tessellation failed");
+	require(
+		fgcad_tessellation_vertex_count(flange_collector_tessellation) > 0,
+		"Full-size flange collector tessellation was empty");
+	std::vector<fgcad_mesh_vertex> flange_vertices(
+		fgcad_tessellation_vertex_count(flange_collector_tessellation));
+	std::vector<uint32_t> flange_indices(
+		fgcad_tessellation_index_count(flange_collector_tessellation));
+	std::vector<fgcad_face_range> flange_faces(
+		fgcad_tessellation_face_count(flange_collector_tessellation));
+	std::vector<fgcad_geometry_source_ref> flange_sources(
+		fgcad_tessellation_source_count(flange_collector_tessellation));
+	std::vector<fgcad_edge_range> flange_edges(
+		fgcad_tessellation_edge_count(flange_collector_tessellation));
+	std::vector<fgcad_point3> flange_points(
+		fgcad_tessellation_edge_point_count(flange_collector_tessellation));
+	fgcad_point3 flange_minimum{};
+	fgcad_point3 flange_maximum{};
+	require(
+		fgcad_tessellation_copy(
+			flange_collector_tessellation,
+			flange_vertices.data(),
+			flange_vertices.size(),
+			flange_indices.data(),
+			flange_indices.size(),
+			flange_faces.data(),
+			flange_faces.size(),
+			flange_sources.data(),
+			flange_sources.size(),
+			flange_edges.data(),
+			flange_edges.size(),
+			flange_points.data(),
+			flange_points.size(),
+			&flange_minimum,
+			&flange_maximum) == FGCAD_STATUS_OK,
+		"Full-size flange collector tessellation copy failed");
+	require(
+		flange_maximum.x - flange_minimum.x > 150,
+		"Full-size collector lost its runner-to-outlet axial span");
+	require(
+		flange_maximum.y - flange_minimum.y > 70,
+		"Full-size collector lost one side of its two-branch merge");
+	size_t retained_inlet_interface_faces = 0;
+	for (const fgcad_face_range& face : flange_faces)
+	{
+		bool lies_on_inlet_interface = face.index_count > 0;
+		for (uint32_t offset = 0;
+			offset < face.index_count && lies_on_inlet_interface;
+			++offset)
+		{
+			uint32_t vertex_index = flange_indices[face.first_index + offset];
+			lies_on_inlet_interface = std::abs(
+				flange_vertices[vertex_index].x + 63.5f) <= 1.0e-3f;
+		}
+		if (lies_on_inlet_interface)
+		{
+			++retained_inlet_interface_faces;
+		}
+	}
+	require(
+		retained_inlet_interface_faces == 0,
+		"Full-size collector retained an internal annular inlet membrane");
+	bool retained_straight_interface_bridge = std::any_of(
+		flange_vertices.begin(),
+		flange_vertices.end(),
+		[](const fgcad_mesh_vertex& vertex)
+		{
+			return vertex.x > -33.0f
+				&& vertex.x < -27.0f
+				&& std::abs(vertex.y) > 55.0f;
+		});
+	require(
+		!retained_straight_interface_bridge,
+		"Full-size collector retained a temporary straight inlet bridge");
+	fgcad_tessellation_destroy(flange_collector_tessellation);
+	require(
+		fgcad_document_remove_collector_system(
+			document,
+			flange_collector.system_id) == FGCAD_STATUS_OK,
+		"Full-size flange collector cleanup failed");
+	for (const fgcad_collector_inlet& inlet : flange_inlets)
+	{
+		require(
+			fgcad_document_remove_runner(
+				document,
+				inlet.runner_id) == FGCAD_STATUS_OK,
+			"Full-size flange collector runner cleanup failed");
+	}
 
 	auto verify_compact_multi_collector = [&](size_t member_count)
 	{

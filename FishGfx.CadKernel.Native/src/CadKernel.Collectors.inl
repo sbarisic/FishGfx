@@ -261,7 +261,7 @@ fgcad_status fgcad_document_build_collector_system(
 			BRepOffsetAPI_MakePipe pipe(
 				wire,
 				lead_section,
-				GeomFill_IsDiscreteTrihedron,
+				GeomFill_IsCorrectedFrenet,
 				true
 			);
 			if (!pipe.IsDone() || pipe.Shape().IsNull())
@@ -312,7 +312,9 @@ fgcad_status fgcad_document_build_collector_system(
 		};
 		auto fuse_all = [](const std::vector<TopoDS_Shape>& values,
 			bool glue,
-			std::vector<runner_source>* sources)
+			std::vector<runner_source>* sources,
+			double fuzzy_value = 1.0e-3,
+			bool run_parallel = true)
 		{
 			if (values.empty()) throw std::invalid_argument("A collector fusion cannot be empty.");
 			if (values.size() == 1) return values.front();
@@ -327,9 +329,9 @@ fgcad_status fgcad_document_build_collector_system(
 			fuse.SetArguments(arguments);
 			fuse.SetTools(tools);
 			fuse.SetNonDestructive(true);
-			fuse.SetRunParallel(true);
-			if (glue) fuse.SetGlue(BOPAlgo_GlueFull);
-			fuse.SetFuzzyValue(1.0e-3);
+			fuse.SetRunParallel(run_parallel);
+			if (glue) fuse.SetGlue(BOPAlgo_GlueShift);
+			fuse.SetFuzzyValue(fuzzy_value);
 			fuse.Build();
 			if (!fuse.IsDone() || fuse.Shape().IsNull())
 			{
@@ -403,8 +405,80 @@ fgcad_status fgcad_document_build_collector_system(
 			std::vector<runner_source>* sources,
 			TopoDS_Shape& output)
 		{
-			auto try_operation = [&](bool sequential)
+			auto preserves_input_extent_and_volume = [&](const TopoDS_Shape& candidate)
 			{
+				Bnd_Box input_bounds;
+				double largest_input_volume = 0;
+				for (const TopoDS_Shape& value : values)
+				{
+					BRepBndLib::Add(value, input_bounds);
+					GProp_GProps input_properties;
+					BRepGProp::VolumeProperties(value, input_properties);
+					largest_input_volume = std::max(
+						largest_input_volume,
+						std::abs(input_properties.Mass()));
+				}
+				Bnd_Box candidate_bounds;
+				BRepBndLib::Add(candidate, candidate_bounds);
+				if (input_bounds.IsVoid() || candidate_bounds.IsVoid())
+				{
+					return false;
+				}
+				double input_min_x = 0;
+				double input_min_y = 0;
+				double input_min_z = 0;
+				double input_max_x = 0;
+				double input_max_y = 0;
+				double input_max_z = 0;
+				double candidate_min_x = 0;
+				double candidate_min_y = 0;
+				double candidate_min_z = 0;
+				double candidate_max_x = 0;
+				double candidate_max_y = 0;
+				double candidate_max_z = 0;
+				input_bounds.Get(
+					input_min_x,
+					input_min_y,
+					input_min_z,
+					input_max_x,
+					input_max_y,
+					input_max_z);
+				candidate_bounds.Get(
+					candidate_min_x,
+					candidate_min_y,
+					candidate_min_z,
+					candidate_max_x,
+					candidate_max_y,
+					candidate_max_z);
+				constexpr double bounds_tolerance = 1.0e-2;
+				bool preserves_bounds =
+					candidate_min_x <= input_min_x + bounds_tolerance
+					&& candidate_min_y <= input_min_y + bounds_tolerance
+					&& candidate_min_z <= input_min_z + bounds_tolerance
+					&& candidate_max_x >= input_max_x - bounds_tolerance
+					&& candidate_max_y >= input_max_y - bounds_tolerance
+					&& candidate_max_z >= input_max_z - bounds_tolerance;
+				GProp_GProps candidate_properties;
+				BRepGProp::VolumeProperties(candidate, candidate_properties);
+				double candidate_volume = std::abs(candidate_properties.Mass());
+				bool preserves_volume = candidate_volume
+					>= largest_input_volume * (1.0 - 1.0e-6);
+				append_native_log(
+					"collector",
+					"Fusion preservation check: candidateVolume="
+						+ std::to_string(candidate_volume)
+						+ "; largestInputVolume="
+						+ std::to_string(largest_input_volume)
+						+ "; bounds="
+						+ (preserves_bounds ? "preserved" : "lost")
+						+ "; volume="
+						+ (preserves_volume ? "preserved" : "lost"));
+				return preserves_bounds && preserves_volume;
+			};
+			auto try_operation = [&](int mode)
+			{
+				bool sequential = mode == 1;
+				bool glue = mode == 2;
 				std::vector<runner_source> staged_sources;
 				std::vector<runner_source>* staged_source_pointer = nullptr;
 				if (sources != nullptr)
@@ -416,10 +490,14 @@ fgcad_status fgcad_document_build_collector_system(
 				{
 					TopoDS_Shape candidate = sequential
 						? fuse_sequential(values, staged_source_pointer)
-						: fuse_all(values, false, staged_source_pointer);
+						: fuse_all(
+							values,
+							glue,
+							staged_source_pointer);
 					if (candidate.IsNull()
 						|| solid_count(candidate) != 1
-						|| !BRepCheck_Analyzer(candidate, true).IsValid())
+						|| !BRepCheck_Analyzer(candidate, true).IsValid()
+						|| !preserves_input_extent_and_volume(candidate))
 					{
 						return false;
 					}
@@ -436,12 +514,16 @@ fgcad_status fgcad_document_build_collector_system(
 						"collector",
 						std::string(sequential
 							? "Sequential staged fusion failed: "
-							: "Multi-argument staged fusion failed: ")
+							: glue
+								? "Glue-shift staged fusion failed: "
+								: "Multi-argument staged fusion failed: ")
 							+ error.what());
 					return false;
 				}
 			};
-			return try_operation(false) || try_operation(true);
+			return try_operation(0)
+				|| try_operation(1)
+				|| try_operation(2);
 		};
 		auto same_point = [](const fgcad_point3& left, const fgcad_point3& right)
 		{
@@ -603,8 +685,56 @@ fgcad_status fgcad_document_build_collector_system(
 			"collector",
 			"Building a branch-only collector with one shared Bezier endpoint.");
 		std::vector<TopoDS_Shape> wall_volumes;
+		std::vector<TopoDS_Shape> outer_volumes;
 		std::vector<TopoDS_Shape> inner_volumes;
 		std::vector<TopoDS_Shape> inlet_bridges;
+		TopoDS_Face binary_merge_split_face;
+		bool has_binary_merge_split = false;
+		if (inlet_count == 2)
+		{
+			gp_Vec inlet_separation(
+				point(inlets[0].frame.origin),
+				point(inlets[1].frame.origin));
+			inlet_separation -= gp_Vec(outlet_tangent)
+				* inlet_separation.Dot(gp_Vec(outlet_tangent));
+			if (inlet_separation.Magnitude() > Precision::Confusion())
+			{
+				BRepBuilderAPI_MakeFace split_face_builder(gp_Pln(
+					outlet_origin,
+					gp_Dir(inlet_separation)));
+				if (split_face_builder.IsDone())
+				{
+					binary_merge_split_face = split_face_builder.Face();
+					has_binary_merge_split = true;
+				}
+			}
+		}
+		auto clip_to_binary_merge_side = [&](const TopoDS_Shape& shape,
+			const gp_Pnt& branch_reference)
+		{
+			if (!has_binary_merge_split)
+			{
+				return shape;
+			}
+			TopoDS_Solid branch_half_space = BRepPrimAPI_MakeHalfSpace(
+				binary_merge_split_face,
+				branch_reference).Solid();
+			BRepAlgoAPI_Common clip(shape, branch_half_space);
+			clip.SetNonDestructive(true);
+			clip.SetRunParallel(false);
+			clip.SetFuzzyValue(1.0e-3);
+			clip.Build();
+			if (!clip.IsDone()
+				|| clip.Shape().IsNull()
+				|| solid_count(clip.Shape()) != 1
+				|| !BRepCheck_Analyzer(clip.Shape(), true).IsValid())
+			{
+				throw std::runtime_error(
+					"A two-branch collector could not be partitioned at its "
+					"merge bisector.");
+			}
+			return clip.Shape();
+		};
 		runner_source outlet_source;
 		outlet_source.id = "outlet";
 		outlet_source.kind = FGCAD_SOURCE_COLLECTOR_OUTLET;
@@ -654,7 +784,17 @@ fgcad_status fgcad_document_build_collector_system(
 				annular_face(inlet_faces),
 				interface_overlap,
 				outlet_tangent,
-				merge_boolean_overlap
+				0
+			);
+			TopoDS_Shape branch_outer = swept_volume(
+				inlet.frame,
+				p1,
+				p2,
+				p3,
+				inlet_faces.outer,
+				interface_overlap,
+				outlet_tangent,
+				0
 			);
 			TopoDS_Shape branch_inner = swept_volume(
 				inlet.frame,
@@ -664,8 +804,23 @@ fgcad_status fgcad_document_build_collector_system(
 				inlet_faces.inner,
 				interface_overlap,
 				outlet_tangent,
-				merge_boolean_overlap
+				0
 			);
+			branch_wall = clip_to_binary_merge_side(branch_wall, p0);
+			branch_outer = clip_to_binary_merge_side(branch_outer, p0);
+			branch_inner = clip_to_binary_merge_side(branch_inner, p0);
+			if (solid_count(branch_outer) != 1
+				|| !BRepCheck_Analyzer(branch_outer, true).IsValid())
+			{
+				throw std::runtime_error(
+					"A collector branch outer sweep is not one valid solid.");
+			}
+			if (solid_count(branch_inner) != 1
+				|| !BRepCheck_Analyzer(branch_inner, true).IsValid())
+			{
+				throw std::runtime_error(
+					"A collector branch inner sweep is not one valid solid.");
+			}
 			TopoDS_Shape inlet_bridge = straight_wall_volume(
 				inlet.frame,
 				annular_face(inlet_faces),
@@ -685,6 +840,7 @@ fgcad_status fgcad_document_build_collector_system(
 					+ "; runner="
 					+ require_text(inlet.runner_id, "runner_id"));
 			wall_volumes.push_back(branch_wall);
+			outer_volumes.push_back(branch_outer);
 			inner_volumes.push_back(branch_inner);
 			inlet_bridges.push_back(inlet_bridge);
 			replacement.runner_ids.push_back(require_text(inlet.runner_id, "runner_id"));
@@ -696,7 +852,11 @@ fgcad_status fgcad_document_build_collector_system(
 			inlet_source.feature.exit_frame = system->outlet_frame;
 			inlet_source.feature.control1 = point(p1);
 			inlet_source.feature.control2 = point(p2);
-			inlet_source.faces = shape_faces(branch_wall);
+			inlet_source.faces = shape_faces(branch_outer);
+			for (const TopoDS_Face& face : shape_faces(branch_inner))
+			{
+				inlet_source.faces.push_back(face);
+			}
 			for (const TopoDS_Face& face : shape_faces(inlet_bridge))
 			{
 				inlet_source.faces.push_back(face);
@@ -734,65 +894,157 @@ fgcad_status fgcad_document_build_collector_system(
 		wall_volumes.insert(
 			wall_volumes.begin(),
 			merge_wall_cut.Shape());
-		inner_volumes.insert(
-			inner_volumes.begin(),
-			merge_inner);
+		outer_volumes.insert(
+			outer_volumes.begin(),
+			merge_outer);
+		outlet_source.faces = shape_faces(merge_outer);
+		for (const TopoDS_Face& face : shape_faces(merge_inner))
+		{
+			outlet_source.faces.push_back(face);
+		}
 		replacement.sources.push_back(std::move(outlet_source));
 
-		append_native_log(
-			"collector",
-			"Fusing annular wall volumes: count="
-				+ std::to_string(wall_volumes.size()));
 		collector_wall_components = wall_volumes;
-		std::vector<runner_source> raw_collector_sources =
-			replacement.sources;
-		std::vector<runner_source> validation_sources =
-			raw_collector_sources;
-		TopoDS_Shape annular_wall_union = fuse_all(
-			wall_volumes,
-			false,
-			&validation_sources);
-		if (solid_count(annular_wall_union) != 1
-			|| !BRepCheck_Analyzer(annular_wall_union, true).IsValid())
+		std::vector<runner_source> annular_sources = replacement.sources;
+		for (size_t index = 0; index < branch_order.size(); ++index)
 		{
-			append_native_log(
-				"collector",
-				"Multi-argument annular fusion was inconclusive; trying "
-				"a validated sequential component fusion.");
-			validation_sources = raw_collector_sources;
-			annular_wall_union = fuse_sequential(
-				wall_volumes,
-				&validation_sources);
-			if (solid_count(annular_wall_union) != 1
-				|| !BRepCheck_Analyzer(annular_wall_union, true).IsValid())
+			std::string inlet_id = require_text(
+				inlets[branch_order[index]].inlet_id,
+				"inlet_id");
+			auto source = std::find_if(
+				annular_sources.begin(),
+				annular_sources.end(),
+				[&](const runner_source& candidate)
+				{
+					return candidate.kind == FGCAD_SOURCE_COLLECTOR_INLET
+						&& candidate.id == inlet_id;
+				});
+			if (source != annular_sources.end())
 			{
-				throw std::runtime_error(
-					"The exact annular collector branches did not fuse into one "
-					"valid connected solid; repair geometry was not published.");
+				source->faces = shape_faces(wall_volumes[index + 1]);
+				for (const TopoDS_Face& face : shape_faces(inlet_bridges[index]))
+				{
+					source->faces.push_back(face);
+				}
 			}
 		}
-		collector_wall = annular_wall_union;
-		replacement.sources = std::move(raw_collector_sources);
+		for (runner_source& source : annular_sources)
+		{
+			if (source.kind == FGCAD_SOURCE_COLLECTOR_OUTLET)
+			{
+				source.faces = shape_faces(wall_volumes.front());
+			}
+		}
+		TopoDS_Shape annular_wall_union;
+		bool collector_wall_ready = inlet_count != 2
+			&& try_connected_fusion(
+				wall_volumes,
+				&annular_sources,
+				annular_wall_union);
+		if (collector_wall_ready)
+		{
+			collector_wall = annular_wall_union;
+			replacement.sources = std::move(annular_sources);
+			append_native_log(
+				"collector",
+				"Published the extent-preserving annular collector wall union.");
+		}
+		else
+		{
 		append_native_log(
 			"collector",
-			"Fusing inner gas volumes: count="
-				+ std::to_string(inner_volumes.size()));
-		TopoDS_Shape inner_union = fuse_all(
-			inner_volumes,
-			false,
-			nullptr);
-		if (solid_count(inner_union) != 1)
+			"Building the collector wall from complete outer and connected gas "
+			"volumes: outerCount="
+				+ std::to_string(outer_volumes.size())
+				+ "; gasCount="
+				+ std::to_string(inner_volumes.size() + 1));
+		std::vector<runner_source> validation_sources =
+			replacement.sources;
+		TopoDS_Shape outer_union;
+		if (!try_connected_fusion(
+			outer_volumes,
+			&validation_sources,
+			outer_union))
+		{
+			throw std::runtime_error(
+				"The complete outer collector branch volumes did not fuse into "
+				"one valid connected solid.");
+		}
+
+		std::vector<TopoDS_Shape> gas_volumes = inner_volumes;
+		gas_volumes.insert(gas_volumes.begin(), merge_inner);
+		TopoDS_Shape inner_union;
+		if (!try_connected_fusion(gas_volumes, nullptr, inner_union))
+		{
+			throw std::runtime_error(
+				"The collector gas-flow volumes did not fuse into one valid "
+				"connected solid.");
+		}
+
+		bool wall_cut_built = false;
+		BRepAlgoAPI_Cut combined_wall_cut(outer_union, inner_union);
+		combined_wall_cut.SetNonDestructive(true);
+		combined_wall_cut.SetRunParallel(true);
+		combined_wall_cut.SetFuzzyValue(1.0e-3);
+		combined_wall_cut.Build();
+		if (combined_wall_cut.IsDone()
+			&& !combined_wall_cut.Shape().IsNull()
+			&& solid_count(combined_wall_cut.Shape()) == 1)
+		{
+			TopoDS_Shape candidate = combined_wall_cut.Shape();
+			if (!BRepCheck_Analyzer(candidate, true).IsValid())
+			{
+				ShapeFix_Shape repair(candidate);
+				repair.Perform();
+				candidate = repair.Shape();
+				append_native_log(
+					"collector",
+					"Applied OCCT shape healing to the combined collector wall cut.");
+			}
+			if (!candidate.IsNull()
+				&& solid_count(candidate) == 1
+				&& BRepCheck_Analyzer(candidate, true).IsValid())
+			{
+				apply_boolean_history(combined_wall_cut, validation_sources);
+				collector_wall = candidate;
+				wall_cut_built = true;
+			}
+		}
+		if (!wall_cut_built)
 		{
 			append_native_log(
 				"collector",
-				"Multi-argument gas fusion was inconclusive; "
-				"trying a validated sequential gas fusion.");
-			inner_union = fuse_sequential(inner_volumes, nullptr);
-			if (solid_count(inner_union) != 1)
+				"Combined collector wall cut was inconclusive; trying sequential "
+				"gas-volume subtraction.");
+			collector_wall = outer_union;
+			for (size_t index = 0; index < gas_volumes.size(); ++index)
+			{
+				BRepAlgoAPI_Cut wall_cut(collector_wall, gas_volumes[index]);
+				wall_cut.SetNonDestructive(true);
+				wall_cut.SetRunParallel(true);
+				wall_cut.SetFuzzyValue(1.0e-3);
+				wall_cut.Build();
+				if (!wall_cut.IsDone()
+					|| wall_cut.Shape().IsNull()
+					|| solid_count(wall_cut.Shape()) != 1)
+				{
+					throw std::runtime_error(
+						"Collector gas-volume subtraction failed at tool "
+						+ std::to_string(index + 1)
+						+ " of "
+						+ std::to_string(gas_volumes.size())
+						+ ".");
+				}
+				apply_boolean_history(wall_cut, validation_sources);
+				collector_wall = wall_cut.Shape();
+			}
+			if (!BRepCheck_Analyzer(collector_wall, true).IsValid())
 			{
 				throw std::runtime_error(
-					"The collector gas-flow union is not one connected solid.");
+					"Sequential collector gas-volume subtraction produced an invalid wall solid.");
 			}
+		}
+		replacement.sources = std::move(validation_sources);
 		}
 		append_native_log(
 			"collector",
@@ -812,6 +1064,8 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 		std::vector<TopoDS_Shape> assembled_branch_walls;
 		assembled_branch_walls.reserve(replacement.runner_ids.size());
+		std::vector<TopoDS_Shape> member_runner_walls;
+		member_runner_walls.reserve(replacement.runner_ids.size());
 		for (size_t index = 0; index < replacement.runner_ids.size(); ++index)
 		{
 			const std::string& runner_id = replacement.runner_ids[index];
@@ -837,7 +1091,7 @@ fgcad_status fgcad_document_build_collector_system(
 			TopoDS_Shape assembled_branch;
 			bool branch_is_connected = try_connected_fusion(
 				branch_assembly_inputs,
-				&replacement.sources,
+				nullptr,
 				assembled_branch);
 			if (!branch_is_connected
 				&& index < collector_couplers.size())
@@ -854,7 +1108,7 @@ fgcad_status fgcad_document_build_collector_system(
 				};
 				branch_is_connected = try_connected_fusion(
 					branch_assembly_inputs,
-					&replacement.sources,
+					nullptr,
 					assembled_branch);
 			}
 			if (!branch_is_connected)
@@ -866,6 +1120,7 @@ fgcad_status fgcad_document_build_collector_system(
 			append_native_log(
 				"collector",
 				"Runner/branch assembly connected: runner=" + runner_id);
+			member_runner_walls.push_back(member->shape);
 			assembled_branch_walls.push_back(std::move(assembled_branch));
 		}
 		if (std::any_of(
@@ -884,31 +1139,38 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 		append_native_log(
 			"collector",
-			"Fusing runner-owned branch assemblies into the merge wall: runners="
+			"Fusing member runners directly into the validated collector wall: runners="
 				+ std::to_string(replacement.runner_ids.size()));
 		std::vector<TopoDS_Shape> system_assembly_inputs{
-			collector_wall_components.front()
+			collector_wall
 		};
 		system_assembly_inputs.insert(
 			system_assembly_inputs.end(),
-			assembled_branch_walls.begin(),
-			assembled_branch_walls.end());
+			member_runner_walls.begin(),
+			member_runner_walls.end());
 		TopoDS_Shape fused = collector_wall;
-		bool published_as_connected_solid = false;
-		if (solid_count(collector_wall) == 1)
+		bool published_as_connected_solid = try_connected_fusion(
+			system_assembly_inputs,
+			&replacement.sources,
+			fused);
+		if (!published_as_connected_solid)
 		{
+			append_native_log(
+				"collector",
+				"Collector/member fusion was inconclusive; retrying with the "
+				"runner-owned branch assemblies at their shared endpoint.");
 			published_as_connected_solid = try_connected_fusion(
-				system_assembly_inputs,
+				assembled_branch_walls,
 				&replacement.sources,
 				fused);
 			if (!published_as_connected_solid)
 			{
 				append_native_log(
 					"collector",
-					"Component assembly was inconclusive; retrying with the "
-					"validated collector wall plus runner-owned branches.");
+					"Direct collector/runner assembly was inconclusive; retrying "
+					"with the merge collar plus runner-owned branch assemblies.");
 				std::vector<TopoDS_Shape> repaired_system_inputs{
-					collector_wall
+					collector_wall_components.front()
 				};
 				repaired_system_inputs.insert(
 					repaired_system_inputs.end(),
@@ -937,54 +1199,168 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 		gp_Pnt downstream_reference = point(system->outlet_frame.origin).Translated(
 			gp_Vec(unit(system->outlet_frame.tangent)));
-		TopoDS_Solid upstream_half_space = BRepPrimAPI_MakeHalfSpace(
+		TopoDS_Solid downstream_half_space = BRepPrimAPI_MakeHalfSpace(
 			outlet_plane_face.Face(),
 			downstream_reference).Solid();
 		GProp_GProps untrimmed_properties;
 		BRepGProp::VolumeProperties(fused, untrimmed_properties);
-		BRepAlgoAPI_Common outlet_trim(fused, upstream_half_space);
-		outlet_trim.SetNonDestructive(true);
-		outlet_trim.SetRunParallel(true);
-		outlet_trim.SetFuzzyValue(1.0e-3);
-		outlet_trim.Build();
-		if (!outlet_trim.IsDone()
-			|| outlet_trim.Shape().IsNull()
-			|| solid_count(outlet_trim.Shape()) != 1
-			|| !BRepCheck_Analyzer(outlet_trim.Shape(), true).IsValid())
+		double untrimmed_volume = std::abs(untrimmed_properties.Mass());
+		double minimum_outlet_projection = std::numeric_limits<double>::infinity();
+		double maximum_outlet_projection = -std::numeric_limits<double>::infinity();
+		gp_Pnt outlet_origin_for_projection = point(system->outlet_frame.origin);
+		gp_Vec outlet_axis_for_projection(unit(system->outlet_frame.tangent));
+		for (TopExp_Explorer explorer(fused, TopAbs_VERTEX);
+			explorer.More();
+			explorer.Next())
+		{
+			gp_Pnt vertex = BRep_Tool::Pnt(TopoDS::Vertex(explorer.Current()));
+			double projection = gp_Vec(
+				outlet_origin_for_projection,
+				vertex).Dot(outlet_axis_for_projection);
+			minimum_outlet_projection = std::min(
+				minimum_outlet_projection,
+				projection);
+			maximum_outlet_projection = std::max(
+				maximum_outlet_projection,
+				projection);
+		}
+		append_native_log(
+			"collector",
+			"Fused collector outlet-axis extent before cleanup: "
+				+ std::to_string(minimum_outlet_projection)
+				+ " to "
+				+ std::to_string(maximum_outlet_projection)
+				+ " millimetres.");
+		double outlet_plane_tolerance = std::max(
+			Precision::Confusion() * 10.0,
+			1.0e-6);
+		bool outlet_was_already_clean =
+			maximum_outlet_projection <= outlet_plane_tolerance;
+		double trimmed_volume = outlet_was_already_clean
+			? untrimmed_volume
+			: 0;
+		bool outlet_was_trimmed = outlet_was_already_clean;
+		if (outlet_was_already_clean)
+		{
+			append_native_log(
+				"collector",
+				"The fused collector already terminates at the shared outlet plane; "
+				"no cleanup Boolean is required.");
+		}
+		auto accept_outlet_trim = [&](auto& operation, const char* method)
+		{
+			operation.Build();
+			bool is_done = operation.IsDone();
+			bool is_null = !is_done || operation.Shape().IsNull();
+			size_t candidate_solid_count = is_null
+				? 0
+				: solid_count(operation.Shape());
+			bool is_valid = !is_null
+				&& candidate_solid_count == 1
+				&& BRepCheck_Analyzer(operation.Shape(), true).IsValid();
+			append_native_log(
+				"collector",
+				std::string("Outlet trim attempt ")
+					+ method
+					+ ": done="
+					+ (is_done ? "true" : "false")
+					+ "; solids="
+					+ std::to_string(candidate_solid_count)
+					+ "; valid="
+					+ (is_valid ? "true" : "false"));
+			if (!is_valid)
+			{
+				return false;
+			}
+
+			GProp_GProps candidate_properties;
+			BRepGProp::VolumeProperties(
+				operation.Shape(),
+				candidate_properties);
+			double candidate_volume = std::abs(candidate_properties.Mass());
+			double minimum_removed_volume = std::max(
+				Precision::Confusion(),
+				untrimmed_volume * 1.0e-9);
+			bool volume_is_plausible = untrimmed_volume > Precision::Confusion()
+				&& candidate_volume >= untrimmed_volume * 0.5
+				&& candidate_volume <= untrimmed_volume - minimum_removed_volume;
+			append_native_log(
+				"collector",
+				std::string("Outlet trim candidate ")
+					+ method
+					+ " volume: "
+					+ std::to_string(untrimmed_volume)
+					+ " -> "
+					+ std::to_string(candidate_volume)
+					+ " cubic millimetres; plausible="
+					+ (volume_is_plausible ? "true" : "false"));
+			if (!volume_is_plausible)
+			{
+				return false;
+			}
+
+			std::vector<runner_source> trimmed_sources = replacement.sources;
+			apply_boolean_history(operation, trimmed_sources);
+			replacement.sources = std::move(trimmed_sources);
+			fused = operation.Shape();
+			trimmed_volume = candidate_volume;
+			append_native_log(
+				"collector",
+				std::string("Outlet trim accepted using ") + method + ".");
+			return true;
+		};
+
+		if (!outlet_was_trimmed)
+		{
+			BRepAlgoAPI_Cut parallel_outlet_cut(fused, downstream_half_space);
+			parallel_outlet_cut.SetNonDestructive(true);
+			parallel_outlet_cut.SetRunParallel(true);
+			parallel_outlet_cut.SetFuzzyValue(1.0e-3);
+			outlet_was_trimmed = accept_outlet_trim(
+				parallel_outlet_cut,
+				"parallel downstream subtraction");
+		}
+		if (!outlet_was_trimmed)
+		{
+			BRepAlgoAPI_Cut serial_outlet_cut(fused, downstream_half_space);
+			serial_outlet_cut.SetNonDestructive(true);
+			serial_outlet_cut.SetRunParallel(false);
+			serial_outlet_cut.SetFuzzyValue(1.0e-3);
+			outlet_was_trimmed = accept_outlet_trim(
+				serial_outlet_cut,
+				"serial downstream subtraction");
+		}
+		if (!outlet_was_trimmed)
+		{
+			gp_Pnt upstream_reference = point(system->outlet_frame.origin).Translated(
+				-gp_Vec(unit(system->outlet_frame.tangent)));
+			TopoDS_Solid upstream_half_space = BRepPrimAPI_MakeHalfSpace(
+				outlet_plane_face.Face(),
+				upstream_reference).Solid();
+			BRepAlgoAPI_Common upstream_intersection(fused, upstream_half_space);
+			upstream_intersection.SetNonDestructive(true);
+			upstream_intersection.SetRunParallel(false);
+			upstream_intersection.SetFuzzyValue(1.0e-3);
+			outlet_was_trimmed = accept_outlet_trim(
+				upstream_intersection,
+				"serial upstream intersection");
+		}
+		if (!outlet_was_trimmed)
 		{
 			throw std::runtime_error(
 				"The connected collector could not be trimmed cleanly at its "
-				"shared outlet plane.");
+				"shared outlet plane by subtraction or upstream intersection.");
 		}
-		GProp_GProps trimmed_properties;
-		BRepGProp::VolumeProperties(
-			outlet_trim.Shape(),
-			trimmed_properties);
-		double untrimmed_volume = std::abs(untrimmed_properties.Mass());
-		double trimmed_volume = std::abs(trimmed_properties.Mass());
-		append_native_log(
-			"collector",
-			"Outlet trim candidate volume: "
-				+ std::to_string(untrimmed_volume)
-				+ " -> "
-				+ std::to_string(trimmed_volume)
-				+ " cubic millimetres.");
-		if (!(untrimmed_volume > Precision::Confusion())
-			|| trimmed_volume < untrimmed_volume * 0.5)
+		if (!outlet_was_already_clean)
 		{
-			throw std::runtime_error(
-				"The outlet trim discarded most of the runner/collector "
-				"assembly instead of only its temporary downstream overlap.");
+			append_native_log(
+				"collector",
+				"Temporary downstream Boolean overlap trimmed at the shared outlet plane: "
+					+ std::to_string(untrimmed_volume)
+					+ " -> "
+					+ std::to_string(trimmed_volume)
+					+ " cubic millimetres.");
 		}
-		apply_boolean_history(outlet_trim, replacement.sources);
-		fused = outlet_trim.Shape();
-		append_native_log(
-			"collector",
-			"Temporary downstream Boolean overlap trimmed at the shared outlet plane: "
-				+ std::to_string(untrimmed_volume)
-				+ " -> "
-				+ std::to_string(trimmed_volume)
-				+ " cubic millimetres.");
 		runner_source* published_outlet = nullptr;
 		for (runner_source& source : replacement.sources)
 		{
