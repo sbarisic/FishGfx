@@ -34,6 +34,7 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 
+		WaitForRegeneration();
 		TryOperation(() =>
 		{
 			string replacementPath = Path.GetFullPath(path);
@@ -46,6 +47,7 @@ internal sealed partial class ManifoldCadApplication
 			};
 			document.ReplaceStepAsync(replacement, path).GetAwaiter().GetResult();
 			project.ReplacePart(selectedPart.Id, replacementPath);
+			ClearCollectorRunnerGeometry();
 			UploadPart(selectedPart);
 			RegenerateRunnersForPart(selectedPart.Id);
 			RefreshUi();
@@ -95,6 +97,7 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 
+		WaitForRegeneration();
 		TryOperation(() =>
 		{
 			CadRevisioned<MateFrameResult> result = document.GetMateFrameAsync(
@@ -116,6 +119,7 @@ internal sealed partial class ManifoldCadApplication
 			target.Rebind(pending.Topology.Value, pending.LocalFrame.Value, pending.RadiusMillimetres);
 			selectedMate = target;
 
+			ClearCollectorRunnerGeometry();
 			RegenerateRunnersForMate(target.Id);
 			RefreshUi();
 			ui.SetStatus($"Mate '{selectedMate.Name}' bound to exact topology.");
@@ -211,6 +215,7 @@ internal sealed partial class ManifoldCadApplication
 			ui.SetStatus("Delete or detach the runner's collector system first.", true);
 			return;
 		}
+		WaitForRegeneration();
 		TryOperation(() =>
 		{
 			document.RemoveRunnerAsync(runner.Id).GetAwaiter().GetResult();
@@ -234,6 +239,7 @@ internal sealed partial class ManifoldCadApplication
 		string normalized = name.Trim();
 		if (string.Equals(ActiveRunner.Name, normalized, StringComparison.Ordinal))
 			return;
+		WaitForRegeneration();
 		TryOperation(() =>
 		{
 			CadRunner pending = new() { Id = ActiveRunner.Id, Name = normalized };
@@ -279,6 +285,16 @@ internal sealed partial class ManifoldCadApplication
 
 	private void RegenerateRunner(CadRunner runner)
 	{
+		if (!autoMode)
+		{
+			QueueRunnerRegeneration(runner);
+			return;
+		}
+		RegenerateRunnerSynchronously(runner);
+	}
+
+	private void RegenerateRunnerSynchronously(CadRunner runner)
+	{
 		CadCollectorSystem collector = project.CollectorSystems.FirstOrDefault(system =>
 			system.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
 		if (collector != null)
@@ -298,6 +314,10 @@ internal sealed partial class ManifoldCadApplication
 		{
 			runnerBuildErrors[runner.Id] = string.Join(Environment.NewLine,
 				result.Diagnostics.Select(item => item.Message));
+			ApplicationLog.Current?.Error(
+				$"Runner evaluation failed: id={runner.Id}; name={runner.Name}; "
+					+ runnerBuildErrors[runner.Id]
+			);
 			viewport.MarkRunnerStale(runner.Id);
 			viewport.SetBezierInvalid(
 				runner.Id,
@@ -347,6 +367,10 @@ internal sealed partial class ManifoldCadApplication
 		}
 		catch (Exception exception)
 		{
+			ApplicationLog.Current?.Exception(
+				$"Runner regeneration failed: id={runner.Id}; name={runner.Name}.",
+				exception
+			);
 			runnerBuildErrors[runner.Id] = exception.Message;
 			viewport.MarkRunnerStale(runner.Id);
 			ui.SetStatus($"{runner.Name}: {exception.Message}", true);

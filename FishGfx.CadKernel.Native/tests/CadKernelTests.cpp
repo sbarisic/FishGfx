@@ -369,6 +369,12 @@ int main()
 		0.2,
 		&collector_tessellation) == FGCAD_STATUS_OK,
 		"Collector-system tessellation failed");
+	require(fgcad_tessellation_vertex_count(collector_tessellation) > 0,
+		"Collector tessellation had no vertices");
+	require(fgcad_tessellation_index_count(collector_tessellation) > 0,
+		"Collector tessellation had no indices");
+	require(fgcad_tessellation_face_count(collector_tessellation) > 0,
+		"Collector tessellation had no face ranges");
 	require(fgcad_tessellation_source_count(collector_tessellation) > 0,
 		"Collector tessellation lost provenance");
 	std::vector<fgcad_mesh_vertex> collector_vertices(
@@ -395,6 +401,12 @@ int main()
 		collector_points.data(), collector_points.size(),
 		&collector_minimum, &collector_maximum) == FGCAD_STATUS_OK,
 		"Collector tessellation provenance copy failed");
+	require(
+		collector_minimum.x < -90,
+		"Collector outlet trimming discarded the upstream member runners");
+	require(
+		collector_maximum.x <= 200.01,
+		"Collector outlet trimming retained the temporary downstream overlap");
 	require(std::any_of(
 		collector_sources.begin(),
 		collector_sources.end(),
@@ -408,62 +420,193 @@ int main()
 		collector_sources.end(),
 		[](const fgcad_geometry_source_ref& source)
 		{
-			return source.kind == FGCAD_SOURCE_COLLECTOR_TRUNK
-				|| source.kind == FGCAD_SOURCE_COLLECTOR_OUTLET;
+			return source.kind == FGCAD_SOURCE_COLLECTOR_OUTLET;
 		}),
-		"Collector trunk/outlet provenance did not survive booleans");
-	bool isolated_outlet_face = false;
+		"Collector outlet provenance did not survive booleans");
+	bool outlet_face = false;
 	for (const fgcad_face_range& face : collector_faces)
 	{
-		if (face.source_count == 1
-			&& collector_sources[face.first_source].kind == FGCAD_SOURCE_COLLECTOR_OUTLET)
-		{
-			isolated_outlet_face = true;
-			break;
-		}
-	}
-	require(isolated_outlet_face,
-		"Collector outlet provenance was polluted by unrelated nearest-source guesses");
-	double trunk_minimum_x = std::numeric_limits<double>::infinity();
-	for (const fgcad_face_range& face : collector_faces)
-	{
-		bool belongs_to_trunk = false;
-		bool belongs_to_branch = false;
 		for (uint32_t source_index = 0; source_index < face.source_count; ++source_index)
 		{
-			fgcad_geometry_source_kind kind =
-				collector_sources[face.first_source + source_index].kind;
-			belongs_to_trunk = belongs_to_trunk
-				|| kind == FGCAD_SOURCE_COLLECTOR_TRUNK
-				|| kind == FGCAD_SOURCE_COLLECTOR_OUTLET;
-			belongs_to_branch = belongs_to_branch
-				|| kind == FGCAD_SOURCE_COLLECTOR_INLET
-				|| kind == FGCAD_SOURCE_RUNNER_NODE;
+			if (collector_sources[face.first_source + source_index].kind
+				== FGCAD_SOURCE_COLLECTOR_OUTLET)
+			{
+				outlet_face = true;
+				break;
+			}
 		}
-		if (!belongs_to_trunk || belongs_to_branch)
-		{
-			continue;
-		}
-		for (uint32_t index = face.first_index;
-			index < face.first_index + face.index_count;
-			++index)
-		{
-			trunk_minimum_x = std::min(
-				trunk_minimum_x,
-				static_cast<double>(collector_vertices[collector_indices[index]].x));
-		}
+		if (outlet_face) break;
 	}
-	double expected_trunk_start_x = collector.outlet_frame.origin.x
-		- collector.outlet_stub_length
-		- collector.overlap_length;
-	require(
-		std::isfinite(trunk_minimum_x)
-			&& trunk_minimum_x >= expected_trunk_start_x - 1.0,
-		"Collector outlet trunk extends backward through the merge envelope");
+	require(outlet_face,
+		"Collector outlet faces lost their shared-endpoint provenance");
+	require(std::none_of(
+		collector_sources.begin(),
+		collector_sources.end(),
+		[](const fgcad_geometry_source_ref& source)
+		{
+			return source.kind == FGCAD_SOURCE_COLLECTOR_TRUNK;
+		}),
+		"Branch-only collector unexpectedly generated a separate trunk");
 	fgcad_tessellation_destroy(collector_tessellation);
 
+	auto verify_compact_multi_collector = [&](size_t member_count)
+	{
+		std::string collector_id =
+			"60000000-0000-0000-0000-" + std::string(11, '0') + std::to_string(member_count);
+		std::vector<fgcad_runner_feature> member_features(member_count);
+		std::vector<std::string> member_ids(member_count);
+		std::vector<fgcad_collector_inlet> member_inlets(member_count);
+		require(fgcad_document_begin_collector_system_build(
+			document,
+			collector_id.c_str(),
+			1) == FGCAD_STATUS_OK,
+			"Multi-inlet collector-system staging did not begin");
+		for (size_t index = 0; index < member_count; ++index)
+		{
+			char runner_id[40]{};
+			char node_id[40]{};
+			char inlet_id[40]{};
+			std::snprintf(
+				runner_id,
+				sizeof(runner_id),
+				"70000000-0000-0000-0000-%012zu",
+				member_count * 10 + index);
+			std::snprintf(
+				node_id,
+				sizeof(node_id),
+				"71000000-0000-0000-0000-%012zu",
+				member_count * 10 + index);
+			std::snprintf(
+				inlet_id,
+				sizeof(inlet_id),
+				"72000000-0000-0000-0000-%012zu",
+				member_count * 10 + index);
+			member_ids[index] = runner_id;
+			double y = (static_cast<double>(index)
+				- (static_cast<double>(member_count) - 1.0) * 0.5) * 35.0;
+			member_features[index] = straight(
+				node_id,
+				{ -100, y, 0 },
+				{ 0, y, 0 },
+				{ 1, 0, 0 },
+				collector_branch_profile);
+			require(fgcad_document_build_runner(
+				document,
+				member_ids[index].c_str(),
+				"Compact collector runner",
+				&member_features[index],
+				1) == FGCAD_STATUS_OK,
+				"Compact collector member runner failed");
+			std::snprintf(
+				member_inlets[index].inlet_id,
+				sizeof(member_inlets[index].inlet_id),
+				"%s",
+				inlet_id);
+			std::snprintf(
+				member_inlets[index].runner_id,
+				sizeof(member_inlets[index].runner_id),
+				"%s",
+				runner_id);
+			member_inlets[index].frame = frame({ 0, y, 0 }, { 1, 0, 0 });
+			member_inlets[index].profile = collector_branch_profile;
+			member_inlets[index].merge_station =
+				0.2 + 0.6 * static_cast<double>(index)
+					/ static_cast<double>(member_count - 1);
+			member_inlets[index].branch_start_handle_length = 30;
+		}
+		fgcad_collector_system_spec compact_collector = collector;
+		std::snprintf(
+			compact_collector.system_id,
+			sizeof(compact_collector.system_id),
+			"%s",
+			collector_id.c_str());
+		std::snprintf(
+			compact_collector.name,
+			sizeof(compact_collector.name),
+			"Compact %zu into 1",
+			member_count);
+		compact_collector.generation_revision = 1;
+		fgcad_status compact_status = fgcad_document_build_collector_system(
+			document,
+			&compact_collector,
+			member_inlets.data(),
+			member_inlets.size());
+		std::string compact_error =
+			"Compact " + std::to_string(member_count) + " into 1 collector failed: "
+				+ fgcad_last_error();
+		if (compact_status != FGCAD_STATUS_OK)
+		{
+			require(
+				fgcad_document_abort_collector_system_build(
+					document,
+					compact_collector.system_id,
+					compact_collector.generation_revision) == FGCAD_STATUS_OK,
+				"Rejected compact collector staging did not abort");
+			fgcad_tessellation* rejected_tessellation = nullptr;
+			require(
+				fgcad_document_tessellate_collector_system(
+					document,
+					compact_collector.system_id,
+					0.25,
+					0.2,
+					&rejected_tessellation) != FGCAD_STATUS_OK,
+				"Rejected multi-solid collector was unexpectedly published");
+			for (const std::string& member_id : member_ids)
+			{
+				require(
+					fgcad_document_remove_runner(
+						document,
+						member_id.c_str()) == FGCAD_STATUS_OK,
+					"Rejected compact collector member cleanup failed");
+			}
+			return;
+		}
+		require(compact_status == FGCAD_STATUS_OK, compact_error.c_str());
+		fgcad_tessellation* compact_tessellation = nullptr;
+		require(fgcad_document_tessellate_collector_system(
+			document,
+			compact_collector.system_id,
+			0.25,
+			0.2,
+			&compact_tessellation) == FGCAD_STATUS_OK,
+			"Compact multi-inlet collector tessellation failed");
+		require(
+			fgcad_tessellation_vertex_count(compact_tessellation) > 0,
+			"Compact multi-inlet collector tessellation was empty");
+		fgcad_tessellation_destroy(compact_tessellation);
+		require(
+			fgcad_document_remove_collector_system(
+				document,
+				compact_collector.system_id) == FGCAD_STATUS_OK,
+			"Compact multi-inlet collector cleanup failed");
+		for (const std::string& member_id : member_ids)
+		{
+			require(
+				fgcad_document_remove_runner(
+					document,
+					member_id.c_str()) == FGCAD_STATUS_OK,
+				"Compact collector member cleanup failed");
+		}
+	};
+	verify_compact_multi_collector(3);
+	verify_compact_multi_collector(4);
+
+	fgcad_collector_system_spec reused_members = collector;
+	reused_members.generation_revision = 2;
+	require(fgcad_document_begin_collector_system_build(
+		document,
+		collector.system_id,
+		reused_members.generation_revision) == FGCAD_STATUS_OK,
+		"Collector reuse staging did not begin");
+	require(fgcad_document_build_collector_system(
+		document,
+		&reused_members,
+		collector_inlets,
+		2) == FGCAD_STATUS_OK,
+		"Collector could not reuse unchanged published member runners");
+
 	fgcad_collector_system_spec invalid_replacement = collector;
-	invalid_replacement.generation_revision = 2;
+	invalid_replacement.generation_revision = 3;
 	invalid_replacement.overlap_length = -1;
 	require(fgcad_document_begin_collector_system_build(
 		document,

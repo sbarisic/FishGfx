@@ -26,6 +26,7 @@ internal sealed partial class CadViewport : IDisposable
 	private readonly List<MateCandidateGlyph> mateCandidates = new();
 	private readonly List<CollectorGlyph> collectorGlyphs = new();
 	private readonly List<CadPoint3[]> collectorDraftCurves = new();
+	private readonly List<Mesh3D> collectorDraftMeshes = new();
 	private bool collectorDraftInvalid;
 	private readonly Mesh3D candidateSphere;
 	private readonly Mesh3D gridMesh;
@@ -103,6 +104,9 @@ internal sealed partial class CadViewport : IDisposable
 		mates.Clear();
 		mateCandidates.Clear();
 		collectorGlyphs.Clear();
+		collectorDraftCurves.Clear();
+		ClearCollectorDraftMeshes();
+		collectorDraftInvalid = false;
 		selectedFaceMesh?.Dispose();
 		selectedFaceMesh = null;
 		selectedPart = null;
@@ -135,7 +139,8 @@ internal sealed partial class CadViewport : IDisposable
 		CadCollectorSystem system,
 		Guid? inletId,
 		CadFrame frame,
-		bool invalid = false
+		bool invalid = false,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> evaluatedRunners = null
 	)
 	{
 		int index = collectorGlyphs.FindIndex(item =>
@@ -145,24 +150,35 @@ internal sealed partial class CadViewport : IDisposable
 			collectorGlyphs[index] = new CollectorGlyph(system.Id, inletId, frame);
 		}
 		collectorDraftCurves.Clear();
+		ClearCollectorDraftMeshes();
 		collectorDraftInvalid = invalid;
 		CadFrame outlet = inletId.HasValue ? system.OutletFrame : frame;
-		double trunkLength = system.OutletStubLength
-			+ system.MergeLength
-			+ system.OverlapLength;
-		collectorDraftCurves.Add(new[]
-		{
-			outlet.Origin - outlet.Tangent * trunkLength,
-			outlet.Origin,
-		});
 		foreach (CadCollectorInlet inlet in system.Inlets)
 		{
+			double outerRadius = system.OutletProfile.OuterRadiusMillimetres;
+			if (inlet.Binding != null
+				&& evaluatedRunners?.TryGetValue(
+					inlet.Binding.RunnerId,
+					out RunnerEvaluationResult evaluatedRunner
+				) == true
+				&& evaluatedRunner.Success)
+			{
+				outerRadius = evaluatedRunner.Chain.ActiveProfile
+					.ApproximateOuterRadiusMillimetres;
+				RunnerFeature terminal = evaluatedRunner.Chain.Features.FirstOrDefault(
+					feature => feature.NodeId == inlet.Binding.TerminalBezierNodeId);
+				if (terminal != null)
+				{
+					AddCollectorDraftCurve(
+						SampleCubicBezier(terminal),
+						terminal.OutputProfile.ApproximateOuterRadiusMillimetres
+					);
+				}
+			}
 			CadFrame inletFrame = inlet.Id == inletId ? frame : system.GetWorldInletFrame(inlet);
 			CadPoint3 p0 = inletFrame.Origin;
 			CadPoint3 p1 = p0 + inletFrame.Tangent * inlet.BranchStartHandleLength;
-			CadPoint3 junction = outlet.Origin - outlet.Tangent
-				* (system.OutletStubLength + inlet.MergeStation * system.MergeLength);
-			CadPoint3 p3 = junction + outlet.Tangent * system.OverlapLength;
+			CadPoint3 p3 = outlet.Origin;
 			CadPoint3 p2 = p3 - outlet.Tangent * system.BranchEndHandleLength;
 			CadPoint3[] samples = new CadPoint3[25];
 			for (int sample = 0; sample < samples.Length; ++sample)
@@ -174,7 +190,7 @@ internal sealed partial class CadViewport : IDisposable
 					+ p2 * (3 * inverse * t * t)
 					+ p3 * (t * t * t);
 			}
-			collectorDraftCurves.Add(samples);
+			AddCollectorDraftCurve(samples, outerRadius);
 		}
 	}
 
@@ -245,6 +261,8 @@ internal sealed partial class CadViewport : IDisposable
 				&& item.Tessellation.Indices.Length > 0);
 	}
 
+	internal int CollectorDraftMeshCount => collectorDraftMeshes.Count;
+
 	internal void SetMates(ManifoldProject project)
 	{
 		mates.Clear();
@@ -262,10 +280,14 @@ internal sealed partial class CadViewport : IDisposable
 		mateCandidates.RemoveAll(candidate => bound.Contains((candidate.PartId, candidate.TopologyId)));
 	}
 
-	internal void SetCollectors(ManifoldProject project)
+	internal void SetCollectors(
+		ManifoldProject project,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> evaluatedRunners = null
+	)
 	{
 		collectorGlyphs.Clear();
 		collectorDraftCurves.Clear();
+		ClearCollectorDraftMeshes();
 		collectorDraftInvalid = false;
 		foreach (CadCollectorSystem system in project.CollectorSystems)
 		{
@@ -282,7 +304,13 @@ internal sealed partial class CadViewport : IDisposable
 		CadCollectorSystem invalid = project.ActiveCollectorSystem;
 		if (invalid?.IsResolved == false)
 		{
-			SetCollectorDraft(invalid, null, invalid.OutletFrame, true);
+			SetCollectorDraft(
+				invalid,
+				null,
+				invalid.OutletFrame,
+				true,
+				evaluatedRunners
+			);
 		}
 	}
 

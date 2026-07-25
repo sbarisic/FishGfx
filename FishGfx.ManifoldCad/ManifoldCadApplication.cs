@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -18,7 +19,12 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private readonly Stopwatch timer = Stopwatch.StartNew();
 	private readonly Dictionary<Guid, CadPoint3> eulerByPart = new();
 	private readonly Dictionary<Guid, RunnerEvaluationResult> evaluations = new();
+	private readonly Dictionary<(Guid SystemId, Guid RunnerId), RunnerFeature[]> collectorRunnerGeometry = new();
 	private readonly Dictionary<Guid, string> runnerBuildErrors = new();
+	private readonly ConcurrentQueue<Action> mainThreadActions = new();
+	private readonly object regenerationLock = new();
+	private readonly Dictionary<Guid, RegenerationRequest> pendingRegenerations = new();
+	private readonly CancellationTokenSource regenerationCancellation = new();
 	private readonly RunnerGraph emptyGraph = new();
 	private RenderWindow window;
 	private InputManager input;
@@ -45,6 +51,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private string autoScreenshotPath;
 	private string[] bezierInspectorProperties = Array.Empty<string>();
 	private CollectorDraftState collectorDraft;
+	private Task regenerationWorker;
+	private bool regenerationWorkerRunning;
+	private long projectEpoch;
 
 	internal ManifoldCadApplication(string[] args)
 	{
@@ -88,7 +97,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 			Update(deltaTime, (float)now);
 			Render(deltaTime, (float)now);
 
-			if (autoMode && now >= 2.5)
+			if (autoMode && now >= 2.5 && !HasPendingRegeneration())
 			{
 				ValidateAutomaticFrame();
 				window.IsCloseRequested = true;
@@ -104,6 +113,24 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		}
 
 		disposed = true;
+		lock (regenerationLock)
+		{
+			foreach (RegenerationRequest pending in pendingRegenerations.Values)
+			{
+				ObserveDiscardedEvaluation(pending);
+			}
+			pendingRegenerations.Clear();
+		}
+		regenerationCancellation.Cancel();
+		try
+		{
+			regenerationWorker?.GetAwaiter().GetResult();
+		}
+		catch (OperationCanceledException)
+		{
+			// Cancellation is the expected shutdown path for queued regeneration.
+		}
+		regenerationCancellation.Dispose();
 
 		if (window != null)
 		{
@@ -204,6 +231,11 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 
 	private void Update(float deltaTime, float time)
 	{
+		while (mainThreadActions.TryDequeue(out Action action))
+		{
+			TryOperation(action);
+		}
+
 		if (input.WasKeyPressed(Key.Escape))
 		{
 			if (!CancelCollectorDraft() && !viewport.CancelBezierDraft())
@@ -282,7 +314,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private void RefreshUi()
 	{
 		viewport.SetMates(project);
-		viewport.SetCollectors(project);
+		viewport.SetCollectors(project, evaluations);
 		CadPoint3 euler = selectedPart != null && eulerByPart.TryGetValue(selectedPart.Id, out CadPoint3 value)
 			? value
 			: default;
@@ -333,6 +365,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		}
 		catch (Exception exception)
 		{
+			ApplicationLog.Current?.Exception("CAD operation failed.", exception);
 			ui.SetStatus(exception.Message, true);
 		}
 	}

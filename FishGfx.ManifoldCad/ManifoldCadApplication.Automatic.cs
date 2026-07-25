@@ -218,11 +218,19 @@ internal sealed partial class ManifoldCadApplication
 
 		if (!defaultRunnerOnly && project.Runners.Count >= 2)
 		{
-			Guid[] collectorMembers = project.Runners.Take(2).Select(item => item.Id).ToArray();
+			int collectorMemberCount = int.TryParse(
+				Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_COLLECTOR_COUNT"),
+				out int requestedCollectorMemberCount)
+					? Math.Clamp(requestedCollectorMemberCount, 2, project.Runners.Count)
+					: 2;
+			Guid[] collectorMembers = project.Runners
+				.Take(collectorMemberCount)
+				.Select(item => item.Id)
+				.ToArray();
 			if (!project.TryCreateCollectorSystem(
 				collectorMembers,
 				CollectorLayoutPreset.Row,
-				"Automatic 2 into 1",
+				$"Automatic {collectorMemberCount} into 1",
 				evaluations,
 				out CadCollectorSystem automaticCollector,
 				out string collectorError
@@ -236,8 +244,81 @@ internal sealed partial class ManifoldCadApplication
 				throw new InvalidOperationException(
 					automaticCollector.Diagnostic ?? "Automatic collector generation failed.");
 			}
+			int collectorRebuildCount = int.TryParse(
+				Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_COLLECTOR_REBUILDS"),
+				out int requestedCollectorRebuildCount)
+					? Math.Clamp(requestedCollectorRebuildCount, 1, 10)
+					: 1;
+			for (int rebuildIndex = 1; rebuildIndex < collectorRebuildCount; ++rebuildIndex)
+			{
+				CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
+				if (!transaction.TryUpdate(
+						automaticCollector.Id,
+						system => system.MergeLength += rebuildIndex,
+						out string updateError
+					)
+					|| !transaction.Commit(out updateError))
+				{
+					throw new InvalidOperationException(updateError);
+				}
+				automaticCollector = project.CollectorSystems.Single(
+					system => system.Id == automaticCollector.Id);
+				RegenerateCollectorSystem(automaticCollector);
+				if (!automaticCollector.IsResolved)
+				{
+					throw new InvalidOperationException(
+						automaticCollector.Diagnostic
+							?? "Automatic collector regeneration failed.");
+				}
+			}
+			if (string.Equals(
+				Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_ASYNC_REBUILD"),
+				"1",
+				StringComparison.Ordinal))
+			{
+				int queuedEditCount = int.TryParse(
+					Environment.GetEnvironmentVariable(
+						"FISHGFX_MANIFOLD_AUTO_ASYNC_REBUILD_COUNT"),
+					out int requestedQueuedEditCount)
+						? Math.Clamp(requestedQueuedEditCount, 1, 10)
+						: 1;
+				CadRunner editedRunner = project.Runners.Single(
+					candidate => candidate.Id == automaticCollector.Inlets[0].Binding.RunnerId);
+				RunnerNode editedStraight = editedRunner.Graph.Nodes.First(
+					node => node.DefinitionId == RunnerNodes.Straight);
+				for (int editIndex = 0; editIndex < queuedEditCount; ++editIndex)
+				{
+					double previousLength = double.Parse(
+						editedStraight.Properties["length"],
+						System.Globalization.CultureInfo.InvariantCulture);
+					editedStraight.Properties["length"] = (previousLength + 1).ToString(
+						"R",
+						System.Globalization.CultureInfo.InvariantCulture);
+					automaticCollector.CommitEdit();
+					QueueCollectorRegeneration(automaticCollector);
+				}
+			}
 			project.SetActiveRunner(runner.Id);
 			viewport.SetActiveRunner(runner.Id);
+		}
+		if (string.Equals(
+			Environment.GetEnvironmentVariable("FISHGFX_MANIFOLD_AUTO_ASYNC_RUNNER"),
+			"1",
+			StringComparison.Ordinal))
+		{
+			CadRunner editedRunner = project.Runners.First(candidate =>
+				project.CollectorSystems.All(system =>
+					system.Inlets.All(inlet => inlet.Binding.RunnerId != candidate.Id)));
+			RunnerNode editedStraight = editedRunner.Graph.Nodes.First(
+				node => node.DefinitionId == RunnerNodes.Straight);
+			double previousLength = double.Parse(
+				editedStraight.Properties["length"],
+				System.Globalization.CultureInfo.InvariantCulture);
+			editedStraight.Properties["length"] = (previousLength + 1).ToString(
+				"R",
+				System.Globalization.CultureInfo.InvariantCulture);
+			editedRunner.CommitEdit();
+			QueueRunnerRegeneration(editedRunner);
 		}
 
 		if (string.IsNullOrWhiteSpace(stepPath))

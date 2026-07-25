@@ -72,6 +72,7 @@ internal sealed partial class CadViewport
 		}
 
 		items.Clear();
+		ClearCollectorDraftMeshes();
 		selectedFaceMesh?.Dispose();
 		candidateSphere.Dispose();
 		gridMesh.Dispose();
@@ -194,6 +195,11 @@ internal sealed partial class CadViewport
 		Color color = collectorDraftInvalid
 			? new Color(255, 70, 70)
 			: new Color(245, 90, 210);
+		foreach (Mesh3D mesh in collectorDraftMeshes)
+		{
+			mesh.DefaultColor = color;
+			pass.DrawMesh(mesh);
+		}
 		foreach (CadPoint3[] curve in collectorDraftCurves)
 		{
 			for (int index = 1; index < curve.Length; ++index)

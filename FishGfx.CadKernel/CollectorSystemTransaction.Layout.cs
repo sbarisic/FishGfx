@@ -31,8 +31,13 @@ public sealed partial class CollectorSystemTransaction
 					target.Normal
 				);
 			}
-			double chordLength = (target.Origin - evaluation.Chain.EndFrame.Origin).Length;
-			double handleLength = Math.Clamp(chordLength / 3, 35, 180);
+			RunnerFeature existingTerminal = evaluation.Chain.Features.LastOrDefault(
+				feature => feature.NodeId == binding.TerminalBezierNodeId);
+			CadFrame entryFrame = existingTerminal == null
+				? evaluation.Chain.EndFrame
+				: existingTerminal.EntryFrame;
+			double chordLength = (target.Origin - entryFrame.Origin).Length;
+			double handleLength = Math.Clamp(chordLength / 3, 1, 120);
 			RunnerNode terminal = stagedGraphs[binding.RunnerId].Nodes.Single(
 				node => node.Id == binding.TerminalBezierNodeId);
 			terminal.Properties["startHandleLength"] =
@@ -42,13 +47,12 @@ public sealed partial class CollectorSystemTransaction
 		}
 	}
 
-	private CadFrame SeedOutletFrame(
+	private CadFrame[] ResolveRunnerEndFrames(
 		IReadOnlyList<Guid> runnerIds,
 		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations
 	)
 	{
-		List<CadFrame> startFrames = new();
-		bool allAuthoritative = authoritativeEvaluations != null;
+		List<CadFrame> endFrames = new();
 		foreach (Guid runnerId in runnerIds)
 		{
 			CadRunner runner = project.Runners.Single(item => item.Id == runnerId);
@@ -62,49 +66,96 @@ public sealed partial class CollectorSystemTransaction
 				&& evaluation.GenerationStamp.OwnerId == runnerId
 				&& evaluation.GenerationStamp.Revision == runner.EditRevision)
 			{
-				startFrames.Add(evaluation.Chain.EndFrame);
+				endFrames.Add(evaluation.Chain.EndFrame);
 				continue;
 			}
-			allAuthoritative = false;
 			CadMate mate = project.Mates.Single(item => item.Id == runner.StartMateId);
 			CadPart part = project.Parts.Single(item => item.Id == mate.PartId);
-			startFrames.Add(mate.LocalFrame.Value.Transformed(part.Transform));
+			endFrames.Add(mate.LocalFrame.Value.Transformed(part.Transform));
 		}
+		return endFrames.ToArray();
+	}
+
+	private static CadFrame SeedOutletFrame(
+		IReadOnlyList<CadFrame> runnerEndFrames,
+		CadCollectorSystem system
+	)
+	{
 		CadPoint3 origin = CadPoint3.Zero;
 		CadPoint3 tangent = CadPoint3.Zero;
 		CadPoint3 normal = CadPoint3.Zero;
-		foreach (CadFrame frame in startFrames)
+		foreach (CadFrame frame in runnerEndFrames)
 		{
 			origin += frame.Origin;
 			tangent += frame.Tangent;
 			normal += frame.Normal;
 		}
-		origin /= startFrames.Count;
+		origin /= runnerEndFrames.Count;
 		if (tangent.LengthSquared <= 1e-12)
 		{
-			tangent = startFrames[0].Tangent;
+			tangent = runnerEndFrames[0].Tangent;
 		}
 		if (normal.LengthSquared <= 1e-12)
 		{
-			normal = startFrames[0].Normal;
+			normal = runnerEndFrames[0].Normal;
 		}
 		CadFrame orientation = new(CadPoint3.Zero, tangent, normal);
+		double furthestAxialOffset = runnerEndFrames.Max(frame =>
+			CadPoint3.Dot(frame.Origin - origin, orientation.Tangent));
+		double radialExtent = runnerEndFrames.Max(frame =>
+		{
+			CadPoint3 offset = frame.Origin - origin;
+			CadPoint3 radial = offset
+				- CadPoint3.Dot(offset, orientation.Tangent) * orientation.Tangent;
+			return radial.Length;
+		});
+		double mergeLead = Math.Max(
+			30 + system.BranchEndHandleLength * 1.5,
+			Math.Max(
+				radialExtent * 0.85,
+				30 + system.OutletProfile.OuterDiameterMillimetres
+			)
+		);
 		return new CadFrame(
-			origin + orientation.Tangent * 600
-				+ orientation.Normal * (allAuthoritative ? 0 : 100),
+			origin + orientation.Tangent * (furthestAxialOffset + mergeLead),
 			orientation.Tangent,
 			orientation.Normal
 		);
 	}
 
+	private static void ApplyInitialLayout(
+		CadCollectorSystem system,
+		CollectorLayoutPreset preset,
+		IReadOnlyList<CadFrame> runnerEndFrames
+	)
+	{
+		const double runnerConnectionLength = 30;
+		for (int index = 0; index < system.Inlets.Count; index++)
+		{
+			CadFrame source = runnerEndFrames[index];
+			CadFrame connected = new(
+				source.Origin + source.Tangent * runnerConnectionLength,
+				source.Tangent,
+				source.Normal
+			);
+			system.Inlets[index].LocalFrame = connected.RelativeTo(system.OutletFrame);
+			system.Inlets[index].MergeStation = system.Inlets.Count == 2
+				? 0.5
+				: (index + 1d) / (system.Inlets.Count + 1d);
+		}
+
+		if (preset != CollectorLayoutPreset.Row)
+		{
+			ApplyPreset(system, preset);
+		}
+	}
+
 	private static void ApplyPreset(CadCollectorSystem system, CollectorLayoutPreset preset)
 	{
 		int count = system.Inlets.Count;
-		double inletX = -(
-			system.OutletStubLength
-			+ system.MergeLength
-			+ system.OverlapLength
-			+ 60
+		double inletX = -Math.Max(
+			system.OutletStubLength,
+			system.BranchEndHandleLength * 1.5
 		);
 		for (int index = 0; index < count; index++)
 		{
@@ -144,7 +195,9 @@ public sealed partial class CollectorSystemTransaction
 					break;
 			}
 			system.Inlets[index].LocalFrame = new CadFrame(origin, tangent, normal);
-			system.Inlets[index].MergeStation = (index + 1d) / (count + 1d);
+			system.Inlets[index].MergeStation = count == 2
+				? 0.5
+				: (index + 1d) / (count + 1d);
 		}
 	}
 

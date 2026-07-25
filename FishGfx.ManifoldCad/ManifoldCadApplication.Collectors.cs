@@ -38,6 +38,7 @@ internal sealed partial class ManifoldCadApplication
 		{
 			return;
 		}
+		WaitForRegeneration();
 		Guid[] members = system.Inlets.Select(inlet => inlet.Binding.RunnerId).ToArray();
 		if (!project.TryDeleteCollectorSystem(system.Id, evaluations, out string error))
 		{
@@ -45,6 +46,15 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 		document.RemoveCollectorSystemAsync(system.Id).GetAwaiter().GetResult();
+		lock (collectorRunnerGeometry)
+		{
+			foreach ((Guid systemId, Guid runnerId) in collectorRunnerGeometry.Keys
+				.Where(key => key.SystemId == system.Id)
+				.ToArray())
+			{
+				collectorRunnerGeometry.Remove((systemId, runnerId));
+			}
+		}
 		viewport.RemoveRunner(system.Id);
 		foreach (Guid runnerId in members)
 		{
@@ -63,6 +73,7 @@ internal sealed partial class ManifoldCadApplication
 		{
 			return;
 		}
+		WaitForRegeneration();
 		CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
 		if (!transaction.TryRename(active.Id, name, out string error)
 			|| !transaction.Commit(out error))
@@ -229,7 +240,13 @@ internal sealed partial class ManifoldCadApplication
 		viewport.SetSelectedFrame(draft.Frame, draft.EulerDegrees);
 		CadCollectorSystem system = project.CollectorSystems.Single(
 			item => item.Id == draft.SystemId);
-		viewport.SetCollectorDraft(system, draft.InletId, draft.Frame);
+		viewport.SetCollectorDraft(
+			system,
+			draft.InletId,
+			draft.Frame,
+			false,
+			evaluations
+		);
 		CadCollectorInlet inlet = draft.InletId.HasValue
 			? system.Inlets.Single(item => item.Id == draft.InletId.Value)
 			: null;
@@ -371,15 +388,71 @@ internal sealed partial class ManifoldCadApplication
 
 	private void RegenerateCollectorSystem(CadCollectorSystem system)
 	{
+		if (!autoMode)
+		{
+			QueueCollectorRegeneration(system);
+			return;
+		}
+		RegenerateCollectorSystemSynchronously(system);
+	}
+
+	private void RegenerateCollectorSystemSynchronously(CadCollectorSystem system)
+	{
 		Stopwatch timing = Stopwatch.StartNew();
 		Dictionary<Guid, RunnerEvaluationResult> members = new();
 		bool nativeBuildStaged = false;
 		long generationRevision = system.GenerationRevision;
+		ApplicationLog.Current?.Info(
+			$"Collector regeneration started: id={system.Id}; name={system.Name}; "
+				+ $"revision={generationRevision}; inlets={system.Inlets.Count}; "
+				+ $"runners={string.Join(",", system.Inlets.Select(inlet => inlet.Binding?.RunnerId))}"
+		);
 		try
 		{
 			foreach (CadCollectorInlet inlet in system.Inlets)
 			{
 				CadRunner runner = project.Runners.Single(item => item.Id == inlet.Binding.RunnerId);
+				RunnerNode terminalNode = runner.Graph.Nodes.Single(
+					node => node.Id == inlet.Binding.TerminalBezierNodeId);
+				CadFrame constrainedFrame = system.GetWorldInletFrame(inlet);
+				string startHandle = terminalNode.Properties.TryGetValue(
+					"startHandleLength",
+					out string storedStartHandle)
+						? storedStartHandle
+						: "<missing>";
+				string endHandle = terminalNode.Properties.TryGetValue(
+					"endHandleLength",
+					out string storedEndHandle)
+						? storedEndHandle
+						: "<missing>";
+				ApplicationLog.Current?.Info(
+					$"Collector terminal node: runner={runner.Id}; "
+						+ $"target=({constrainedFrame.Origin.X:R},"
+						+ $"{constrainedFrame.Origin.Y:R},{constrainedFrame.Origin.Z:R}); "
+						+ $"startHandle={startHandle}; "
+						+ $"endHandle={endHandle}; "
+						+ $"cachedEvaluations={evaluations.Count}"
+				);
+				if (evaluations.TryGetValue(
+						runner.Id,
+						out RunnerEvaluationResult previousEvaluation
+					)
+					&& previousEvaluation.Success)
+				{
+					CadFrame previousEnd = previousEvaluation.Chain.EndFrame;
+					CadPoint3 constraintChord =
+						constrainedFrame.Origin - previousEnd.Origin;
+					ApplicationLog.Current?.Info(
+						$"Collector terminal constraint: runner={runner.Id}; "
+							+ $"distance={constraintChord.Length:R}; "
+							+ $"chordTangentDot={CadPoint3.Dot(
+								constraintChord.Normalized(),
+								previousEnd.Tangent):R}; "
+							+ $"tangentDot={CadPoint3.Dot(previousEnd.Tangent, constrainedFrame.Tangent):R}; "
+							+ $"startHandle={startHandle}; "
+							+ $"endHandle={endHandle}"
+					);
+				}
 				RunnerEvaluationResult result = project.EvaluateRunnerAsync(document, runner)
 					.GetAwaiter()
 					.GetResult();
@@ -402,10 +475,25 @@ internal sealed partial class ManifoldCadApplication
 			timing.Restart();
 			document.BeginCollectorSystemBuildAsync(system).GetAwaiter().GetResult();
 			nativeBuildStaged = true;
+			int rebuiltRunnerCount = 0;
 			foreach (CadCollectorInlet inlet in system.Inlets)
 			{
 				CadRunner runner = project.Runners.Single(item => item.Id == inlet.Binding.RunnerId);
-				document.BuildRunnerAsync(runner, members[runner.Id], system).GetAwaiter().GetResult();
+				RunnerFeature[] currentGeometry = members[runner.Id].Chain.Features.ToArray();
+				bool reuse;
+				lock (collectorRunnerGeometry)
+				{
+					reuse = collectorRunnerGeometry.TryGetValue(
+							(system.Id, runner.Id),
+							out RunnerFeature[] previousGeometry
+						)
+						&& previousGeometry.SequenceEqual(currentGeometry);
+				}
+				if (!reuse)
+				{
+					document.BuildRunnerAsync(runner, members[runner.Id], system).GetAwaiter().GetResult();
+					rebuiltRunnerCount++;
+				}
 			}
 			long revision = document.BuildCollectorSystemAsync(system, members).GetAwaiter().GetResult();
 			nativeBuildStaged = false;
@@ -425,17 +513,34 @@ internal sealed partial class ManifoldCadApplication
 			{
 				viewport.RemoveRunner(inlet.Binding.RunnerId);
 				runnerBuildErrors.Remove(inlet.Binding.RunnerId);
+				lock (collectorRunnerGeometry)
+				{
+					collectorRunnerGeometry[(system.Id, inlet.Binding.RunnerId)] =
+						members[inlet.Binding.RunnerId].Chain.Features.ToArray();
+				}
 			}
 			viewport.AddOrReplace(null, system.Id, preview.Value, true);
 			system.IsResolved = true;
 			system.Diagnostic = null;
+			ApplicationLog.Current?.Info(
+				$"Collector regeneration completed: id={system.Id}; revision={generationRevision}; "
+					+ $"rebuiltRunners={rebuiltRunnerCount}/{system.Inlets.Count}; "
+					+ $"evalMs={evaluatedMilliseconds}; buildMs={buildMilliseconds}; "
+					+ $"meshMs={timing.ElapsedMilliseconds}"
+			);
 			ui.SetStatus(
 				$"{system.Name} fused {system.Inlets.Count}->1 | eval {evaluatedMilliseconds} ms, "
-				+ $"build {buildMilliseconds} ms, mesh {timing.ElapsedMilliseconds} ms"
+					+ $"runners {rebuiltRunnerCount}/{system.Inlets.Count}, "
+					+ $"build {buildMilliseconds} ms, mesh {timing.ElapsedMilliseconds} ms"
 			);
 		}
 		catch (Exception exception)
 		{
+			ApplicationLog.Current?.Exception(
+				$"Collector regeneration failed: id={system.Id}; name={system.Name}; "
+					+ $"revision={generationRevision}.",
+				exception
+			);
 			if (nativeBuildStaged)
 			{
 				try
@@ -456,7 +561,8 @@ internal sealed partial class ManifoldCadApplication
 				system,
 				null,
 				system.OutletFrame,
-				true
+				true,
+				evaluations
 			);
 			foreach (CadCollectorInlet inlet in system.Inlets)
 			{

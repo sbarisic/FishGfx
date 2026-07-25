@@ -92,7 +92,8 @@ public sealed partial class CollectorSystemTransaction
 		{
 			Name = string.IsNullOrWhiteSpace(name) ? $"Collector {stagedCollectors.Count + 1}" : name.Trim(),
 		};
-		candidate.OutletFrame = SeedOutletFrame(ids, authoritativeEvaluations);
+		CadFrame[] runnerEndFrames = ResolveRunnerEndFrames(ids, authoritativeEvaluations);
+		candidate.OutletFrame = SeedOutletFrame(runnerEndFrames, candidate);
 		for (int index = 0; index < ids.Length; index++)
 		{
 			Guid runnerId = ids[index];
@@ -138,7 +139,7 @@ public sealed partial class CollectorSystemTransaction
 			});
 		}
 
-		ApplyPreset(candidate, preset);
+		ApplyInitialLayout(candidate, preset, runnerEndFrames);
 		SeedTerminalHandles(candidate, authoritativeEvaluations);
 		if (!ValidateSystem(candidate, stagedGraphs, out error))
 		{

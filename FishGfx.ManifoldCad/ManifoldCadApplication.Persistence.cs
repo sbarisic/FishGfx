@@ -8,6 +8,7 @@ internal sealed partial class ManifoldCadApplication
 	{
 		TryOperation(() =>
 		{
+			WaitForRegeneration();
 			viewport.CaptureView(project.View);
 			nodeCanvas.CaptureView(project.View);
 			string temporary = Path.Combine(Path.GetTempPath(), $"fishgfx-{Guid.NewGuid():N}.xbf");
@@ -30,6 +31,7 @@ internal sealed partial class ManifoldCadApplication
 	{
 		TryOperation(() =>
 		{
+			WaitForRegeneration();
 			CadProjectPackage package = CadProjectArchive.Load(path);
 			string temporary = Path.Combine(Path.GetTempPath(), $"fishgfx-{Guid.NewGuid():N}.xbf");
 
@@ -45,6 +47,11 @@ internal sealed partial class ManifoldCadApplication
 
 			viewport.ClearScene();
 			evaluations.Clear();
+			ClearCollectorRunnerGeometry();
+			Interlocked.Increment(ref projectEpoch);
+			while (mainThreadActions.TryDequeue(out _))
+			{
+			}
 			runnerBuildErrors.Clear();
 			eulerByPart.Clear();
 			hasSelectedTopology = false;

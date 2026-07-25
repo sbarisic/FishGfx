@@ -18,7 +18,7 @@ internal sealed partial class CadUi : IDisposable
 	private readonly Panel inspectorPanel;
 	private readonly TreeView modelTree;
 	private readonly Label inspectorTitle;
-	private readonly Label statusLabel;
+	private readonly WrappedLabel statusLabel;
 	private readonly Textbox mateName;
 	private readonly Textbox runnerName;
 	private readonly NumericUpDown[] translation = new NumericUpDown[3];
@@ -229,11 +229,11 @@ internal sealed partial class CadUi : IDisposable
 		inspectorPanel.AddChild(inspectorTitle);
 		CreateTransformControls();
 		CreateParameterControls();
-		statusLabel = new Label("Ready")
+		statusLabel = new WrappedLabel
 		{
+			Text = "Ready",
 			Position = new Vector2(16, 690),
-			Size = new Vector2(286, 150),
-			Alignment = Align.None,
+			Size = new Vector2(CadLayout.RightWidth - 32, 150),
 		};
 		inspectorPanel.AddChild(statusLabel);
 		ui.AddControl(inspectorPanel);

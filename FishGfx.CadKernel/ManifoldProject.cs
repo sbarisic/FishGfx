@@ -40,6 +40,19 @@ public sealed class CadRunner
 	public long EditRevision => Interlocked.Read(ref editRevision);
 
 	public long CommitEdit() => Interlocked.Increment(ref editRevision);
+
+	internal CadRunner DeepClone()
+	{
+		CadRunner clone = new()
+		{
+			Id = Id,
+			Name = Name,
+			StartMateId = StartMateId,
+			Graph = Graph.DeepClone(),
+		};
+		Interlocked.Exchange(ref clone.editRevision, EditRevision);
+		return clone;
+	}
 }
 
 public sealed class ManifoldProject

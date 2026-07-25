@@ -25,6 +25,17 @@ public sealed class CollectorSystemTests
 		Assert.Equal(2, system.Inlets.Count);
 		Assert.Equal(firstGraphId, first.Graph.Id);
 		Assert.Equal(secondGraphId, second.Graph.Id);
+		Assert.All(system.Inlets, inlet => Assert.Equal(0.5, inlet.MergeStation));
+		CadPoint3 averageInlet = system.Inlets
+			.Select(system.GetWorldInletFrame)
+			.Select(frame => frame.Origin)
+			.Aggregate(CadPoint3.Zero, (sum, point) => sum + point)
+			/ system.Inlets.Count;
+		Assert.InRange(
+			(system.OutletFrame.Origin - averageInlet).Length,
+			1,
+			200
+		);
 		foreach (CadCollectorInlet inlet in system.Inlets)
 		{
 			CadRunner runner = project.Runners.Single(item => item.Id == inlet.Binding.RunnerId);
