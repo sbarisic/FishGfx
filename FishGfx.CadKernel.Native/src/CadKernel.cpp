@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -210,12 +211,22 @@ struct runner_source
 	std::string owner_id;
 };
 
+struct runner_section_record
+{
+	std::string key;
+	TopoDS_Shape shape;
+	std::vector<runner_source> sources;
+	bool validated{};
+};
+
 struct runner_record
 {
 	std::string id;
 	std::string name;
+	std::string geometry_key;
 	TopoDS_Shape shape;
 	std::vector<runner_source> sources;
+	std::vector<runner_section_record> sections;
 };
 
 struct collector_record
@@ -767,6 +778,47 @@ void apply_boolean_history(operation_type& operation, std::vector<runner_source>
 	}
 }
 
+void remap_sources_to_result_surfaces(
+	const TopoDS_Shape& result,
+	std::vector<runner_source>& sources)
+{
+	std::vector<TopoDS_Face> result_faces = shape_faces(result);
+	for (runner_source& source : sources)
+	{
+		std::vector<TopoDS_Face> original_faces = std::move(source.faces);
+		source.faces.clear();
+		for (const TopoDS_Face& candidate : result_faces)
+		{
+			TopLoc_Location candidate_location;
+			Handle(Geom_Surface) candidate_surface = BRep_Tool::Surface(
+				candidate,
+				candidate_location);
+			bool matches = std::any_of(
+				original_faces.begin(),
+				original_faces.end(),
+				[&](const TopoDS_Face& original)
+				{
+					if (candidate.IsSame(original))
+					{
+						return true;
+					}
+					TopLoc_Location original_location;
+					Handle(Geom_Surface) original_surface = BRep_Tool::Surface(
+						original,
+						original_location);
+					return !candidate_surface.IsNull()
+						&& !original_surface.IsNull()
+						&& candidate_surface == original_surface
+						&& candidate_location.IsEqual(original_location);
+				});
+			if (matches)
+			{
+				source.faces.push_back(candidate);
+			}
+		}
+	}
+}
+
 void copy_id(char (&destination)[40], const std::string& value)
 {
 	std::memset(destination, 0, sizeof(destination));
@@ -814,6 +866,7 @@ struct fgcad_document
 	std::unordered_map<std::string, runner_record> runners;
 	std::unordered_map<std::string, collector_record> collectors;
 	std::unordered_map<std::string, runner_record> staged_runners;
+	std::unordered_map<std::string, runner_record> runner_build_cache;
 	std::string staged_collector_id;
 	uint64_t staged_generation_revision{};
 	std::unordered_map<std::string, selector_record> selectors;

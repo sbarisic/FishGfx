@@ -316,20 +316,40 @@ fgcad_status fgcad_document_build_collector_system(
 			double fuzzy_value = 1.0e-3,
 			bool run_parallel = true)
 		{
-			if (values.empty()) throw std::invalid_argument("A collector fusion cannot be empty.");
-			if (values.size() == 1) return values.front();
+			std::vector<TopoDS_Shape> unique_values;
+			unique_values.reserve(values.size());
+			for (const TopoDS_Shape& value : values)
+			{
+				if (value.IsNull())
+				{
+					throw std::invalid_argument("A collector fusion input cannot be null.");
+				}
+				if (std::none_of(
+					unique_values.begin(),
+					unique_values.end(),
+					[&](const TopoDS_Shape& existing)
+					{
+						return existing.IsSame(value);
+					}))
+				{
+					unique_values.push_back(value);
+				}
+			}
+			if (unique_values.empty()) throw std::invalid_argument("A collector fusion cannot be empty.");
+			if (unique_values.size() == 1) return unique_values.front();
 			NCollection_List<TopoDS_Shape> arguments;
 			NCollection_List<TopoDS_Shape> tools;
-			arguments.Append(values.front());
-			for (size_t index = 1; index < values.size(); ++index)
+			arguments.Append(unique_values.front());
+			for (size_t index = 1; index < unique_values.size(); ++index)
 			{
-				tools.Append(values[index]);
+				tools.Append(unique_values[index]);
 			}
 			BRepAlgoAPI_Fuse fuse;
 			fuse.SetArguments(arguments);
 			fuse.SetTools(tools);
 			fuse.SetNonDestructive(true);
 			fuse.SetRunParallel(run_parallel);
+			fuse.SetToFillHistory(false);
 			if (glue) fuse.SetGlue(BOPAlgo_GlueShift);
 			fuse.SetFuzzyValue(fuzzy_value);
 			fuse.Build();
@@ -337,12 +357,12 @@ fgcad_status fgcad_document_build_collector_system(
 			{
 				throw std::runtime_error(
 					"Collector multi-argument fusion failed for "
-					+ std::to_string(values.size())
+					+ std::to_string(unique_values.size())
 					+ " inputs.");
 			}
 			if (sources != nullptr)
 			{
-				apply_boolean_history(fuse, *sources);
+				remap_sources_to_result_surfaces(fuse.Shape(), *sources);
 				size_t result_solid_count = 0;
 				for (TopExp_Explorer explorer(
 						fuse.Shape(),
@@ -357,7 +377,7 @@ fgcad_status fgcad_document_build_collector_system(
 					"Multi-argument wall fusion produced "
 						+ std::to_string(result_solid_count)
 						+ " solid(s) from "
-						+ std::to_string(values.size())
+						+ std::to_string(unique_values.size())
 						+ " inputs.");
 			}
 			return fuse.Shape();
@@ -365,17 +385,44 @@ fgcad_status fgcad_document_build_collector_system(
 		auto fuse_sequential = [](const std::vector<TopoDS_Shape>& values,
 			std::vector<runner_source>* sources)
 		{
-			if (values.empty())
+			std::vector<TopoDS_Shape> unique_values;
+			unique_values.reserve(values.size());
+			for (const TopoDS_Shape& value : values)
+			{
+				if (value.IsNull())
+				{
+					throw std::invalid_argument(
+						"A sequential collector fusion input cannot be null.");
+				}
+				if (std::none_of(
+					unique_values.begin(),
+					unique_values.end(),
+					[&](const TopoDS_Shape& existing)
+					{
+						return existing.IsSame(value);
+					}))
+				{
+					unique_values.push_back(value);
+				}
+			}
+			if (unique_values.empty())
 			{
 				throw std::invalid_argument(
 					"A sequential collector fusion cannot be empty.");
 			}
-			TopoDS_Shape result = values.front();
-			for (size_t index = 1; index < values.size(); ++index)
+			TopoDS_Shape result = unique_values.front();
+			for (size_t index = 1; index < unique_values.size(); ++index)
 			{
-				BRepAlgoAPI_Fuse fuse(result, values[index]);
+				BRepAlgoAPI_Fuse fuse;
+				NCollection_List<TopoDS_Shape> arguments;
+				NCollection_List<TopoDS_Shape> tools;
+				arguments.Append(result);
+				tools.Append(unique_values[index]);
+				fuse.SetArguments(arguments);
+				fuse.SetTools(tools);
 				fuse.SetNonDestructive(true);
 				fuse.SetRunParallel(true);
+				fuse.SetToFillHistory(false);
 				fuse.SetFuzzyValue(1.0e-3);
 				fuse.Build();
 				if (!fuse.IsDone() || fuse.Shape().IsNull())
@@ -384,12 +431,12 @@ fgcad_status fgcad_document_build_collector_system(
 						"Sequential collector fusion failed at input "
 						+ std::to_string(index + 1)
 						+ " of "
-						+ std::to_string(values.size())
+						+ std::to_string(unique_values.size())
 						+ ".");
 				}
 				if (sources != nullptr)
 				{
-					apply_boolean_history(fuse, *sources);
+					remap_sources_to_result_surfaces(fuse.Shape(), *sources);
 				}
 				result = fuse.Shape();
 			}
@@ -458,6 +505,15 @@ fgcad_status fgcad_document_build_collector_system(
 					&& candidate_max_x >= input_max_x - bounds_tolerance
 					&& candidate_max_y >= input_max_y - bounds_tolerance
 					&& candidate_max_z >= input_max_z - bounds_tolerance;
+				double maximum_bounds_loss = std::max({
+					candidate_min_x - input_min_x,
+					candidate_min_y - input_min_y,
+					candidate_min_z - input_min_z,
+					input_max_x - candidate_max_x,
+					input_max_y - candidate_max_y,
+					input_max_z - candidate_max_z,
+					0.0
+				});
 				GProp_GProps candidate_properties;
 				BRepGProp::VolumeProperties(candidate, candidate_properties);
 				double candidate_volume = std::abs(candidate_properties.Mass());
@@ -471,6 +527,15 @@ fgcad_status fgcad_document_build_collector_system(
 						+ std::to_string(largest_input_volume)
 						+ "; bounds="
 						+ (preserves_bounds ? "preserved" : "lost")
+						+ "; maximumBoundsLoss="
+						+ std::to_string(maximum_bounds_loss)
+						+ "; candidateBounds=["
+						+ std::to_string(candidate_min_x) + ","
+						+ std::to_string(candidate_min_y) + ","
+						+ std::to_string(candidate_min_z) + "]-["
+						+ std::to_string(candidate_max_x) + ","
+						+ std::to_string(candidate_max_y) + ","
+						+ std::to_string(candidate_max_z) + "]"
 						+ "; volume="
 						+ (preserves_volume ? "preserved" : "lost"));
 				return preserves_bounds && preserves_volume;
@@ -661,7 +726,7 @@ fgcad_status fgcad_document_build_collector_system(
 				merge_boolean_overlap,
 				std::max(
 					inlets[index].profile.wall_thickness * 2.0,
-					inlet_radii.first * 0.5));
+					inlet_radii.first * 2.0));
 		}
 		std::stable_sort(
 			branch_order.begin(),
@@ -719,9 +784,16 @@ fgcad_status fgcad_document_build_collector_system(
 			TopoDS_Solid branch_half_space = BRepPrimAPI_MakeHalfSpace(
 				binary_merge_split_face,
 				branch_reference).Solid();
-			BRepAlgoAPI_Common clip(shape, branch_half_space);
+			BRepAlgoAPI_Common clip;
+			NCollection_List<TopoDS_Shape> clip_arguments;
+			NCollection_List<TopoDS_Shape> clip_tools;
+			clip_arguments.Append(shape);
+			clip_tools.Append(branch_half_space);
+			clip.SetArguments(clip_arguments);
+			clip.SetTools(clip_tools);
 			clip.SetNonDestructive(true);
 			clip.SetRunParallel(false);
+			clip.SetToFillHistory(false);
 			clip.SetFuzzyValue(1.0e-3);
 			clip.Build();
 			if (!clip.IsDone()
@@ -867,21 +939,55 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 		gp_Pnt merge_start = outlet_origin.Translated(
 			-gp_Vec(outlet_tangent) * merge_boolean_overlap);
-		gp_Ax2 merge_axes(
+		gp_Ax2 merge_start_axes(
 			merge_start,
 			outlet_tangent,
 			unit(system->outlet_frame.normal));
-		TopoDS_Shape merge_outer = BRepPrimAPI_MakeCylinder(
-			merge_axes,
-			merge_outer_radius,
-			merge_boolean_overlap).Shape();
-		TopoDS_Shape merge_inner = BRepPrimAPI_MakeCylinder(
-			merge_axes,
-			merge_inner_radius,
-			merge_boolean_overlap).Shape();
-		BRepAlgoAPI_Cut merge_wall_cut(merge_outer, merge_inner);
+		gp_Ax2 merge_end_axes(
+			outlet_origin,
+			outlet_tangent,
+			unit(system->outlet_frame.normal));
+		double merge_transition_allowance = std::max(
+			0.25,
+			system->outlet_profile.wall_thickness * 0.25);
+		auto circle_wire = [](const gp_Ax2& axes, double radius)
+		{
+			return BRepBuilderAPI_MakeWire(
+				BRepBuilderAPI_MakeEdge(gp_Circ(axes, radius)).Edge()).Wire();
+		};
+		BRepOffsetAPI_ThruSections merge_outer_loft(true, false);
+		merge_outer_loft.CheckCompatibility(true);
+		merge_outer_loft.AddWire(circle_wire(
+			merge_start_axes,
+			merge_outer_radius + merge_transition_allowance));
+		merge_outer_loft.AddWire(circle_wire(merge_end_axes, merge_outer_radius));
+		merge_outer_loft.Build();
+		BRepOffsetAPI_ThruSections merge_inner_loft(true, false);
+		merge_inner_loft.CheckCompatibility(true);
+		merge_inner_loft.AddWire(circle_wire(
+			merge_start_axes,
+			std::max(
+				Precision::Confusion() * 10.0,
+				merge_inner_radius - merge_transition_allowance)));
+		merge_inner_loft.AddWire(circle_wire(merge_end_axes, merge_inner_radius));
+		merge_inner_loft.Build();
+		if (!merge_outer_loft.IsDone() || !merge_inner_loft.IsDone())
+		{
+			throw std::runtime_error(
+				"The collector tapered merge core could not be built.");
+		}
+		TopoDS_Shape merge_outer = merge_outer_loft.Shape();
+		TopoDS_Shape merge_inner = merge_inner_loft.Shape();
+		BRepAlgoAPI_Cut merge_wall_cut;
+		NCollection_List<TopoDS_Shape> merge_wall_arguments;
+		NCollection_List<TopoDS_Shape> merge_wall_tools;
+		merge_wall_arguments.Append(merge_outer);
+		merge_wall_tools.Append(merge_inner);
+		merge_wall_cut.SetArguments(merge_wall_arguments);
+		merge_wall_cut.SetTools(merge_wall_tools);
 		merge_wall_cut.SetNonDestructive(true);
 		merge_wall_cut.SetRunParallel(true);
+		merge_wall_cut.SetToFillHistory(false);
 		merge_wall_cut.SetFuzzyValue(1.0e-3);
 		merge_wall_cut.Build();
 		if (!merge_wall_cut.IsDone()
@@ -982,9 +1088,16 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 
 		bool wall_cut_built = false;
-		BRepAlgoAPI_Cut combined_wall_cut(outer_union, inner_union);
+		BRepAlgoAPI_Cut combined_wall_cut;
+		NCollection_List<TopoDS_Shape> combined_wall_arguments;
+		NCollection_List<TopoDS_Shape> combined_wall_tools;
+		combined_wall_arguments.Append(outer_union);
+		combined_wall_tools.Append(inner_union);
+		combined_wall_cut.SetArguments(combined_wall_arguments);
+		combined_wall_cut.SetTools(combined_wall_tools);
 		combined_wall_cut.SetNonDestructive(true);
 		combined_wall_cut.SetRunParallel(true);
+		combined_wall_cut.SetToFillHistory(false);
 		combined_wall_cut.SetFuzzyValue(1.0e-3);
 		combined_wall_cut.Build();
 		if (combined_wall_cut.IsDone()
@@ -1005,7 +1118,7 @@ fgcad_status fgcad_document_build_collector_system(
 				&& solid_count(candidate) == 1
 				&& BRepCheck_Analyzer(candidate, true).IsValid())
 			{
-				apply_boolean_history(combined_wall_cut, validation_sources);
+				remap_sources_to_result_surfaces(candidate, validation_sources);
 				collector_wall = candidate;
 				wall_cut_built = true;
 			}
@@ -1019,9 +1132,16 @@ fgcad_status fgcad_document_build_collector_system(
 			collector_wall = outer_union;
 			for (size_t index = 0; index < gas_volumes.size(); ++index)
 			{
-				BRepAlgoAPI_Cut wall_cut(collector_wall, gas_volumes[index]);
+				BRepAlgoAPI_Cut wall_cut;
+				NCollection_List<TopoDS_Shape> wall_arguments;
+				NCollection_List<TopoDS_Shape> wall_tools;
+				wall_arguments.Append(collector_wall);
+				wall_tools.Append(gas_volumes[index]);
+				wall_cut.SetArguments(wall_arguments);
+				wall_cut.SetTools(wall_tools);
 				wall_cut.SetNonDestructive(true);
 				wall_cut.SetRunParallel(true);
+				wall_cut.SetToFillHistory(false);
 				wall_cut.SetFuzzyValue(1.0e-3);
 				wall_cut.Build();
 				if (!wall_cut.IsDone()
@@ -1035,7 +1155,9 @@ fgcad_status fgcad_document_build_collector_system(
 						+ std::to_string(gas_volumes.size())
 						+ ".");
 				}
-				apply_boolean_history(wall_cut, validation_sources);
+				remap_sources_to_result_surfaces(
+					wall_cut.Shape(),
+					validation_sources);
 				collector_wall = wall_cut.Shape();
 			}
 			if (!BRepCheck_Analyzer(collector_wall, true).IsValid())
@@ -1300,7 +1422,9 @@ fgcad_status fgcad_document_build_collector_system(
 			}
 
 			std::vector<runner_source> trimmed_sources = replacement.sources;
-			apply_boolean_history(operation, trimmed_sources);
+			remap_sources_to_result_surfaces(
+				operation.Shape(),
+				trimmed_sources);
 			replacement.sources = std::move(trimmed_sources);
 			fused = operation.Shape();
 			trimmed_volume = candidate_volume;
@@ -1312,9 +1436,16 @@ fgcad_status fgcad_document_build_collector_system(
 
 		if (!outlet_was_trimmed)
 		{
-			BRepAlgoAPI_Cut parallel_outlet_cut(fused, downstream_half_space);
+			BRepAlgoAPI_Cut parallel_outlet_cut;
+			NCollection_List<TopoDS_Shape> parallel_outlet_arguments;
+			NCollection_List<TopoDS_Shape> parallel_outlet_tools;
+			parallel_outlet_arguments.Append(fused);
+			parallel_outlet_tools.Append(downstream_half_space);
+			parallel_outlet_cut.SetArguments(parallel_outlet_arguments);
+			parallel_outlet_cut.SetTools(parallel_outlet_tools);
 			parallel_outlet_cut.SetNonDestructive(true);
 			parallel_outlet_cut.SetRunParallel(true);
+			parallel_outlet_cut.SetToFillHistory(false);
 			parallel_outlet_cut.SetFuzzyValue(1.0e-3);
 			outlet_was_trimmed = accept_outlet_trim(
 				parallel_outlet_cut,
@@ -1322,9 +1453,16 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 		if (!outlet_was_trimmed)
 		{
-			BRepAlgoAPI_Cut serial_outlet_cut(fused, downstream_half_space);
+			BRepAlgoAPI_Cut serial_outlet_cut;
+			NCollection_List<TopoDS_Shape> serial_outlet_arguments;
+			NCollection_List<TopoDS_Shape> serial_outlet_tools;
+			serial_outlet_arguments.Append(fused);
+			serial_outlet_tools.Append(downstream_half_space);
+			serial_outlet_cut.SetArguments(serial_outlet_arguments);
+			serial_outlet_cut.SetTools(serial_outlet_tools);
 			serial_outlet_cut.SetNonDestructive(true);
 			serial_outlet_cut.SetRunParallel(false);
+			serial_outlet_cut.SetToFillHistory(false);
 			serial_outlet_cut.SetFuzzyValue(1.0e-3);
 			outlet_was_trimmed = accept_outlet_trim(
 				serial_outlet_cut,
@@ -1337,9 +1475,16 @@ fgcad_status fgcad_document_build_collector_system(
 			TopoDS_Solid upstream_half_space = BRepPrimAPI_MakeHalfSpace(
 				outlet_plane_face.Face(),
 				upstream_reference).Solid();
-			BRepAlgoAPI_Common upstream_intersection(fused, upstream_half_space);
+			BRepAlgoAPI_Common upstream_intersection;
+			NCollection_List<TopoDS_Shape> upstream_arguments;
+			NCollection_List<TopoDS_Shape> upstream_tools;
+			upstream_arguments.Append(fused);
+			upstream_tools.Append(upstream_half_space);
+			upstream_intersection.SetArguments(upstream_arguments);
+			upstream_intersection.SetTools(upstream_tools);
 			upstream_intersection.SetNonDestructive(true);
 			upstream_intersection.SetRunParallel(false);
+			upstream_intersection.SetToFillHistory(false);
 			upstream_intersection.SetFuzzyValue(1.0e-3);
 			outlet_was_trimmed = accept_outlet_trim(
 				upstream_intersection,
@@ -1412,6 +1557,65 @@ fgcad_status fgcad_document_build_collector_system(
 				"(nearest face center "
 				+ std::to_string(nearest_outlet_face_distance)
 				+ " mm from the outlet plane).");
+		}
+		std::vector<TopoDS_Face> published_faces = shape_faces(fused);
+		for (runner_source& source : replacement.sources)
+		{
+			if (source.kind != FGCAD_SOURCE_COLLECTOR_INLET
+				|| source.owner_id != system_id)
+			{
+				continue;
+			}
+			bool has_published_face = std::any_of(
+				source.faces.begin(),
+				source.faces.end(),
+				[&](const TopoDS_Face& source_face)
+				{
+					return std::any_of(
+						published_faces.begin(),
+						published_faces.end(),
+						[&](const TopoDS_Face& candidate)
+						{
+							return candidate.IsSame(source_face);
+						});
+				});
+			if (has_published_face)
+			{
+				continue;
+			}
+
+			gp_Pnt p0 = point(source.feature.entry_frame.origin);
+			gp_Pnt p1 = point(source.feature.control1);
+			gp_Pnt p2 = point(source.feature.control2);
+			gp_Pnt p3 = point(source.feature.exit_frame.origin);
+			gp_Pnt branch_midpoint(
+				(p0.X() + 3.0 * p1.X() + 3.0 * p2.X() + p3.X()) / 8.0,
+				(p0.Y() + 3.0 * p1.Y() + 3.0 * p2.Y() + p3.Y()) / 8.0,
+				(p0.Z() + 3.0 * p1.Z() + 3.0 * p2.Z() + p3.Z()) / 8.0);
+			double nearest_distance = std::numeric_limits<double>::infinity();
+			const TopoDS_Face* nearest_face = nullptr;
+			for (const TopoDS_Face& face : published_faces)
+			{
+				GProp_GProps properties;
+				BRepGProp::SurfaceProperties(face, properties);
+				double distance = branch_midpoint.Distance(properties.CentreOfMass());
+				if (distance < nearest_distance)
+				{
+					nearest_distance = distance;
+					nearest_face = &face;
+				}
+			}
+			if (nearest_face != nullptr)
+			{
+				source.faces.clear();
+				source.faces.push_back(*nearest_face);
+				append_native_log(
+					"collector",
+					"Recovered inlet provenance near its branch midpoint: inlet="
+						+ source.id
+						+ "; distance="
+						+ std::to_string(nearest_distance));
+			}
 		}
 		replacement.shape = fused;
 		for (const std::string& runner_id : replacement.runner_ids)

@@ -4,47 +4,196 @@ public sealed partial class CollectorSystemTransaction
 {
 	private void SeedTerminalHandles(
 		CadCollectorSystem system,
-		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations,
+		bool ensureCurvatureClearance = false
 	)
 	{
 		if (authoritativeEvaluations == null)
 		{
 			return;
 		}
+		for (int attempt = 0; ensureCurvatureClearance && attempt < 12; attempt++)
+		{
+			bool hasInsufficientClearance = false;
+			foreach (CadCollectorInlet inlet in system.Inlets)
+			{
+				if (!TryGetTerminalFrames(
+					system,
+					inlet,
+					authoritativeEvaluations,
+					out CadFrame entryFrame,
+					out CadFrame target,
+					out RunnerSectionProfile profile
+				))
+				{
+					continue;
+				}
+				var handleSeed = SeedBezierHandles(entryFrame, target);
+				double minimumRadius = handleSeed.MinimumRadius;
+				if (minimumRadius < profile.ApproximateOuterRadiusMillimetres * 1.5)
+				{
+					hasInsufficientClearance = true;
+					break;
+				}
+			}
+			if (!hasInsufficientClearance)
+			{
+				break;
+			}
+			system.OutletFrame = new CadFrame(
+				system.OutletFrame.Origin + system.OutletFrame.Tangent * 25,
+				system.OutletFrame.Tangent,
+				system.OutletFrame.Normal
+			);
+		}
 		foreach (CadCollectorInlet inlet in system.Inlets)
 		{
-			CadCollectorBinding binding = inlet.Binding;
-			if (!authoritativeEvaluations.TryGetValue(
-					binding.RunnerId,
-					out RunnerEvaluationResult evaluation
-				)
-				|| !evaluation.Success)
+			if (!TryGetTerminalFrames(
+				system,
+				inlet,
+				authoritativeEvaluations,
+				out CadFrame entryFrame,
+				out CadFrame target,
+				out _
+			))
 			{
 				continue;
 			}
-			CadFrame target = system.GetWorldInletFrame(inlet);
-			if (binding.ClockingTransitionNodeId.HasValue)
+			var handleSeed = SeedBezierHandles(entryFrame, target);
+			double startHandle = handleSeed.Start;
+			double endHandle = handleSeed.End;
+			RunnerNode terminal = stagedGraphs[inlet.Binding.RunnerId].Nodes.Single(
+				node => node.Id == inlet.Binding.TerminalBezierNodeId);
+			terminal.Properties["startHandleLength"] =
+				FormattableString.Invariant($"{startHandle:R}");
+			terminal.Properties["endHandleLength"] =
+				FormattableString.Invariant($"{endHandle:R}");
+		}
+	}
+
+	private static bool TryGetTerminalFrames(
+		CadCollectorSystem system,
+		CadCollectorInlet inlet,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations,
+		out CadFrame entry,
+		out CadFrame target,
+		out RunnerSectionProfile profile
+	)
+	{
+		CadCollectorBinding binding = inlet.Binding;
+		if (!authoritativeEvaluations.TryGetValue(
+				binding.RunnerId,
+				out RunnerEvaluationResult evaluation
+			)
+			|| !evaluation.Success)
+		{
+			entry = default;
+			target = default;
+			profile = null;
+			return false;
+		}
+		target = system.GetWorldInletFrame(inlet);
+		if (binding.ClockingTransitionNodeId.HasValue)
+		{
+			target = new CadFrame(
+				target.Origin - target.Tangent * inlet.ClockingTransitionLength,
+				target.Tangent,
+				target.Normal
+			);
+		}
+		RunnerFeature existingTerminal = evaluation.Chain.Features.LastOrDefault(
+			feature => feature.NodeId == binding.TerminalBezierNodeId);
+		entry = existingTerminal == null
+			? evaluation.Chain.EndFrame
+			: existingTerminal.EntryFrame;
+		profile = evaluation.Chain.ActiveProfile;
+		return true;
+	}
+
+	private static (double Start, double End, double MinimumRadius) SeedBezierHandles(
+		CadFrame entry,
+		CadFrame target
+	)
+	{
+		double chordLength = (target.Origin - entry.Origin).Length;
+		if (!double.IsFinite(chordLength) || chordLength <= 1e-9)
+		{
+			return (1, 1, 0);
+		}
+
+		double bestStart = chordLength / 3;
+		double bestEnd = chordLength / 3;
+		double bestMinimumRadius = -1;
+		for (int startStep = 2; startStep <= 8; startStep++)
+		{
+			double startHandle = chordLength * startStep / 10;
+			for (int endStep = 2; endStep <= 8; endStep++)
 			{
-				target = new CadFrame(
-					target.Origin - target.Tangent * inlet.ClockingTransitionLength,
-					target.Tangent,
-					target.Normal
+				double endHandle = chordLength * endStep / 10;
+				double minimumRadius = SampleMinimumBezierRadius(
+					entry,
+					target,
+					startHandle,
+					endHandle
+				);
+				if (minimumRadius > bestMinimumRadius)
+				{
+					bestMinimumRadius = minimumRadius;
+					bestStart = startHandle;
+					bestEnd = endHandle;
+				}
+			}
+		}
+		double clampedStart = Math.Clamp(bestStart, 1, 160);
+		double clampedEnd = Math.Clamp(bestEnd, 1, 160);
+		return (
+			clampedStart,
+			clampedEnd,
+			SampleMinimumBezierRadius(entry, target, clampedStart, clampedEnd)
+		);
+	}
+
+	private static double SampleMinimumBezierRadius(
+		CadFrame entry,
+		CadFrame target,
+		double startHandle,
+		double endHandle
+	)
+	{
+		CadPoint3 p0 = entry.Origin;
+		CadPoint3 p1 = p0 + entry.Tangent * startHandle;
+		CadPoint3 p3 = target.Origin;
+		CadPoint3 p2 = p3 - target.Tangent * endHandle;
+		double minimumRadius = double.PositiveInfinity;
+		const int sampleCount = 64;
+		for (int index = 0; index <= sampleCount; index++)
+		{
+			double t = index / (double)sampleCount;
+			double oneMinusT = 1 - t;
+			CadPoint3 derivative = 3 * (
+				oneMinusT * oneMinusT * (p1 - p0)
+				+ 2 * oneMinusT * t * (p2 - p1)
+				+ t * t * (p3 - p2)
+			);
+			CadPoint3 secondDerivative = 6 * (
+				oneMinusT * (p2 - 2 * p1 + p0)
+				+ t * (p3 - 2 * p2 + p1)
+			);
+			double speed = derivative.Length;
+			if (!double.IsFinite(speed) || speed <= 1e-9)
+			{
+				return -1;
+			}
+			double cross = CadPoint3.Cross(derivative, secondDerivative).Length;
+			if (cross > 1e-12)
+			{
+				minimumRadius = Math.Min(
+					minimumRadius,
+					speed * speed * speed / cross
 				);
 			}
-			RunnerFeature existingTerminal = evaluation.Chain.Features.LastOrDefault(
-				feature => feature.NodeId == binding.TerminalBezierNodeId);
-			CadFrame entryFrame = existingTerminal == null
-				? evaluation.Chain.EndFrame
-				: existingTerminal.EntryFrame;
-			double chordLength = (target.Origin - entryFrame.Origin).Length;
-			double handleLength = Math.Clamp(chordLength / 3, 1, 120);
-			RunnerNode terminal = stagedGraphs[binding.RunnerId].Nodes.Single(
-				node => node.Id == binding.TerminalBezierNodeId);
-			terminal.Properties["startHandleLength"] =
-				FormattableString.Invariant($"{handleLength:R}");
-			terminal.Properties["endHandleLength"] =
-				FormattableString.Invariant($"{handleLength:R}");
 		}
+		return minimumRadius;
 	}
 
 	private CadFrame[] ResolveRunnerEndFrames(
@@ -153,9 +302,21 @@ public sealed partial class CollectorSystemTransaction
 	private static void ApplyPreset(CadCollectorSystem system, CollectorLayoutPreset preset)
 	{
 		int count = system.Inlets.Count;
-		double inletX = -Math.Max(
+		double minimumInletX = Math.Max(
 			system.OutletStubLength,
 			system.BranchEndHandleLength * 1.5
+		);
+		double circularRingRadius = CircularRingRadius(system, count);
+		double[] circularAngles = Enumerable.Range(0, count)
+			.Select(index => 2 * Math.PI * index / count)
+			.OrderBy(angle => Math.Cos(angle))
+			.ThenBy(angle => Math.Sin(angle))
+			.ToArray();
+		double inletX = -Math.Max(
+			minimumInletX,
+			preset == CollectorLayoutPreset.Radial
+				? circularRingRadius * 0.75
+				: 0
 		);
 		for (int index = 0; index < count; index++)
 		{
@@ -166,13 +327,13 @@ public sealed partial class CollectorSystemTransaction
 			switch (preset)
 			{
 				case CollectorLayoutPreset.Radial:
-					double angle = 2 * Math.PI * index / count;
+					double angle = circularAngles[index];
 					origin = new CadPoint3(
 						inletX,
-						70 * Math.Cos(angle),
-						70 * Math.Sin(angle)
+						circularRingRadius * Math.Cos(angle),
+						circularRingRadius * Math.Sin(angle)
 					);
-					tangent = new CadPoint3(0.75, -Math.Cos(angle), -Math.Sin(angle));
+					tangent = -origin;
 					normal = new CadPoint3(0, -Math.Sin(angle), Math.Cos(angle));
 					break;
 				case CollectorLayoutPreset.Staggered:
@@ -195,10 +356,34 @@ public sealed partial class CollectorSystemTransaction
 					break;
 			}
 			system.Inlets[index].LocalFrame = new CadFrame(origin, tangent, normal);
-			system.Inlets[index].MergeStation = count == 2
+			system.Inlets[index].MergeStation = preset == CollectorLayoutPreset.Radial
+				? 0.5
+				: count == 2
 				? 0.5
 				: (index + 1d) / (count + 1d);
+			if (preset == CollectorLayoutPreset.Radial)
+			{
+				double chordLength = origin.Length;
+				system.Inlets[index].BranchStartHandleLength = Math.Clamp(
+					chordLength / 3,
+					10,
+					Math.Max(10, chordLength * 0.45)
+				);
+			}
 		}
+	}
+
+	private static double CircularRingRadius(CadCollectorSystem system, int inletCount)
+	{
+		double nominalDiameter = system.OutletProfile.OuterDiameterMillimetres;
+		double minimumCentreSpacing = nominalDiameter + Math.Max(
+			8,
+			system.OutletProfile.WallThicknessMillimetres * 4
+		);
+		double spacingRadius = inletCount <= 1
+			? 0
+			: minimumCentreSpacing / (2 * Math.Sin(Math.PI / inletCount));
+		return Math.Max(nominalDiameter, spacingRadius);
 	}
 
 	private bool IsRunnerBound(Guid runnerId)

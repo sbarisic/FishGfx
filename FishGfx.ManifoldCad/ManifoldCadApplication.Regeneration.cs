@@ -16,7 +16,7 @@ internal sealed partial class ManifoldCadApplication
 
 	private sealed record RunnerRegenerationRequest(
 		CadRunner Runner,
-		Task<RunnerEvaluationResult> Evaluation,
+		RunnerGraphPlan Plan,
 		long ProjectEpoch,
 		DateTimeOffset NotBefore
 	) : RegenerationRequest(Runner.Id, Runner.EditRevision, ProjectEpoch, NotBefore);
@@ -24,7 +24,7 @@ internal sealed partial class ManifoldCadApplication
 	private sealed record CollectorRegenerationRequest(
 		CadCollectorSystem System,
 		IReadOnlyDictionary<Guid, CadRunner> Runners,
-		IReadOnlyDictionary<Guid, Task<RunnerEvaluationResult>> Evaluations,
+		IReadOnlyDictionary<Guid, RunnerGraphPlan> Plans,
 		long ProjectEpoch,
 		DateTimeOffset NotBefore
 	) : RegenerationRequest(System.Id, System.GenerationRevision, ProjectEpoch, NotBefore);
@@ -65,13 +65,12 @@ internal sealed partial class ManifoldCadApplication
 		}
 
 		CadRunner snapshot = runner.DeepClone();
-		Task<RunnerEvaluationResult> evaluationTask =
-			project.EvaluateRunnerAsync(document, snapshot);
+		RunnerGraphPlan plan = project.PlanRunner(snapshot);
 		viewport.MarkRunnerStale(runner.Id);
 		ui.SetStatus($"{runner.Name}: regeneration queued.");
 		QueueRegeneration(new RunnerRegenerationRequest(
 			snapshot,
-			evaluationTask,
+			plan,
 			Interlocked.Read(ref projectEpoch),
 			DateTimeOffset.UtcNow + RegenerationDebounce
 		));
@@ -113,17 +112,14 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 		Dictionary<Guid, CadRunner> runners = new();
-		Dictionary<Guid, Task<RunnerEvaluationResult>> evaluationTasks = new();
+		Dictionary<Guid, RunnerGraphPlan> plans = new();
 		foreach (CadCollectorInlet inlet in snapshot.Inlets)
 		{
 			CadRunner current = project.Runners.First(
 				runner => runner.Id == inlet.Binding.RunnerId);
 			CadRunner runnerSnapshot = current.DeepClone();
 			runners.Add(runnerSnapshot.Id, runnerSnapshot);
-			evaluationTasks.Add(
-				runnerSnapshot.Id,
-				project.EvaluateRunnerAsync(document, runnerSnapshot)
-			);
+			plans.Add(runnerSnapshot.Id, project.PlanRunner(runnerSnapshot));
 		}
 
 		system.IsResolved = false;
@@ -137,7 +133,7 @@ internal sealed partial class ManifoldCadApplication
 		QueueRegeneration(new CollectorRegenerationRequest(
 			snapshot,
 			runners,
-			evaluationTasks,
+			plans,
 			Interlocked.Read(ref projectEpoch),
 			DateTimeOffset.UtcNow + RegenerationDebounce
 		));
@@ -167,12 +163,6 @@ internal sealed partial class ManifoldCadApplication
 	{
 		lock (regenerationLock)
 		{
-			if (pendingRegenerations.TryGetValue(
-				request.OwnerId,
-				out RegenerationRequest discarded))
-			{
-				ObserveDiscardedEvaluation(discarded);
-			}
 			pendingRegenerations[request.OwnerId] = request;
 			if (!regenerationWorkerRunning)
 			{
@@ -181,26 +171,6 @@ internal sealed partial class ManifoldCadApplication
 					() => ProcessRegenerationQueueAsync(regenerationCancellation.Token)
 				);
 			}
-		}
-	}
-
-	private static void ObserveDiscardedEvaluation(RegenerationRequest request)
-	{
-		IEnumerable<Task> tasks = request switch
-		{
-			RunnerRegenerationRequest runner => new[] { runner.Evaluation },
-			CollectorRegenerationRequest collector => collector.Evaluations.Values,
-			_ => Array.Empty<Task>(),
-		};
-		foreach (Task task in tasks)
-		{
-			_ = task.ContinueWith(
-				completed => _ = completed.Exception,
-				CancellationToken.None,
-				TaskContinuationOptions.OnlyOnFaulted
-					| TaskContinuationOptions.ExecuteSynchronously,
-				TaskScheduler.Default
-			);
 		}
 	}
 
@@ -264,7 +234,10 @@ internal sealed partial class ManifoldCadApplication
 		long tessellationMilliseconds = 0;
 		try
 		{
-			result = await request.Evaluation.ConfigureAwait(false);
+			result = await document.EvaluateRunnerAsync(
+				request.Runner,
+				request.Plan,
+				cancellationToken).ConfigureAwait(false);
 			evaluationMilliseconds = timing.ElapsedMilliseconds;
 			if (!result.Success)
 			{
@@ -336,9 +309,12 @@ internal sealed partial class ManifoldCadApplication
 		long tessellationMilliseconds = 0;
 		try
 		{
-			foreach ((Guid runnerId, Task<RunnerEvaluationResult> task) in request.Evaluations)
+			foreach ((Guid runnerId, RunnerGraphPlan plan) in request.Plans)
 			{
-				RunnerEvaluationResult result = await task.ConfigureAwait(false);
+				RunnerEvaluationResult result = await document.EvaluateRunnerAsync(
+					request.Runners[runnerId],
+					plan,
+					cancellationToken).ConfigureAwait(false);
 				results.Add(runnerId, result);
 				if (!result.Success)
 				{

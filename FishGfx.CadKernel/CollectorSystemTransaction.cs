@@ -140,7 +140,11 @@ public sealed partial class CollectorSystemTransaction
 		}
 
 		ApplyInitialLayout(candidate, preset, runnerEndFrames);
-		SeedTerminalHandles(candidate, authoritativeEvaluations);
+		SeedTerminalHandles(
+			candidate,
+			authoritativeEvaluations,
+			preset == CollectorLayoutPreset.Radial
+		);
 		if (!ValidateSystem(candidate, stagedGraphs, out error))
 		{
 			return false;
@@ -153,6 +157,16 @@ public sealed partial class CollectorSystemTransaction
 
 	public bool TryApplyPreset(Guid systemId, CollectorLayoutPreset preset, out string error)
 	{
+		return TryApplyPreset(systemId, preset, null, out error);
+	}
+
+	public bool TryApplyPreset(
+		Guid systemId,
+		CollectorLayoutPreset preset,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations,
+		out string error
+	)
+	{
 		EnsureOpen();
 		CadCollectorSystem system = stagedCollectors.SingleOrDefault(item => item.Id == systemId);
 		if (system == null)
@@ -162,6 +176,11 @@ public sealed partial class CollectorSystemTransaction
 		}
 		CadCollectorSystem backup = system.DeepClone();
 		ApplyPreset(system, preset);
+		SeedTerminalHandles(
+			system,
+			authoritativeEvaluations,
+			preset == CollectorLayoutPreset.Radial
+		);
 		if (!ValidateSystem(system, stagedGraphs, out error))
 		{
 			ReplaceCollector(systemId, backup);

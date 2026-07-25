@@ -62,8 +62,8 @@ internal sealed partial class CadUi : IDisposable
 		CreateToolbarButton("Pick Ray", 1038, () => PickingRayDebugRequested?.Invoke());
 		CreateToolbarButton("Add Node", 1142, () => AddNodeRequested?.Invoke());
 		CreateToolbarButton("Row", 1240, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Row));
-		CreateToolbarButton("Radial", 1300, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Radial));
-		CreateToolbarButton("Staggered", 1380, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Staggered));
+		CreateToolbarButton("Circular", 1300, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Radial));
+		CreateToolbarButton("Staggered", 1400, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Staggered));
 		ui.AddControl(toolbar);
 
 		modelPanel = new Panel

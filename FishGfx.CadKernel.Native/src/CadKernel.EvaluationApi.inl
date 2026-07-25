@@ -44,6 +44,7 @@ fgcad_status fgcad_evaluate_runner_features(
 {
 	return guarded([&]()
 	{
+		auto evaluation_start = std::chrono::steady_clock::now();
 		if (start_frame == nullptr || start_profile == nullptr || specifications == nullptr
 			|| evaluated_features == nullptr || evaluated_count == nullptr)
 		{
@@ -57,6 +58,12 @@ fgcad_status fgcad_evaluate_runner_features(
 
 		fgcad_frame frame = *start_frame;
 		fgcad_runner_profile profile = *start_profile;
+		size_t bezier_count = 0;
+		size_t curvature_intervals = 0;
+		int curvature_maximum_depth = 0;
+		long long bezier_validation_microseconds = 0;
+		long long bezier_length_microseconds = 0;
+		long long bezier_transport_microseconds = 0;
 		std::unique_ptr<BRepBuilderAPI_MakeWire> transported_span;
 		fgcad_frame transported_span_entry{};
 		for (size_t index = 0; index < specification_count; ++index)
@@ -192,8 +199,23 @@ fgcad_status fgcad_evaluate_runner_features(
 				fgcad_point3 control1_value = point(control1);
 				fgcad_point3 control2_value = point(control2);
 				fgcad_point3 end_value = point(end);
+				bezier_evaluation_metrics bezier_metrics{};
 				fgcad_bezier_evaluation evaluation = evaluate_cubic_bezier_internal(
-					frame, control1_value, control2_value, end_value, outer_radius);
+					frame,
+					control1_value,
+					control2_value,
+					end_value,
+					outer_radius,
+					&bezier_metrics,
+					false);
+				++bezier_count;
+				curvature_intervals += bezier_metrics.curvature_intervals;
+				curvature_maximum_depth = std::max(
+					curvature_maximum_depth,
+					bezier_metrics.curvature_maximum_depth);
+				bezier_validation_microseconds += bezier_metrics.validation_microseconds;
+				bezier_length_microseconds += bezier_metrics.length_microseconds;
+				bezier_transport_microseconds += bezier_metrics.transport_microseconds;
 				feature.control1 = control1_value;
 				feature.control2 = control2_value;
 				feature.length = evaluation.length;
@@ -300,6 +322,19 @@ fgcad_status fgcad_evaluate_runner_features(
 			evaluated_features[index] = feature;
 			*evaluated_count = index + 1;
 		}
+		auto evaluation_end = std::chrono::steady_clock::now();
+		std::ostringstream timing;
+		timing << "features=" << specification_count
+			<< "; beziers=" << bezier_count
+			<< "; totalUs="
+			<< std::chrono::duration_cast<std::chrono::microseconds>(
+				evaluation_end - evaluation_start).count()
+			<< "; bezierValidationUs=" << bezier_validation_microseconds
+			<< "; bezierLengthUs=" << bezier_length_microseconds
+			<< "; bezierInternalTransportUs=" << bezier_transport_microseconds
+			<< "; curvatureIntervals=" << curvature_intervals
+			<< "; curvatureMaxDepth=" << curvature_maximum_depth;
+		append_native_log("runner-evaluation-perf", timing.str());
 		return FGCAD_STATUS_OK;
 	});
 }

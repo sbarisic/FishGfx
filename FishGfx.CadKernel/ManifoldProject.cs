@@ -381,6 +381,21 @@ public sealed class ManifoldProject
 		);
 	}
 
+	internal RunnerGraphPlan PlanRunner(CadRunner runner)
+	{
+		ArgumentNullException.ThrowIfNull(runner);
+		if (runners.All(candidate => candidate.Id != runner.Id))
+		{
+			throw new ArgumentException("The runner does not belong to this project.", nameof(runner));
+		}
+		return RunnerGraphPlanner.Plan(
+			runner,
+			mates.ToDictionary(mate => mate.Id),
+			parts.ToDictionary(part => part.Id),
+			GetEndpointConstraint(runner)
+		);
+	}
+
 	public RunnerEndpointConstraint? GetEndpointConstraint(CadRunner runner)
 	{
 		ArgumentNullException.ThrowIfNull(runner);

@@ -6,6 +6,77 @@ namespace FishGfx.ManifoldCad.Tests;
 public sealed class CollectorSystemTests
 {
 	[Fact]
+	public void CircularPresetDistributesFourInletsOnOneSymmetricRing()
+	{
+		(ManifoldProject project, IReadOnlyList<CadRunner> runners) = CreateFourRunnerProject();
+
+		Assert.True(project.TryCreateCollectorSystem(
+			runners.Select(runner => runner.Id),
+			CollectorLayoutPreset.Radial,
+			"Circular four into one",
+			out CadCollectorSystem system,
+			out string error
+		), error);
+
+		double[] radii = system.Inlets.Select(inlet =>
+			Math.Sqrt(
+				inlet.LocalFrame.Origin.Y * inlet.LocalFrame.Origin.Y
+				+ inlet.LocalFrame.Origin.Z * inlet.LocalFrame.Origin.Z
+			)).ToArray();
+		Assert.All(radii, radius => Assert.Equal(radii[0], radius, 9));
+		Assert.All(
+			system.Inlets,
+			inlet => Assert.Equal(system.Inlets[0].LocalFrame.Origin.X, inlet.LocalFrame.Origin.X, 9)
+		);
+		Assert.All(system.Inlets, inlet => Assert.Equal(0.5, inlet.MergeStation, 9));
+		Assert.Equal(0, system.Inlets.Sum(inlet => inlet.LocalFrame.Origin.Y), 9);
+		Assert.Equal(0, system.Inlets.Sum(inlet => inlet.LocalFrame.Origin.Z), 9);
+		Assert.All(system.Inlets, inlet => Assert.True(
+			CadPoint3.Dot(
+				inlet.LocalFrame.Tangent,
+				(-inlet.LocalFrame.Origin).Normalized()
+			) > 1 - 1e-9
+		));
+	}
+
+	[Fact]
+	public async Task CircularPresetProducesKernelValidTerminalRunnerCurves()
+	{
+		(ManifoldProject project, IReadOnlyList<CadRunner> runners) = CreateFourRunnerProject();
+		using CadDocument document = await CadDocument.CreateAsync(
+			TestContext.Current.CancellationToken);
+		Dictionary<Guid, RunnerEvaluationResult> initialEvaluations = new();
+		foreach (CadRunner runner in runners)
+		{
+			initialEvaluations[runner.Id] = await project.EvaluateRunnerAsync(
+				document,
+				runner,
+				TestContext.Current.CancellationToken);
+		}
+
+		Assert.True(project.TryCreateCollectorSystem(
+			runners.Select(runner => runner.Id),
+			CollectorLayoutPreset.Radial,
+			"Circular four into one",
+			initialEvaluations,
+			out _,
+			out string createError
+		), createError);
+
+		foreach (CadRunner runner in runners)
+		{
+			RunnerEvaluationResult result = await project.EvaluateRunnerAsync(
+				document,
+				runner,
+				TestContext.Current.CancellationToken);
+			Assert.True(result.Success, $"{runner.Name}: {string.Join(
+				Environment.NewLine,
+				result.Diagnostics.Select(diagnostic => diagnostic.Message)
+			)}");
+		}
+	}
+
+	[Fact]
 	public void CreateCollectorSplicesEveryGraphAndCommitsOneSystemRevision()
 	{
 		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();
@@ -409,5 +480,28 @@ public sealed class CollectorSystemTests
 		);
 		CadRunner second = project.AddRunner(mate.Id);
 		return (project, first, second);
+	}
+
+	private static (ManifoldProject Project, IReadOnlyList<CadRunner> Runners)
+		CreateFourRunnerProject()
+	{
+		(ManifoldProject project, _, CadRunner first) = RunnerGraphTests.CreateProject();
+		List<CadRunner> runners = [first];
+		for (int index = 1; index < 4; index++)
+		{
+			CadPart part = project.AddPart($"Flange {index + 1}");
+			CadMate mate = project.AddMate(part.Id, $"Cylinder {index + 1}");
+			mate.Rebind(
+				new CadTopologyRef(part.Id, (ulong)(20 + index), CadTopologyKind.CircularEdge),
+				new CadFrame(
+					new CadPoint3(0, index * 60, 0),
+					new CadPoint3(1, 0, 0),
+					new CadPoint3(0, 1, 0)
+				),
+				21.2
+			);
+			runners.Add(project.AddRunner(mate.Id));
+		}
+		return (project, runners);
 	}
 }

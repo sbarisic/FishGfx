@@ -59,6 +59,19 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+	add_executable(FishGfx.CadKernel.Native.CurvePerformanceTests
+		tests/CurvePerformanceTests.cpp
+	)
+	target_compile_features(FishGfx.CadKernel.Native.CurvePerformanceTests PRIVATE cxx_std_17)
+	target_include_directories(FishGfx.CadKernel.Native.CurvePerformanceTests PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/include
+	)
+	target_link_libraries(FishGfx.CadKernel.Native.CurvePerformanceTests PRIVATE FishGfx.CadKernel.Native)
+	add_test(
+		NAME FishGfx.CadKernel.Native.CurvePerformanceTests
+		COMMAND FishGfx.CadKernel.Native.CurvePerformanceTests
+	)
+
     add_executable(FishGfx.CadKernel.Native.Tests
         tests/CadKernelTests.cpp
     )

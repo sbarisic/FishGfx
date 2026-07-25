@@ -115,10 +115,6 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		disposed = true;
 		lock (regenerationLock)
 		{
-			foreach (RegenerationRequest pending in pendingRegenerations.Values)
-			{
-				ObserveDiscardedEvaluation(pending);
-			}
 			pendingRegenerations.Clear();
 		}
 		regenerationCancellation.Cancel();

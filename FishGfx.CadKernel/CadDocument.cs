@@ -262,6 +262,23 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 	)
 	{
 		RunnerGraphPlan plan = RunnerGraphPlanner.Plan(runner, mates, parts, endpointConstraint);
+		return EvaluateRunnerAsync(runner, plan, cancellationToken);
+	}
+
+	internal Task<RunnerEvaluationResult> EvaluateRunnerAsync(
+		CadRunner runner,
+		RunnerGraphPlan plan,
+		CancellationToken cancellationToken = default
+	)
+	{
+		ArgumentNullException.ThrowIfNull(runner);
+		ArgumentNullException.ThrowIfNull(plan);
+		if (plan.RunnerId != runner.Id || plan.EditRevision != runner.EditRevision)
+		{
+			throw new ArgumentException(
+				"The runner plan does not match the queued runner snapshot.",
+				nameof(plan));
+		}
 		if (!plan.Success)
 		{
 			return Task.FromResult(new RunnerEvaluationResult

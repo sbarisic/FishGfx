@@ -14,7 +14,9 @@ internal sealed partial class ManifoldCadApplication
 		}
 		if (!project.TryCreateCollectorSystem(
 			eligible,
-			CollectorLayoutPreset.Row,
+			eligible.Count >= 3
+				? CollectorLayoutPreset.Radial
+				: CollectorLayoutPreset.Row,
 			null,
 			evaluations,
 			out CadCollectorSystem system,
@@ -104,7 +106,7 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 		CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
-		if (!transaction.TryApplyPreset(system.Id, preset, out string error)
+		if (!transaction.TryApplyPreset(system.Id, preset, evaluations, out string error)
 			|| !transaction.Commit(out error))
 		{
 			ui.SetStatus(error, true);
