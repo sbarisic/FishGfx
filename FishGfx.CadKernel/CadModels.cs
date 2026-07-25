@@ -77,12 +77,6 @@ public sealed class CadMate
 		LocalFrame = LocalFrame.Value.Flipped();
 	}
 
-	internal void RestoreBinding(CadTopologyRef? topology, CadFrame? frame, double radius)
-	{
-		Topology = topology;
-		LocalFrame = frame;
-		RadiusMillimetres = radius;
-	}
 }
 
 public enum CadDiagnosticSeverity
@@ -101,7 +95,28 @@ public sealed record CadDiagnostic(
 
 public readonly record struct CadMeshVertex(float X, float Y, float Z, float NormalX, float NormalY, float NormalZ);
 
-public sealed record CadFaceRange(ulong TopologyId, Guid? SourceNodeId, int FirstIndex, int IndexCount);
+public enum CadGeometrySourceKind
+{
+	RunnerNode,
+	CollectorInlet,
+	CollectorTrunk,
+	CollectorOutlet,
+}
+
+public readonly record struct CadGeometrySourceRef(
+	CadGeometrySourceKind SourceKind,
+	Guid OwnerId,
+	string ElementId
+)
+{
+	public Guid? ElementGuid => Guid.TryParse(ElementId, out Guid value) ? value : null;
+}
+
+public sealed record CadFaceRange(ulong TopologyId, Guid? SourceNodeId, int FirstIndex, int IndexCount)
+{
+	public IReadOnlyList<CadGeometrySourceRef> Sources { get; init; } =
+		Array.Empty<CadGeometrySourceRef>();
+}
 
 public sealed record CadEdgePolyline(ulong TopologyId, CadTopologyKind Kind, CadPoint3[] Points);
 

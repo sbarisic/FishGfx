@@ -6,6 +6,13 @@ find_package(OpenCASCADE CONFIG REQUIRED)
 
 add_library(FishGfx.CadKernel.Native SHARED
     src/CadKernel.cpp
+    src/CadKernel.Collectors.inl
+    src/CadKernel.Curves.inl
+    src/CadKernel.Documents.inl
+    src/CadKernel.EvaluationApi.inl
+    src/CadKernel.Persistence.inl
+    src/CadKernel.Runners.inl
+    src/CadKernel.Tessellation.inl
 )
 
 target_compile_features(FishGfx.CadKernel.Native PRIVATE cxx_std_17)
@@ -27,6 +34,8 @@ target_link_libraries(FishGfx.CadKernel.Native PRIVATE
     TKBRep
     TKGeomAlgo
     TKTopAlgo
+	TKBO
+	TKBool
     TKPrim
     TKShHealing
     TKOffset

@@ -4,7 +4,12 @@ using FishGfx.Graphics;
 
 namespace FishGfx.ManifoldCad;
 
-internal readonly record struct CadPickHit(float Distance, ulong TopologyId, Guid? SourceNodeId);
+internal readonly record struct CadPickHit(
+	float Distance,
+	ulong TopologyId,
+	Guid? SourceNodeId,
+	IReadOnlyList<CadGeometrySourceRef> Sources
+);
 
 internal sealed class CadTriangleBvh
 {
@@ -27,7 +32,8 @@ internal sealed class CadTriangleBvh
 					checked((int)tessellation.Indices[first + 1]),
 					checked((int)tessellation.Indices[first + 2]),
 					face.TopologyId,
-					face.SourceNodeId
+					face.SourceNodeId,
+					face.Sources
 				));
 			}
 		}
@@ -84,7 +90,12 @@ internal sealed class CadTriangleBvh
 			return false;
 		}
 
-		hit = new CadPickHit(nearest, nearestTriangle.TopologyId, nearestTriangle.SourceNodeId);
+		hit = new CadPickHit(
+			nearest,
+			nearestTriangle.TopologyId,
+			nearestTriangle.SourceNodeId,
+			nearestTriangle.Sources
+		);
 		return true;
 	}
 
@@ -221,7 +232,14 @@ internal sealed class CadTriangleBvh
 		_ => value.Z,
 	};
 
-	private readonly record struct Triangle(int A, int B, int C, ulong TopologyId, Guid? SourceNodeId);
+	private readonly record struct Triangle(
+		int A,
+		int B,
+		int C,
+		ulong TopologyId,
+		Guid? SourceNodeId,
+		IReadOnlyList<CadGeometrySourceRef> Sources
+	);
 
 	private sealed record Node(Vector3 Minimum, Vector3 Maximum, int[] Indices, Node Left, Node Right);
 }

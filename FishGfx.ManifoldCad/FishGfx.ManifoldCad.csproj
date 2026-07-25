@@ -11,6 +11,12 @@
     <CadNativeBuildRoot>$(MSBuildThisFileDirectory)..\FishGfx.CadKernel.Native\out\build\windows-x64</CadNativeBuildRoot>
     <CadNativeRuntimeDir>$(CadNativeBuildRoot)\$(Configuration)</CadNativeRuntimeDir>
     <CadOcctNotice>$(CadNativeBuildRoot)\vcpkg_installed\x64-windows\share\opencascade\copyright</CadOcctNotice>
+    <CadBundledCMakeFromBin>$(MSBuildToolsPath)\..\..\..\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</CadBundledCMakeFromBin>
+    <CadBundledCMakeFromAmd64>$(MSBuildToolsPath)\..\..\..\..\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</CadBundledCMakeFromAmd64>
+    <CadCMakeExecutable Condition="Exists('$(CadBundledCMakeFromBin)')">$(CadBundledCMakeFromBin)</CadCMakeExecutable>
+    <CadCMakeExecutable Condition="'$(CadCMakeExecutable)' == '' and Exists('$(CadBundledCMakeFromAmd64)')">$(CadBundledCMakeFromAmd64)</CadCMakeExecutable>
+    <CadCMakeExecutable Condition="'$(CadCMakeExecutable)' == '' and Exists('$(VSINSTALLDIR)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe')">$(VSINSTALLDIR)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</CadCMakeExecutable>
+    <CadCMakeExecutable Condition="'$(CadCMakeExecutable)' == ''">cmake</CadCMakeExecutable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FishGfx\FishGfx.csproj" />
@@ -23,10 +29,15 @@
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="EnsureCadNativeRuntimeConfigured"
+          BeforeTargets="BuildCadNativeRuntime"
+          Condition="!Exists('$(CadNativeBuildRoot)\CMakeCache.txt')">
+    <Error Text="The native CAD runtime is not configured. Run .\tools\bootstrap-manifold-cad.ps1 -Configuration $(Configuration) from a Visual Studio developer environment." />
+  </Target>
   <Target Name="BuildCadNativeRuntime"
           BeforeTargets="CopyCadNativeRuntime"
           Condition="Exists('$(CadNativeBuildRoot)\CMakeCache.txt')">
-    <Exec Command="cmake --build &quot;$(CadNativeBuildRoot)&quot; --config $(Configuration)" />
+    <Exec Command="&quot;$(CadCMakeExecutable)&quot; --build &quot;$(CadNativeBuildRoot)&quot; --config $(Configuration)" />
   </Target>
   <Target Name="CopyCadNativeRuntime" AfterTargets="Build">
     <ItemGroup Condition="Exists('$(CadNativeRuntimeDir)')">

@@ -118,6 +118,23 @@ public readonly record struct CadQuaternion(double X, double Y, double Z, double
 		return new CadQuaternion(value.X, value.Y, value.Z, value.W).Normalized();
 	}
 
+	public CadPoint3 ToEulerDegrees()
+	{
+		CadQuaternion value = Normalized();
+		double pitchSine = 2 * (value.W * value.X - value.Y * value.Z);
+		double pitch = Math.Asin(Math.Clamp(pitchSine, -1, 1));
+		double yaw = Math.Atan2(
+			2 * (value.W * value.Y + value.X * value.Z),
+			1 - 2 * (value.X * value.X + value.Y * value.Y)
+		);
+		double roll = Math.Atan2(
+			2 * (value.W * value.Z + value.X * value.Y),
+			1 - 2 * (value.X * value.X + value.Z * value.Z)
+		);
+		double degrees = 180 / Math.PI;
+		return new CadPoint3(pitch * degrees, yaw * degrees, roll * degrees);
+	}
+
 	public CadPoint3 Rotate(CadPoint3 value)
 	{
 		CadQuaternion rotation = Normalized();
@@ -188,6 +205,65 @@ public readonly record struct CadFrame
 	public CadFrame Flipped()
 	{
 		return new CadFrame(Origin, -Tangent, Normal);
+	}
+
+	public CadPoint3 TransformLocalPoint(CadPoint3 value)
+	{
+		return Origin + value.X * Tangent + value.Y * Normal + value.Z * Binormal;
+	}
+
+	public CadPoint3 TransformLocalDirection(CadPoint3 value)
+	{
+		return value.X * Tangent + value.Y * Normal + value.Z * Binormal;
+	}
+
+	public CadPoint3 InverseTransformPoint(CadPoint3 value)
+	{
+		CadPoint3 offset = value - Origin;
+		return new CadPoint3(
+			CadPoint3.Dot(offset, Tangent),
+			CadPoint3.Dot(offset, Normal),
+			CadPoint3.Dot(offset, Binormal)
+		);
+	}
+
+	public CadPoint3 InverseTransformDirection(CadPoint3 value)
+	{
+		return new CadPoint3(
+			CadPoint3.Dot(value, Tangent),
+			CadPoint3.Dot(value, Normal),
+			CadPoint3.Dot(value, Binormal)
+		);
+	}
+
+	public CadFrame Compose(CadFrame localFrame)
+	{
+		return new CadFrame(
+			TransformLocalPoint(localFrame.Origin),
+			TransformLocalDirection(localFrame.Tangent),
+			TransformLocalDirection(localFrame.Normal)
+		);
+	}
+
+	public CadFrame RelativeTo(CadFrame parent)
+	{
+		return new CadFrame(
+			parent.InverseTransformPoint(Origin),
+			parent.InverseTransformDirection(Tangent),
+			parent.InverseTransformDirection(Normal)
+		);
+	}
+
+	public CadPoint3 ToEulerDegrees()
+	{
+		Matrix4x4 matrix = new(
+			(float)Tangent.X, (float)Tangent.Y, (float)Tangent.Z, 0,
+			(float)Normal.X, (float)Normal.Y, (float)Normal.Z, 0,
+			(float)Binormal.X, (float)Binormal.Y, (float)Binormal.Z, 0,
+			0, 0, 0, 1
+		);
+		Quaternion rotation = Quaternion.CreateFromRotationMatrix(matrix);
+		return new CadQuaternion(rotation.X, rotation.Y, rotation.Z, rotation.W).ToEulerDegrees();
 	}
 
 	public static CadPoint3 RotateAround(CadPoint3 value, CadPoint3 axis, double radians)

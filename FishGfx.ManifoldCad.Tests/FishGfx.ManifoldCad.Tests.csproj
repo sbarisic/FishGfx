@@ -13,5 +13,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <ProjectReference Include="..\FishGfx.CadKernel\FishGfx.CadKernel.csproj" />
     <ProjectReference Include="..\FishGfx.ManifoldCad\FishGfx.ManifoldCad.csproj" />
+    <None Include="..\corsa_flange.step"
+          Link="TestData\corsa_flange.step"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

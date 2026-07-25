@@ -101,6 +101,13 @@ public static class RunnerGraphJson
 				));
 			}
 
+			bool legacyGraph = graph.Nodes.Any(node => node.DefinitionId is RunnerNodes.LegacyMateReference
+				or RunnerNodes.LegacySweepPipe);
+			if (!legacyGraph && !graph.TryValidate(out string validationError))
+			{
+				return Failure(validationError);
+			}
+
 			return new RunnerGraphLoadResult { Graph = graph };
 		}
 		catch (Exception exception) when (

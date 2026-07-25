@@ -7,7 +7,7 @@ using FishUIRuntime = global::FishUI.FishUI;
 
 namespace FishGfx.ManifoldCad;
 
-internal sealed class CadUi : IDisposable
+internal sealed partial class CadUi : IDisposable
 {
 	private readonly RenderWindow window;
 	private readonly FishUIGraphicsBackend graphics;
@@ -16,14 +16,17 @@ internal sealed class CadUi : IDisposable
 	private readonly Panel toolbar;
 	private readonly Panel modelPanel;
 	private readonly Panel inspectorPanel;
-	private readonly Label modelLabel;
+	private readonly TreeView modelTree;
 	private readonly Label inspectorTitle;
-	private readonly Label statusLabel;
+	private readonly WrappedLabel statusLabel;
 	private readonly Textbox mateName;
+	private readonly Textbox runnerName;
 	private readonly NumericUpDown[] translation = new NumericUpDown[3];
 	private readonly NumericUpDown[] rotation = new NumericUpDown[3];
-	private readonly NumericUpDown[] parameters = new NumericUpDown[3];
-	private readonly Label[] parameterLabels = new Label[3];
+	private readonly NumericUpDown[] parameters = new NumericUpDown[6];
+	private readonly Label[] parameterLabels = new Label[6];
+	private bool collectorEditing;
+	private ManifoldProject currentProject;
 	private bool synchronizing;
 	private bool disposed;
 
@@ -57,6 +60,10 @@ internal sealed class CadUi : IDisposable
 		CreateToolbarButton("Right", 884, () => ViewRequested?.Invoke(CadStandardView.Right));
 		CreateToolbarButton("Gizmo", 962, () => GizmoModeRequested?.Invoke());
 		CreateToolbarButton("Pick Ray", 1038, () => PickingRayDebugRequested?.Invoke());
+		CreateToolbarButton("Add Node", 1142, () => AddNodeRequested?.Invoke());
+		CreateToolbarButton("Row", 1240, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Row));
+		CreateToolbarButton("Radial", 1300, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Radial));
+		CreateToolbarButton("Staggered", 1380, () => CollectorPresetRequested?.Invoke(CollectorLayoutPreset.Staggered));
 		ui.AddControl(toolbar);
 
 		modelPanel = new Panel
@@ -71,16 +78,101 @@ internal sealed class CadUi : IDisposable
 			Position = new Vector2(16, 14),
 			Size = new Vector2(220, 26),
 		});
-		modelLabel = new Label("No STEP parts imported")
+		modelTree = new TreeView
 		{
 			Position = new Vector2(16, 50),
-			Size = new Vector2(226, 600),
-			Alignment = Align.None,
+			Size = new Vector2(224, 480),
+			ShowLines = true,
 		};
-		modelPanel.AddChild(modelLabel);
+		modelTree.OnNodeSelected += (_, node) =>
+		{
+			if (node.UserData is TreeIdentity identity)
+			{
+				switch (identity.Kind)
+				{
+					case TreeIdentityKind.Part:
+						PartSelected?.Invoke(identity.Id);
+						break;
+					case TreeIdentityKind.Mate:
+						MateSelected?.Invoke(identity.Id);
+						break;
+					case TreeIdentityKind.Runner:
+						RunnerSelected?.Invoke(identity.Id);
+						break;
+					case TreeIdentityKind.Collector:
+						CollectorSelected?.Invoke(identity.Id);
+						break;
+					case TreeIdentityKind.CollectorInlet:
+						CollectorInletSelected?.Invoke(identity.Id);
+						break;
+				}
+			}
+		};
+		modelPanel.AddChild(modelTree);
+
+		Button addRunner = new() { Position = new Vector2(16, 540), Size = new Vector2(108, 32), Text = "Add Runner" };
+		addRunner.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left)
+				AddRunnerRequested?.Invoke();
+		};
+		modelPanel.AddChild(addRunner);
+		Button deleteRunner = new() { Position = new Vector2(132, 540), Size = new Vector2(108, 32), Text = "Delete Runner" };
+		deleteRunner.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left)
+				DeleteRunnerRequested?.Invoke();
+		};
+		modelPanel.AddChild(deleteRunner);
+		Button addCollector = new()
+		{
+			Position = new Vector2(16, 580),
+			Size = new Vector2(108, 32),
+			Text = "Add Collector",
+		};
+		addCollector.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left)
+				OpenCollectorRunnerChecklist();
+		};
+		modelPanel.AddChild(addCollector);
+		Button deleteCollector = new()
+		{
+			Position = new Vector2(132, 580),
+			Size = new Vector2(108, 32),
+			Text = "Delete Collector",
+		};
+		deleteCollector.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left)
+				DeleteCollectorRequested?.Invoke();
+		};
+		modelPanel.AddChild(deleteCollector);
+		runnerName = new Textbox
+		{
+			Position = new Vector2(16, 660),
+			Size = new Vector2(224, 28),
+			Placeholder = "Runner name",
+		};
+		runnerName.OnTextChanged += (_, text) =>
+		{
+			if (!synchronizing)
+			{
+				if (currentProject?.View.ActiveCollectorSystemId.HasValue == true
+					&& !currentProject.View.ActiveCollectorInletId.HasValue)
+				{
+					CollectorNameChanged?.Invoke(text);
+				}
+				else
+				{
+					RunnerNameChanged?.Invoke(text);
+				}
+			}
+		};
+		modelPanel.AddChild(runnerName);
 		mateName = new Textbox
 		{
-			Position = new Vector2(16, 638),
+			Position = new Vector2(16, 624),
 			Size = new Vector2(224, 28),
 			Placeholder = "Mate name",
 		};
@@ -94,7 +186,7 @@ internal sealed class CadUi : IDisposable
 		modelPanel.AddChild(mateName);
 		Button createMate = new()
 		{
-			Position = new Vector2(16, 676),
+			Position = new Vector2(16, 696),
 			Size = new Vector2(224, 34),
 			Text = "Create / Rebind Mate",
 		};
@@ -108,7 +200,7 @@ internal sealed class CadUi : IDisposable
 		modelPanel.AddChild(createMate);
 		Button flipMate = new()
 		{
-			Position = new Vector2(16, 718),
+			Position = new Vector2(16, 738),
 			Size = new Vector2(224, 34),
 			Text = "Flip Mate Axis",
 		};
@@ -137,11 +229,11 @@ internal sealed class CadUi : IDisposable
 		inspectorPanel.AddChild(inspectorTitle);
 		CreateTransformControls();
 		CreateParameterControls();
-		statusLabel = new Label("Ready")
+		statusLabel = new WrappedLabel
 		{
-			Position = new Vector2(16, 620),
-			Size = new Vector2(286, 180),
-			Alignment = Align.None,
+			Text = "Ready",
+			Position = new Vector2(16, 690),
+			Size = new Vector2(CadLayout.RightWidth - 32, 150),
 		};
 		inspectorPanel.AddChild(statusLabel);
 		ui.AddControl(inspectorPanel);
@@ -169,6 +261,7 @@ internal sealed class CadUi : IDisposable
 	internal event Action<CadPoint3, CadPoint3> TransformChanged;
 
 	internal event Action<int, double> NodeParameterChanged;
+	internal event Action<int, double> CollectorParameterChanged;
 
 	internal event Action FitRequested;
 
@@ -177,6 +270,19 @@ internal sealed class CadUi : IDisposable
 	internal event Action<CadStandardView> ViewRequested;
 	internal event Action GizmoModeRequested;
 	internal event Action PickingRayDebugRequested;
+	internal event Action AddNodeRequested;
+	internal event Action AddRunnerRequested;
+	internal event Action DeleteRunnerRequested;
+	internal event Action<IReadOnlyList<Guid>> AddCollectorRequested;
+	internal event Action DeleteCollectorRequested;
+	internal event Action<CollectorLayoutPreset> CollectorPresetRequested;
+	internal event Action<string> RunnerNameChanged;
+	internal event Action<string> CollectorNameChanged;
+	internal event Action<Guid> PartSelected;
+	internal event Action<Guid> MateSelected;
+	internal event Action<Guid> RunnerSelected;
+	internal event Action<Guid> CollectorSelected;
+	internal event Action<Guid> CollectorInletSelected;
 
 	internal bool InteractionEnabled
 	{
@@ -202,30 +308,79 @@ internal sealed class CadUi : IDisposable
 		}
 	}
 
-	internal void SetModel(ManifoldProject project, Guid? selectedPartId, Guid? selectedMateId)
+	internal void SetModel(
+		ManifoldProject project,
+		Guid? selectedPartId,
+		Guid? selectedMateId,
+		Guid? selectedRunnerId
+	)
 	{
-		List<string> lines = new();
-
+		currentProject = project;
+		modelTree.Nodes.Clear();
+		TreeNode partsRoot = modelTree.AddNode("PARTS");
+		partsRoot.IsExpanded = true;
 		foreach (CadPart part in project.Parts)
 		{
-			lines.Add($"{(part.Id == selectedPartId ? ">" : " ")} {part.Name}");
-
+			TreeNode partNode = partsRoot.AddChild(part.Name, new TreeIdentity(TreeIdentityKind.Part, part.Id));
+			partNode.IsExpanded = true;
+			partNode.IsSelected = part.Id == selectedPartId;
 			foreach (CadMate mate in project.Mates.Where(mate => mate.PartId == part.Id))
 			{
 				string state = mate.IsResolved ? "linked" : "UNRESOLVED";
-				lines.Add($"  {(mate.Id == selectedMateId ? ">" : "-")} {mate.Name} [{state}]");
+				TreeNode mateNode = partNode.AddChild($"{mate.Name} [{state}]",
+					new TreeIdentity(TreeIdentityKind.Mate, mate.Id));
+				mateNode.IsSelected = mate.Id == selectedMateId;
+			}
+		}
+		TreeNode runnersRoot = modelTree.AddNode("RUNNERS");
+		runnersRoot.IsExpanded = true;
+		foreach (CadRunner runner in project.Runners)
+		{
+			CadMate mate = project.Mates.FirstOrDefault(item => item.Id == runner.StartMateId);
+			TreeNode node = runnersRoot.AddChild($"{runner.Name} -> {mate?.Name ?? "missing mate"}",
+				new TreeIdentity(TreeIdentityKind.Runner, runner.Id));
+			node.IsSelected = runner.Id == selectedRunnerId;
+		}
+		TreeNode collectorsRoot = modelTree.AddNode("COLLECTORS");
+		collectorsRoot.IsExpanded = true;
+		foreach (CadCollectorSystem system in project.CollectorSystems)
+		{
+			TreeNode systemNode = collectorsRoot.AddChild(
+				$"{system.Name} [{(system.IsResolved ? "current" : "STALE")}]",
+				new TreeIdentity(TreeIdentityKind.Collector, system.Id)
+			);
+			systemNode.IsExpanded = true;
+			systemNode.IsSelected = system.Id == project.View.ActiveCollectorSystemId;
+			foreach (CadCollectorInlet inlet in system.Inlets)
+			{
+				CadRunner member = project.Runners.FirstOrDefault(
+					runner => runner.Id == inlet.Binding?.RunnerId);
+				TreeNode inletNode = systemNode.AddChild(
+					$"{inlet.Name} -> {member?.Name ?? "missing runner"}",
+					new TreeIdentity(TreeIdentityKind.CollectorInlet, inlet.Id)
+				);
+				inletNode.IsSelected = inlet.Id == project.View.ActiveCollectorInletId;
 			}
 		}
 
-		modelLabel.Text = lines.Count == 0 ? "No STEP parts imported" : string.Join("\n", lines);
 		synchronizing = true;
 		mateName.Text = project.Mates.FirstOrDefault(mate => mate.Id == selectedMateId)?.Name ?? string.Empty;
+		CadCollectorSystem selectedCollector = project.View.ActiveCollectorSystemId.HasValue
+			&& !project.View.ActiveCollectorInletId.HasValue
+			? project.CollectorSystems.FirstOrDefault(system =>
+				system.Id == project.View.ActiveCollectorSystemId.Value)
+			: null;
+		runnerName.Placeholder = selectedCollector == null ? "Runner name" : "Collector name";
+		runnerName.Text = selectedCollector?.Name
+			?? project.Runners.FirstOrDefault(runner => runner.Id == selectedRunnerId)?.Name
+			?? string.Empty;
 		synchronizing = false;
 	}
 
 	internal void SetPart(CadPart part, CadPoint3 eulerDegrees)
 	{
 		synchronizing = true;
+		collectorEditing = false;
 		inspectorTitle.Text = part == null ? "INSPECTOR" : "PART: " + part.Name;
 		CadPoint3 position = part?.Transform.Translation ?? default;
 		translation[0].Value = (float)position.X;
@@ -240,6 +395,7 @@ internal sealed class CadUi : IDisposable
 	internal void SetNode(RunnerNode node)
 	{
 		synchronizing = true;
+		collectorEditing = false;
 
 		for (int index = 0; index < parameters.Length; index++)
 		{
@@ -254,6 +410,7 @@ internal sealed class CadUi : IDisposable
 				: "NODE: Missing definition";
 			(string Name, string Label)[] fields = node.DefinitionId switch
 			{
+				RunnerNodes.StartRunner => new[] { ("wallThickness", "Mate wall mm") },
 				RunnerNodes.Straight => new[] { ("length", "Length mm") },
 				RunnerNodes.Bend => new[]
 				{
@@ -261,10 +418,26 @@ internal sealed class CadUi : IDisposable
 					("angle", "Angle deg"),
 					("rotation", "Rotation deg"),
 				},
+				RunnerNodes.CubicBezier => new[]
+				{
+					("startHandleLength", "P1 tangent mm"),
+					("control2T", "P2 local T mm"),
+					("endT", "P3 local T mm"),
+				},
 				RunnerNodes.CircularPipe => new[]
 				{
 					("outerDiameter", "Outer diameter mm"),
 					("wallThickness", "Wall thickness mm"),
+				},
+				RunnerNodes.LoftTransition => new[]
+				{
+					("length", "Loft length mm"),
+					("rotation", "Profile rotation deg"),
+				},
+				RunnerNodes.ClockingTransition => new[]
+				{
+					("length", "Clocking length mm"),
+					("rotation", "Profile roll deg"),
 				},
 				_ => Array.Empty<(string, string)>(),
 			};
@@ -281,6 +454,44 @@ internal sealed class CadUi : IDisposable
 			}
 		}
 
+		synchronizing = false;
+	}
+
+	internal void SetBezierDraft(BezierDraftState draft, RunnerPathPointKind pointKind)
+	{
+		ArgumentNullException.ThrowIfNull(draft);
+		synchronizing = true;
+		(string Label, double Value)[] fields = pointKind switch
+		{
+			RunnerPathPointKind.Control1 => new[]
+			{
+				("P1 tangent mm", draft.StartHandleLength),
+			},
+			RunnerPathPointKind.Control2 => new[]
+			{
+				("P2 local T mm", draft.Control2Local.X),
+				("P2 local U mm", draft.Control2Local.Y),
+				("P2 local V mm", draft.Control2Local.Z),
+			},
+			RunnerPathPointKind.End => new[]
+			{
+				("P3 local T mm", draft.EndLocal.X),
+				("P3 local U mm", draft.EndLocal.Y),
+				("P3 local V mm", draft.EndLocal.Z),
+			},
+			_ => Array.Empty<(string, double)>(),
+		};
+		for (int index = 0; index < parameters.Length; ++index)
+		{
+			bool visible = index < fields.Length;
+			parameterLabels[index].Visible = visible;
+			parameters[index].Visible = visible;
+			if (visible)
+			{
+				parameterLabels[index].Text = fields[index].Label;
+				parameters[index].Value = (float)fields[index].Value;
+			}
+		}
 		synchronizing = false;
 	}
 
@@ -369,7 +580,7 @@ internal sealed class CadUi : IDisposable
 		for (int index = 0; index < parameters.Length; index++)
 		{
 			int captured = index;
-			float y = 354 + index * 62;
+			float y = 354 + index * 55;
 			parameterLabels[index] = new Label
 			{
 				Position = new Vector2(16, y),
@@ -387,7 +598,14 @@ internal sealed class CadUi : IDisposable
 			{
 				if (!synchronizing)
 				{
-					NodeParameterChanged?.Invoke(captured, value);
+					if (collectorEditing)
+					{
+						CollectorParameterChanged?.Invoke(captured, value);
+					}
+					else
+					{
+						NodeParameterChanged?.Invoke(captured, value);
+					}
 				}
 			};
 			inspectorPanel.AddChild(parameterLabels[index]);
@@ -447,3 +665,14 @@ internal enum CadStandardView
 	Left,
 	Right,
 }
+
+internal enum TreeIdentityKind
+{
+	Part,
+	Mate,
+	Runner,
+	Collector,
+	CollectorInlet,
+}
+
+internal readonly record struct TreeIdentity(TreeIdentityKind Kind, Guid Id);
