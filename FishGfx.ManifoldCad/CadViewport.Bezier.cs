@@ -1,6 +1,7 @@
 using System.Numerics;
 using FishGfx.Cad;
 using FishGfx.Graphics;
+using FishGfx.Im3d;
 
 namespace FishGfx.ManifoldCad;
 
@@ -9,8 +10,6 @@ internal sealed partial class CadViewport
 	private BezierDraftState bezierDraft;
 	private RunnerPathPointKind? activeBezierHandle;
 	private RunnerPathPointKind? selectedBezierHandle;
-	private int activeBezierAxis = -1;
-	private Vector2 bezierAxisDragStart;
 	private Vector3 bezierDragPlanePoint;
 	private Vector3 bezierDragPlaneNormal;
 	private Vector3 bezierDragIntersection;
@@ -53,6 +52,7 @@ internal sealed partial class CadViewport
 		bezierDraft = null;
 		activeBezierHandle = null;
 		selectedBezierHandle = null;
+		activeIm3dBezierId = Im3dInteraction.InvalidId;
 	}
 
 	internal void SetBezierInvalid(Guid runnerId, Guid? nodeId)
@@ -79,7 +79,6 @@ internal sealed partial class CadViewport
 			return false;
 		}
 		activeBezierHandle = null;
-		activeBezierAxis = -1;
 		BezierDraftCancelled?.Invoke();
 		return true;
 	}
@@ -90,11 +89,6 @@ internal sealed partial class CadViewport
 		{
 			return false;
 		}
-		if (TryBeginBezierAxis(context))
-		{
-			return true;
-		}
-
 		RunnerPathPointKind? selected = null;
 		float best = 13;
 		foreach (RunnerPathPointKind kind in Enum.GetValues<RunnerPathPointKind>())
@@ -149,11 +143,6 @@ internal sealed partial class CadViewport
 		{
 			return;
 		}
-		if (activeBezierAxis >= 0)
-		{
-			UpdateBezierAxisDrag(bounds, mouse);
-			return;
-		}
 		ConfigureCamera(Math.Max(1, (int)bounds.Width), Math.Max(1, (int)bounds.Height));
 		PickingRay ray = camera.CreatePickingRay(ToCameraPoint(bounds, mouse));
 		if (!TryIntersectPlane(
@@ -187,7 +176,6 @@ internal sealed partial class CadViewport
 			return;
 		}
 		activeBezierHandle = null;
-		activeBezierAxis = -1;
 		if (bezierDraft?.IsDirty == true)
 		{
 			BezierCommitRequested?.Invoke(bezierDraft);
@@ -249,127 +237,24 @@ internal sealed partial class CadViewport
 				pass.DrawMesh(candidateSphere);
 			}
 		}
-		DrawBezierAxes(pass, radius);
-
 		CadFrame exit = bezierDraft.AuthoritativeExitFrame;
 		float axisLength = radius * 4;
 		Vector3 exitOrigin = ToVector(exit.Origin);
 		pass.DrawLine(
 			new Vertex3(exitOrigin, Color.Red),
-			new Vertex3(exitOrigin + ToVector(exit.Normal) * axisLength, Color.Red),
+			new Vertex3(exitOrigin + ToVector(exit.Tangent) * axisLength, Color.Red),
 			3
 		);
 		pass.DrawLine(
 			new Vertex3(exitOrigin, Color.Green),
-			new Vertex3(exitOrigin + ToVector(exit.Binormal) * axisLength, Color.Green),
+			new Vertex3(exitOrigin + ToVector(exit.Normal) * axisLength, Color.Green),
 			3
 		);
 		pass.DrawLine(
 			new Vertex3(exitOrigin, Color.Blue),
-			new Vertex3(exitOrigin + ToVector(exit.Tangent) * axisLength, Color.Blue),
+			new Vertex3(exitOrigin + ToVector(exit.Binormal) * axisLength, Color.Blue),
 			3
 		);
-	}
-
-	private bool TryBeginBezierAxis(PickContext context)
-	{
-		if (!selectedBezierHandle.HasValue
-			|| selectedBezierHandle == RunnerPathPointKind.Start)
-		{
-			return false;
-		}
-		CadPoint3 point = bezierDraft.Point(selectedBezierHandle.Value);
-		Vector3[] axes = selectedBezierHandle == RunnerPathPointKind.Control1
-			? new[] { ToVector(bezierDraft.EntryFrame.Tangent) }
-			: new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
-		float length = Math.Max(distance * 0.07f, 18);
-		float best = 7;
-		int selected = -1;
-		for (int index = 0; index < axes.Length; ++index)
-		{
-			Vector3 start = camera.WorldToScreen(ToVector(point) + axes[index] * length * 0.18f);
-			Vector3 end = camera.WorldToScreen(ToVector(point) + axes[index] * length);
-			float screenDistance = DistanceToSegment(
-				context.LocalPoint,
-				new Vector2(start.X, start.Y),
-				new Vector2(end.X, end.Y)
-			);
-			if (screenDistance < best)
-			{
-				best = screenDistance;
-				selected = index;
-			}
-		}
-		if (selected < 0)
-		{
-			return false;
-		}
-		activeBezierAxis = selectedBezierHandle == RunnerPathPointKind.Control1 ? 3 : selected;
-		activeBezierHandle = selectedBezierHandle;
-		bezierAxisDragStart = context.LocalPoint;
-		bezierDragPoint = point;
-		return true;
-	}
-
-	private void UpdateBezierAxisDrag(CadRect bounds, Vector2 mouse)
-	{
-		Vector3 axis = activeBezierAxis == 3
-			? ToVector(bezierDraft.EntryFrame.Tangent)
-			: activeBezierAxis switch
-			{
-				0 => Vector3.UnitX,
-				1 => Vector3.UnitY,
-				_ => Vector3.UnitZ,
-			};
-		Vector3 origin = camera.WorldToScreen(ToVector(bezierDragPoint));
-		Vector3 end = camera.WorldToScreen(
-			ToVector(bezierDragPoint) + axis * Math.Max(distance * 0.07f, 18));
-		Vector2 screenAxis = new(end.X - origin.X, end.Y - origin.Y);
-		if (screenAxis.LengthSquared() <= 1.0e-6f)
-		{
-			return;
-		}
-		float pixels = Vector2.Dot(
-			ToCameraPoint(bounds, mouse) - bezierAxisDragStart,
-			Vector2.Normalize(screenAxis)
-		);
-		float worldAmount = pixels * Math.Max(distance, 1) / Math.Max(bounds.Height, 1);
-		bool wasDirty = bezierDraft.IsDirty;
-		bool changed = bezierDraft.MoveWorldPoint(
-			activeBezierHandle.Value,
-			bezierDragPoint + CadPoint3.FromVector3(axis * worldAmount)
-		);
-		if (changed)
-		{
-			if (!wasDirty)
-			{
-				MarkRunnerStale(bezierDraft.RunnerId);
-			}
-			BezierDraftPreviewChanged?.Invoke(bezierDraft, activeBezierHandle.Value);
-		}
-	}
-
-	private void DrawBezierAxes(RenderPass pass, float handleRadius)
-	{
-		if (!selectedBezierHandle.HasValue
-			|| selectedBezierHandle == RunnerPathPointKind.Start)
-		{
-			return;
-		}
-		Vector3 origin = ToVector(bezierDraft.Point(selectedBezierHandle.Value));
-		float length = Math.Max(distance * 0.07f, handleRadius * 6);
-		if (selectedBezierHandle == RunnerPathPointKind.Control1)
-		{
-			pass.DrawLine(
-				new Vertex3(origin, Color.Blue),
-				new Vertex3(origin + ToVector(bezierDraft.EntryFrame.Tangent) * length, Color.Blue),
-				4
-			);
-			return;
-		}
-		pass.DrawLine(new Vertex3(origin, Color.Red), new Vertex3(origin + Vector3.UnitX * length, Color.Red), 4);
-		pass.DrawLine(new Vertex3(origin, Color.Green), new Vertex3(origin + Vector3.UnitY * length, Color.Green), 4);
-		pass.DrawLine(new Vertex3(origin, Color.Blue), new Vertex3(origin + Vector3.UnitZ * length, Color.Blue), 4);
 	}
 
 	private static bool TryIntersectPlane(

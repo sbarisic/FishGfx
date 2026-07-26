@@ -18,7 +18,6 @@ internal sealed partial class ManifoldCadApplication
 			document.ImportStepAsync(pending, path).GetAwaiter().GetResult();
 			CadPart part = project.AddPart(pending.Name, pending.SourcePath, pending.Id);
 			selectedPart = part;
-			eulerByPart[part.Id] = default;
 			UploadPart(part);
 			viewport.Fit();
 			RefreshUi();
@@ -57,14 +56,36 @@ internal sealed partial class ManifoldCadApplication
 
 	private void TransformPart(CadPoint3 translation, CadPoint3 euler)
 	{
-		if (selectedPart == null)
+		CommitPartTransform(new CadTransform(translation, CadQuaternion.FromEulerDegrees(euler)));
+	}
+
+	private void CommitPartDraft()
+	{
+		PartTransformDraftState draft = partDraft;
+		if (draft == null)
 		{
 			return;
 		}
 
-		TryOperation(() =>
+		partDraft = null;
+		viewport.ClearPartDraft();
+		if (!CommitPartTransform(draft.Transform)
+			&& selectedPart?.Transform == draft.OriginalTransform)
 		{
-			CadTransform transform = new(translation, CadQuaternion.FromEulerDegrees(euler));
+			viewport.RestoreAffectedGeometryFreshness(project, draft.PartId);
+			RefreshUi();
+		}
+	}
+
+	private bool CommitPartTransform(CadTransform transform)
+	{
+		if (selectedPart == null)
+		{
+			return false;
+		}
+
+		return TryOperation(() =>
+		{
 			CadPart transformed = new()
 			{
 				Id = selectedPart.Id,
@@ -74,10 +95,10 @@ internal sealed partial class ManifoldCadApplication
 			};
 			document.SetPartTransformAsync(transformed).GetAwaiter().GetResult();
 			selectedPart.Transform = transform;
-			eulerByPart[selectedPart.Id] = euler;
 			UploadPart(selectedPart);
 			RegenerateRunnersForPart(selectedPart.Id);
-			ui.SetStatus("Placement updated; attached runner regenerated.");
+			RefreshUi();
+			ui.SetStatus("Placement updated; attached previews regenerated and exact geometry is stale.");
 		});
 	}
 
@@ -252,6 +273,7 @@ internal sealed partial class ManifoldCadApplication
 	private void SelectPart(Guid partId)
 	{
 		DiscardCollectorDraft();
+		DiscardPartDraft();
 		project.SetActiveCollector(null);
 		selectedPart = project.Parts.FirstOrDefault(part => part.Id == partId);
 		RefreshUi();
@@ -260,6 +282,7 @@ internal sealed partial class ManifoldCadApplication
 	private void SelectMate(Guid mateId)
 	{
 		DiscardCollectorDraft();
+		DiscardPartDraft();
 		project.SetActiveCollector(null);
 		selectedMate = project.Mates.FirstOrDefault(mate => mate.Id == mateId);
 		selectedPart = selectedMate == null ? selectedPart : project.Parts.FirstOrDefault(part => part.Id == selectedMate.PartId);
@@ -269,6 +292,7 @@ internal sealed partial class ManifoldCadApplication
 	private void SelectRunner(Guid runnerId)
 	{
 		DiscardCollectorDraft();
+		DiscardPartDraft();
 		if (!project.SetActiveRunner(runnerId))
 			return;
 		CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>

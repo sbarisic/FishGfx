@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Im3dNativeSourceRoot>$(MSBuildThisFileDirectory)..\FishGfx.Im3d.Native</Im3dNativeSourceRoot>
+    <Im3dNativeBuildRoot>$(Im3dNativeSourceRoot)\out\build\windows-x64</Im3dNativeBuildRoot>
+    <Im3dNativeRuntimeDir>$(Im3dNativeBuildRoot)\$(Configuration)</Im3dNativeRuntimeDir>
+    <Im3dBundledCMakeFromBin>$(MSBuildToolsPath)\..\..\..\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</Im3dBundledCMakeFromBin>
+    <Im3dBundledCMakeFromAmd64>$(MSBuildToolsPath)\..\..\..\..\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</Im3dBundledCMakeFromAmd64>
+    <Im3dCMakeExecutable Condition="Exists('$(Im3dBundledCMakeFromBin)')">$(Im3dBundledCMakeFromBin)</Im3dCMakeExecutable>
+    <Im3dCMakeExecutable Condition="'$(Im3dCMakeExecutable)' == '' and Exists('$(Im3dBundledCMakeFromAmd64)')">$(Im3dBundledCMakeFromAmd64)</Im3dCMakeExecutable>
+    <Im3dCMakeExecutable Condition="'$(Im3dCMakeExecutable)' == ''">cmake</Im3dCMakeExecutable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FishGfx\FishGfx.csproj" />
+    <None Include="$(Im3dNativeRuntimeDir)\FishGfxIm3dNative.dll"
+          Link="FishGfxIm3dNative.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(Im3dNativeSourceRoot)\thirdparty\im3d\LICENSE"
+          Link="notices\im3d-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="$(Im3dNativeSourceRoot)\thirdparty\im3d\PROVENANCE.md"
+          Link="notices\im3d-PROVENANCE.md"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ConfigureIm3dNativeRuntime">
+    <Error Condition="!Exists('$(Im3dNativeSourceRoot)\CMakePresets.json')"
+           Text="The pinned FishGfx im3d native source is missing." />
+    <Exec WorkingDirectory="$(Im3dNativeSourceRoot)"
+          Command="&quot;$(Im3dCMakeExecutable)&quot; --preset windows-x64" />
+  </Target>
+
+  <Target Name="BuildIm3dNativeRuntime"
+          DependsOnTargets="ConfigureIm3dNativeRuntime">
+    <Exec Command="&quot;$(Im3dCMakeExecutable)&quot; --build &quot;$(Im3dNativeBuildRoot)&quot; --config $(Configuration)" />
+  </Target>
+
+  <Target Name="PrepareIm3dNativeRuntime"
+          BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems;CopyFilesToOutputDirectory;ComputeFilesToPublish"
+          DependsOnTargets="BuildIm3dNativeRuntime">
+	<Copy SourceFiles="$(Im3dNativeRuntimeDir)\FishGfxIm3dNative.dll"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+		  Condition="Exists('$(Im3dNativeRuntimeDir)\FishGfxIm3dNative.dll')" />
+    <MakeDir Directories="$(OutDir)notices" />
+    <Copy SourceFiles="$(Im3dNativeSourceRoot)\thirdparty\im3d\LICENSE;$(Im3dNativeSourceRoot)\thirdparty\im3d\PROVENANCE.md"
+          DestinationFiles="$(OutDir)notices\im3d-LICENSE.txt;$(OutDir)notices\im3d-PROVENANCE.md"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

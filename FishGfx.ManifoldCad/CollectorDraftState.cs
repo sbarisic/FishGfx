@@ -7,15 +7,13 @@ internal sealed class CollectorDraftState
 	internal CollectorDraftState(
 		Guid systemId,
 		Guid? inletId,
-		CadFrame originalFrame,
-		CadPoint3 originalEuler
+		CadFrame originalFrame
 	)
 	{
 		SystemId = systemId;
 		InletId = inletId;
 		OriginalFrame = originalFrame;
 		Frame = originalFrame;
-		EulerDegrees = originalEuler;
 	}
 
 	internal Guid SystemId { get; }
@@ -26,5 +24,4 @@ internal sealed class CollectorDraftState
 
 	internal CadFrame Frame { get; set; }
 
-	internal CadPoint3 EulerDegrees { get; set; }
 }

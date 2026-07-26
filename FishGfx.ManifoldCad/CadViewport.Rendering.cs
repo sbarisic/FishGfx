@@ -32,27 +32,36 @@ internal sealed partial class CadViewport
 
 		foreach (SceneItem item in items)
 		{
-			pass.DrawMesh(item.Mesh);
-			DrawEdges(pass, item, highlightedNodeId, Selection);
-
-			if (highlightedNodeId.HasValue && item.HighlightMeshes.TryGetValue(highlightedNodeId.Value, out Mesh3D highlight))
+			using (pass.PushModel(PartDraftModel(item.PartId)))
 			{
-				pass.DrawMesh(highlight);
+				pass.DrawMesh(item.Mesh);
+				DrawEdges(pass, item, highlightedNodeId, Selection);
+
+				if (highlightedNodeId.HasValue
+					&& item.HighlightMeshes.TryGetValue(highlightedNodeId.Value, out Mesh3D highlight))
+				{
+					pass.DrawMesh(highlight);
+				}
 			}
 		}
 
 		if (selectedFaceMesh != null)
 		{
-			pass.DrawMesh(selectedFaceMesh);
+			using (pass.PushModel(PartDraftModel(Selection.PartId)))
+			{
+				pass.DrawMesh(selectedFaceMesh);
+			}
 		}
 
+		DrawPartDraftRunnerCurves(pass);
 		DrawCollectorDraftCurves(pass);
 		DrawCollectorGlyphs(pass);
 		DrawMateGlyphs(pass);
 		DrawMateCandidates(pass);
 		DrawBezierEditor(pass);
-		DrawPartGizmo(pass);
+		DrawOutletTangentArrow(pass);
 		DrawDebugPickingRay(pass);
+		im3dRenderer.Draw(pass, im3dDrawData);
 
 		return target;
 	}
@@ -77,6 +86,8 @@ internal sealed partial class CadViewport
 		candidateSphere.Dispose();
 		gridMesh.Dispose();
 		target?.Dispose();
+		im3dRenderer.Dispose();
+		im3dContext.Dispose();
 	}
 
 	private void ConfigureCamera(int width, int height)
@@ -163,11 +174,12 @@ internal sealed partial class CadViewport
 	{
 		foreach (MateGlyph mate in mates)
 		{
-			Vector3 origin = ToVector(mate.Frame.Origin);
+			CadFrame frame = PartDraftFrame(mate.PartId, mate.Frame);
+			Vector3 origin = ToVector(frame.Origin);
 			float scale = Math.Max(distance * 0.035f, 8);
-			pass.DrawLine(new Vertex3(origin, Color.Red), new Vertex3(origin + ToVector(mate.Frame.Normal) * scale, Color.Red), 3);
-			pass.DrawLine(new Vertex3(origin, Color.Green), new Vertex3(origin + ToVector(mate.Frame.Binormal) * scale, Color.Green), 3);
-			pass.DrawLine(new Vertex3(origin, Color.Blue), new Vertex3(origin + ToVector(mate.Frame.Tangent) * scale, Color.Blue), 3);
+			pass.DrawLine(new Vertex3(origin, Color.Red), new Vertex3(origin + ToVector(frame.Tangent) * scale, Color.Red), 3);
+			pass.DrawLine(new Vertex3(origin, Color.Green), new Vertex3(origin + ToVector(frame.Normal) * scale, Color.Green), 3);
+			pass.DrawLine(new Vertex3(origin, Color.Blue), new Vertex3(origin + ToVector(frame.Binormal) * scale, Color.Blue), 3);
 			pass.DrawPoint(new Vertex3(origin, Color.Yellow), 8);
 		}
 	}
@@ -242,7 +254,9 @@ internal sealed partial class CadViewport
 	private Vector3 CandidateDisplayCenter(MateCandidateGlyph candidate)
 	{
 		float radius = CandidateDisplayRadius(candidate);
-		return ToVector(candidate.Center) + ToVector(candidate.Axis) * radius * 0.65f;
+		CadPoint3 center = PartDraftPoint(candidate.PartId, candidate.Center);
+		CadPoint3 axis = PartDraftDirection(candidate.PartId, candidate.Axis);
+		return ToVector(center) + ToVector(axis) * radius * 0.65f;
 	}
 
 	private void DrawDebugPickingRay(RenderPass pass)

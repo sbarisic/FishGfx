@@ -24,6 +24,7 @@
     <ProjectReference Include="..\FishGfx\FishGfx.csproj" />
     <ProjectReference Include="..\FishGfx.FishUI\FishGfx.FishUI.csproj" />
     <ProjectReference Include="..\FishGfx.CadKernel\FishGfx.CadKernel.csproj" />
+    <ProjectReference Include="..\FishGfx.Im3d\FishGfx.Im3d.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\thirdparty\FishUI\FishUI\data\**\*"

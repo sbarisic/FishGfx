@@ -411,12 +411,11 @@ internal sealed partial class CadUi : IDisposable
 		synchronizing = false;
 	}
 
-	internal void SetPart(CadPart part, CadPoint3 eulerDegrees)
+	internal void SetPart(CadPart part, CadPoint3 position, CadPoint3 eulerDegrees)
 	{
 		synchronizing = true;
 		collectorEditing = false;
 		inspectorTitle.Text = part == null ? "INSPECTOR" : "PART: " + part.Name;
-		CadPoint3 position = part?.Transform.Translation ?? default;
 		translation[0].Value = (float)position.X;
 		translation[1].Value = (float)position.Y;
 		translation[2].Value = (float)position.Z;

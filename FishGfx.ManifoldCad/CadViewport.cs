@@ -3,6 +3,7 @@ using FishGfx.Cad;
 using FishGfx.Game;
 using FishGfx.Graphics;
 using FishGfx.Graphics.Drawables;
+using FishGfx.Im3d;
 
 namespace FishGfx.ManifoldCad;
 
@@ -20,6 +21,8 @@ internal readonly record struct CadViewportSelection(
 internal sealed partial class CadViewport : IDisposable
 {
 	private readonly GraphicsContext graphics;
+	private readonly Im3dContext im3dContext;
+	private readonly Im3dRenderer im3dRenderer;
 	private readonly Camera camera = new();
 	private readonly List<SceneItem> items = new();
 	private readonly List<MateGlyph> mates = new();
@@ -40,15 +43,12 @@ internal sealed partial class CadViewport : IDisposable
 	private float scrollDelta;
 	private CadPart selectedPart;
 	private bool hasFrameGizmo;
-	private CadPoint3 frameGizmoOrigin;
-	private CadPoint3 selectedEuler;
+	private Im3dPose frameGizmoPose;
+	private uint frameGizmoId;
 	private bool rotationGizmo;
-	private int activeGizmoAxis = -1;
-	private Vector2 gizmoDragStart;
-	private CadPoint3 gizmoTranslationStart;
-	private CadPoint3 gizmoEulerStart;
-	private Vector2 gizmoRotationCenter;
-	private float gizmoRotationStartAngle;
+	private readonly Im3dInteractionLifecycle im3dLifecycle = new();
+	private Im3dFrameData im3dDrawData = Im3dFrameData.Empty;
+	private Im3dInteraction im3dInteraction;
 	private Mesh3D selectedFaceMesh;
 	private bool pickingRayDebugEnabled;
 	private bool hasDebugPickingRay;
@@ -61,15 +61,18 @@ internal sealed partial class CadViewport : IDisposable
 	internal CadViewport(GraphicsContext graphics)
 	{
 		this.graphics = graphics ?? throw new ArgumentNullException(nameof(graphics));
+		im3dContext = new Im3dContext();
+		im3dRenderer = new Im3dRenderer(graphics);
 		candidateSphere = CreateCandidateSphere(graphics);
 		gridMesh = CreateGridMesh(graphics);
 	}
 
 	internal event Action<CadViewportSelection> SelectionChanged;
 
-	internal event Action<CadPoint3> GizmoTranslationChanged;
-	internal event Action<CadPoint3> GizmoRotationChanged;
-	internal event Action GizmoCommitRequested;
+	internal event Action<Im3dPose> GizmoDraftActivated;
+	internal event Action<Im3dPose> GizmoPoseChanged;
+	internal event Action<Im3dPose> GizmoCommitRequested;
+	internal event Action GizmoDraftCancelled;
 
 	internal CadViewportSelection Selection { get; private set; }
 	internal int MateCandidateCount => mateCandidates.Count;
@@ -117,22 +120,33 @@ internal sealed partial class CadViewport : IDisposable
 		debugPickingHit = null;
 		bezierDraft = null;
 		activeBezierHandle = null;
+		activeIm3dBezierId = Im3dInteraction.InvalidId;
+		ClearPartDraft();
+		im3dLifecycle.Reset();
+		im3dContext.QueueInteractionReset();
 	}
 
-	internal void SetSelectedPart(CadPart part, CadPoint3 euler)
+	internal void SetSelectedPart(CadPart part, CadTransform? displayTransform = null)
 	{
 		selectedPart = part;
-		selectedEuler = euler;
 		hasFrameGizmo = part != null;
-		frameGizmoOrigin = part?.Transform.Translation ?? default;
+		CadTransform transform = displayTransform ?? part?.Transform ?? CadTransform.Identity;
+		if (part != null)
+		{
+			frameGizmoPose = ToIm3dPose(transform);
+			frameGizmoId = Im3dId.FromGuid(part.Id, 0x50415254u);
+		}
 	}
 
-	internal void SetSelectedFrame(CadFrame frame, CadPoint3 euler)
+	internal void SetSelectedFrame(Guid ownerId, Guid? elementId, CadFrame frame)
 	{
 		selectedPart = null;
 		hasFrameGizmo = true;
-		frameGizmoOrigin = frame.Origin;
-		selectedEuler = euler;
+		frameGizmoPose = ToIm3dPose(frame);
+		uint salt = elementId.HasValue
+			? Im3dId.FromGuid(elementId.Value, 0x494E4C54u)
+			: 0x4F55544Cu;
+		frameGizmoId = Im3dId.FromGuid(ownerId, salt);
 	}
 
 	internal void SetCollectorDraft(
@@ -198,7 +212,7 @@ internal sealed partial class CadViewport : IDisposable
 	internal bool ToggleGizmoMode()
 	{
 		rotationGizmo = !rotationGizmo;
-		activeGizmoAxis = -1;
+		CancelActiveIm3dManipulation();
 		return rotationGizmo;
 	}
 
@@ -353,15 +367,13 @@ internal sealed partial class CadViewport : IDisposable
 		}
 	}
 
-	internal void Update(CadRect bounds, InputManager input, Vector2 mouse)
+	internal void Update(CadRect bounds, InputManager input, Vector2 mouse, float deltaTime)
 	{
 		Vector2 delta = mouse - previousMouse;
 		previousMouse = mouse;
-
-		if (activeGizmoAxis >= 0 && input.IsMouseButtonDown(MouseButton.Left))
-		{
-			UpdateGizmo(bounds, mouse);
-		}
+		bool inside = bounds.Contains(mouse);
+		ConfigureCamera(Math.Max(1, (int)bounds.Width), Math.Max(1, (int)bounds.Height));
+		UpdateIm3d(bounds, input, mouse, deltaTime, inside);
 
 		if (activeBezierHandle.HasValue && input.IsMouseButtonDown(MouseButton.Left))
 		{
@@ -371,25 +383,20 @@ internal sealed partial class CadViewport : IDisposable
 		if (input.WasMouseButtonReleased(MouseButton.Left))
 		{
 			CompleteBezierDrag();
-			if (activeGizmoAxis >= 0)
-			{
-				GizmoCommitRequested?.Invoke();
-			}
-			activeGizmoAxis = -1;
 		}
 
-		if (!bounds.Contains(mouse))
+		if (!inside)
 		{
 			return;
 		}
 
-		if (input.IsMouseButtonDown(MouseButton.Right))
+		if (!im3dInteraction.OwnsPointer && input.IsMouseButtonDown(MouseButton.Right))
 		{
 			yaw -= delta.X * 0.35f;
 			pitch = Math.Clamp(pitch + delta.Y * 0.35f, -89, 89);
 		}
 
-		if (input.IsMouseButtonDown(MouseButton.Middle))
+		if (!im3dInteraction.OwnsPointer && input.IsMouseButtonDown(MouseButton.Middle))
 		{
 			float scale = Math.Max(distance, 1) / Math.Max(bounds.Height, 1);
 			focus = PanFocus(
@@ -411,6 +418,10 @@ internal sealed partial class CadViewport : IDisposable
 		{
 			PickContext context = CreatePickContext(bounds, mouse);
 			CaptureDebugPickingRay(context);
+			if (im3dInteraction.OwnsPointer)
+			{
+				return;
+			}
 
 			if (TryBeginBezierHandle(context)
 				|| TryPickCollectorGlyph(context)
@@ -420,11 +431,31 @@ internal sealed partial class CadViewport : IDisposable
 				return;
 			}
 
-			if (!TryBeginGizmo(bounds, mouse))
-			{
-				PickGeometry(context);
-			}
+			PickGeometry(context);
 		}
+	}
+
+	internal bool CancelActiveIm3dManipulation()
+	{
+		uint activeId = im3dLifecycle.PreviousActiveId != Im3dInteraction.InvalidId
+			? im3dLifecycle.PreviousActiveId
+			: im3dInteraction.ActiveId;
+		if (activeId == Im3dInteraction.InvalidId)
+		{
+			return false;
+		}
+
+		im3dLifecycle.SuppressRelease(activeId);
+		im3dContext.QueueInteractionReset();
+		if (activeId == activeIm3dBezierId)
+		{
+			BezierDraftCancelled?.Invoke();
+		}
+		else
+		{
+			GizmoDraftCancelled?.Invoke();
+		}
+		return true;
 	}
 
 	internal void OnScroll(float delta) => scrollDelta += delta;

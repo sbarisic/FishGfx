@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FishGfx.Cad;
+using FishGfx.Im3d;
 
 namespace FishGfx.ManifoldCad;
 
@@ -119,6 +120,7 @@ internal sealed partial class ManifoldCadApplication
 	private void SelectCollector(Guid systemId)
 	{
 		DiscardCollectorDraft();
+		DiscardPartDraft();
 		CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(item => item.Id == systemId);
 		if (system == null)
 		{
@@ -133,6 +135,7 @@ internal sealed partial class ManifoldCadApplication
 	private void SelectCollectorInlet(Guid inletId)
 	{
 		DiscardCollectorDraft();
+		DiscardPartDraft();
 		CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(candidate =>
 			candidate.Inlets.Any(inlet => inlet.Id == inletId));
 		if (system == null)
@@ -185,38 +188,65 @@ internal sealed partial class ManifoldCadApplication
 		RefreshUi();
 	}
 
-	private void PreviewGizmoTranslation(CadPoint3 translation)
+	private void BeginGizmoDraft(Im3dPose _)
 	{
-		if (project.ActiveCollectorSystem == null)
+		if (project.ActiveCollectorSystem != null)
 		{
-			CadPoint3 euler = selectedPart != null
-				&& eulerByPart.TryGetValue(selectedPart.Id, out CadPoint3 value)
-				? value
-				: default;
-			TransformPart(translation, euler);
+			UpdateCollectorDraftPreview(EnsureCollectorDraft());
 			return;
 		}
-		CollectorDraftState draft = EnsureCollectorDraft();
-		draft.Frame = new CadFrame(translation, draft.Frame.Tangent, draft.Frame.Normal);
-		UpdateCollectorDraftPreview(draft);
+		if (selectedPart == null)
+		{
+			return;
+		}
+
+		partDraft ??= new PartTransformDraftState(selectedPart);
+		viewport.SetPartDraft(selectedPart, partDraft.OriginalTransform, partDraft.Transform);
+		viewport.MarkAffectedGeometryStale(project, selectedPart.Id);
+		viewport.UpdatePartAttachedPreviews(
+			project,
+			evaluations,
+			selectedPart.Id,
+			partDraft.OriginalTransform,
+			partDraft.Transform);
 	}
 
-	private void PreviewGizmoRotation(CadPoint3 euler)
+	private void PreviewGizmoPose(Im3dPose pose)
 	{
-		if (project.ActiveCollectorSystem == null)
+		if (project.ActiveCollectorSystem != null)
 		{
-			TransformPart(selectedPart?.Transform.Translation ?? default, euler);
+			CollectorDraftState draft = EnsureCollectorDraft();
+			draft.Frame = CadViewport.ToCadFrame(pose);
+			UpdateCollectorDraftPreview(draft);
 			return;
 		}
-		CollectorDraftState draft = EnsureCollectorDraft();
-		CadQuaternion rotation = CadQuaternion.FromEulerDegrees(euler);
-		draft.EulerDegrees = euler;
-		draft.Frame = new CadFrame(
-			draft.Frame.Origin,
-			rotation.Rotate(new CadPoint3(1, 0, 0)),
-			rotation.Rotate(new CadPoint3(0, 1, 0))
-		);
-		UpdateCollectorDraftPreview(draft);
+		if (selectedPart == null)
+		{
+			return;
+		}
+
+		partDraft ??= new PartTransformDraftState(selectedPart);
+		partDraft.Transform = new CadTransform(
+			CadPoint3.FromVector3(pose.Position),
+			CadViewport.ToCadQuaternion(pose.Rotation));
+		viewport.SetPartDraft(selectedPart, partDraft.OriginalTransform, partDraft.Transform);
+		viewport.UpdatePartAttachedPreviews(project, evaluations, selectedPart.Id, partDraft.OriginalTransform, partDraft.Transform);
+		ui.SetPart(
+			selectedPart,
+			partDraft.Transform.Translation,
+			partDraft.Transform.Rotation.ToEulerDegrees());
+	}
+
+	private void CommitGizmoDraft(Im3dPose pose)
+	{
+		PreviewGizmoPose(pose);
+		if (project.ActiveCollectorSystem != null)
+		{
+			CommitCollectorDraft();
+			return;
+		}
+
+		CommitPartDraft();
 	}
 
 	private CollectorDraftState EnsureCollectorDraft()
@@ -232,14 +262,14 @@ internal sealed partial class ManifoldCadApplication
 			? system.Inlets.Single(item => item.Id == inletId.Value)
 			: null;
 		CadFrame frame = inlet == null ? system.OutletFrame : system.GetWorldInletFrame(inlet);
-		collectorDraft = new CollectorDraftState(system.Id, inletId, frame, frame.ToEulerDegrees());
+		collectorDraft = new CollectorDraftState(system.Id, inletId, frame);
 		viewport.MarkRunnerStale(system.Id);
 		return collectorDraft;
 	}
 
 	private void UpdateCollectorDraftPreview(CollectorDraftState draft)
 	{
-		viewport.SetSelectedFrame(draft.Frame, draft.EulerDegrees);
+		viewport.SetSelectedFrame(draft.SystemId, draft.InletId, draft.Frame);
 		CadCollectorSystem system = project.CollectorSystems.Single(
 			item => item.Id == draft.SystemId);
 		viewport.SetCollectorDraft(
@@ -305,7 +335,23 @@ internal sealed partial class ManifoldCadApplication
 		}
 		Guid systemId = collectorDraft.SystemId;
 		collectorDraft = null;
-		viewport.MarkRunnerCurrent(systemId);
+		RestoreCollectorVisualFreshness(systemId);
+		RefreshUi();
+		return true;
+	}
+
+	private bool CancelGizmoDraft()
+	{
+		bool cancelled = CancelCollectorDraft();
+		if (partDraft == null)
+		{
+			return cancelled;
+		}
+
+		Guid partId = partDraft.PartId;
+		partDraft = null;
+		viewport.RestoreAffectedGeometryFreshness(project, partId);
+		viewport.ClearPartDraft();
 		RefreshUi();
 		return true;
 	}
@@ -314,9 +360,35 @@ internal sealed partial class ManifoldCadApplication
 	{
 		if (collectorDraft != null)
 		{
-			viewport.MarkRunnerCurrent(collectorDraft.SystemId);
+			RestoreCollectorVisualFreshness(collectorDraft.SystemId);
 			collectorDraft = null;
 		}
+	}
+
+	private void RestoreCollectorVisualFreshness(Guid systemId)
+	{
+		CadCollectorSystem system = project.CollectorSystems.FirstOrDefault(item => item.Id == systemId);
+		if (system?.ExactBuild.IsCurrent == true)
+		{
+			viewport.MarkRunnerCurrent(systemId);
+		}
+		else
+		{
+			viewport.MarkRunnerStale(systemId);
+		}
+	}
+
+	private void DiscardPartDraft()
+	{
+		if (partDraft == null)
+		{
+			return;
+		}
+
+		Guid partId = partDraft.PartId;
+		partDraft = null;
+		viewport.RestoreAffectedGeometryFreshness(project, partId);
+		viewport.ClearPartDraft();
 	}
 
 	private void ChangeCollectorParameter(int index, double value)

@@ -6,6 +6,7 @@ using FishGfx.Cad;
 using FishGfx.Formats;
 using FishGfx.Game;
 using FishGfx.Graphics;
+using FishGfx.Im3d;
 
 namespace FishGfx.ManifoldCad;
 
@@ -17,7 +18,6 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private const double InteractiveAngularDeflection = Math.PI / 12;
 	private readonly bool autoMode;
 	private readonly Stopwatch timer = Stopwatch.StartNew();
-	private readonly Dictionary<Guid, CadPoint3> eulerByPart = new();
 	private readonly Dictionary<Guid, RunnerEvaluationResult> evaluations = new();
 	private readonly Dictionary<(Guid SystemId, Guid RunnerId), RunnerFeature[]> collectorRunnerGeometry = new();
 	private readonly Dictionary<Guid, string> runnerBuildErrors = new();
@@ -51,6 +51,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 	private string autoScreenshotPath;
 	private string[] bezierInspectorProperties = Array.Empty<string>();
 	private CollectorDraftState collectorDraft;
+	private PartTransformDraftState partDraft;
 	private Task regenerationWorker;
 	private bool regenerationWorkerRunning;
 	private long projectEpoch;
@@ -186,7 +187,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		ui.GizmoModeRequested += () =>
 		{
 			bool rotating = viewport.ToggleGizmoMode();
-			ui.SetStatus(rotating ? "Rotation gizmo active." : "Translation gizmo active.");
+			ui.SetStatus(rotating
+				? "Rotation gizmo active: RGB uses world axes; the outer ring uses the camera-view axis. Rotation about the orange outlet tangent changes roll/profile clocking."
+				: "Translation gizmo active: RGB uses world axes.");
 		};
 		ui.PickingRayDebugRequested += () =>
 		{
@@ -196,9 +199,10 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 				: "Pick-ray debug disabled.");
 		};
 		viewport.SelectionChanged += SelectViewportItem;
-		viewport.GizmoTranslationChanged += PreviewGizmoTranslation;
-		viewport.GizmoRotationChanged += PreviewGizmoRotation;
-		viewport.GizmoCommitRequested += CommitCollectorDraft;
+		viewport.GizmoDraftActivated += BeginGizmoDraft;
+		viewport.GizmoPoseChanged += PreviewGizmoPose;
+		viewport.GizmoCommitRequested += CommitGizmoDraft;
+		viewport.GizmoDraftCancelled += () => CancelGizmoDraft();
 		nodeCanvas.SelectionChanged += node =>
 		{
 			ui.SetNode(node);
@@ -236,7 +240,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 
 		if (input.WasKeyPressed(Key.Escape))
 		{
-			if (!CancelCollectorDraft() && !viewport.CancelBezierDraft())
+			if (!viewport.CancelActiveIm3dManipulation()
+				&& !CancelGizmoDraft()
+				&& !viewport.CancelBezierDraft())
 			{
 				window.IsCloseRequested = true;
 			}
@@ -246,7 +252,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		CadRect graphBounds = CadLayout.Graph(window.Width);
 		Vector2 mouse = input.MousePosition;
 		viewport.OnScroll(viewportBounds.Contains(mouse) ? scrollDelta : 0);
-		viewport.Update(viewportBounds, input, mouse);
+		viewport.Update(viewportBounds, input, mouse, deltaTime);
 		nodeCanvas.Update(ActiveGraph, graphBounds, input, mouse, graphBounds.Contains(mouse) ? scrollDelta : 0);
 		ui.Update(deltaTime, time);
 	}
@@ -311,11 +317,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 
 	private void RefreshUi()
 	{
+		CadTransform? selectedPartDraftTransform = ResolvePartDraftTransform(selectedPart, partDraft);
 		viewport.SetMates(project);
 		viewport.SetCollectors(project, evaluations);
-		CadPoint3 euler = selectedPart != null && eulerByPart.TryGetValue(selectedPart.Id, out CadPoint3 value)
-			? value
-			: default;
 		if (project.ActiveCollectorSystem != null)
 		{
 			CadCollectorInlet activeInlet = project.ActiveCollectorSystem.Inlets.FirstOrDefault(
@@ -326,11 +330,25 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 				: activeInlet == null
 					? project.ActiveCollectorSystem.OutletFrame
 					: project.ActiveCollectorSystem.GetWorldInletFrame(activeInlet);
-			viewport.SetSelectedFrame(frame, collectorDraft?.EulerDegrees ?? default);
+			viewport.SetSelectedFrame(
+				project.ActiveCollectorSystem.Id,
+				activeInlet?.Id,
+				frame);
+			if (collectorDraft?.SystemId == project.ActiveCollectorSystem.Id)
+			{
+				viewport.SetCollectorDraft(
+					project.ActiveCollectorSystem,
+					collectorDraft.InletId,
+					collectorDraft.Frame,
+					false,
+					evaluations);
+			}
 		}
 		else
 		{
-			viewport.SetSelectedPart(selectedPart, euler);
+			viewport.SetSelectedPart(
+				selectedPart,
+				selectedPartDraftTransform);
 		}
 		ui.SetModel(project, selectedPart?.Id, selectedMate?.Id, ActiveRunner?.Id);
 		if (project.ActiveCollectorSystem != null)
@@ -347,7 +365,13 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		}
 		else
 		{
-			ui.SetPart(selectedPart, euler);
+			CadTransform displayTransform = selectedPartDraftTransform
+				?? selectedPart?.Transform
+				?? CadTransform.Identity;
+			ui.SetPart(
+				selectedPart,
+				displayTransform.Translation,
+				displayTransform.Rotation.ToEulerDegrees());
 		}
 		if (project.ActiveCollectorSystem == null)
 		{
@@ -355,16 +379,30 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		}
 	}
 
-	private void TryOperation(Action action)
+	internal static CadTransform? ResolvePartDraftTransform(
+		CadPart part,
+		PartTransformDraftState draft)
+	{
+		if (part == null || draft == null || draft.PartId != part.Id)
+		{
+			return null;
+		}
+
+		return draft.Transform;
+	}
+
+	private bool TryOperation(Action action)
 	{
 		try
 		{
 			action();
+			return true;
 		}
 		catch (Exception exception)
 		{
 			ApplicationLog.Current?.Exception("CAD operation failed.", exception);
 			ui.SetStatus(exception.Message, true);
+			return false;
 		}
 	}
 

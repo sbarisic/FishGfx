@@ -73,17 +73,12 @@ internal sealed partial class ManifoldCadApplication
 			{
 			}
 			runnerBuildErrors.Clear();
-			eulerByPart.Clear();
 			hasSelectedTopology = false;
 			selectedTopology = null;
 			project = package.Project;
 			RestoreResolvedMateSelectorsAsync(document, project)
 				.GetAwaiter()
 				.GetResult();
-			foreach (CadPart part in project.Parts)
-			{
-				eulerByPart[part.Id] = part.Transform.Rotation.ToEulerDegrees();
-			}
 			selectedPart = project.Parts.FirstOrDefault();
 			selectedMate = project.Mates.FirstOrDefault();
 
