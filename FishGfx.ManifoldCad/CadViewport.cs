@@ -154,7 +154,8 @@ internal sealed partial class CadViewport : IDisposable
 		Guid? inletId,
 		CadFrame frame,
 		bool invalid = false,
-		IReadOnlyDictionary<Guid, RunnerEvaluationResult> evaluatedRunners = null
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> evaluatedRunners = null,
+		IReadOnlyDictionary<Guid, CadCollectorBranchPath> branchPaths = null
 	)
 	{
 		int index = collectorGlyphs.FindIndex(item =>
@@ -165,7 +166,7 @@ internal sealed partial class CadViewport : IDisposable
 		}
 		collectorDraftCurves.Clear();
 		ClearCollectorDraftMeshes();
-		collectorDraftInvalid = invalid;
+		bool hasInvalidBranch = invalid;
 		CadFrame outlet = inletId.HasValue ? system.OutletFrame : frame;
 		foreach (CadCollectorInlet inlet in system.Inlets)
 		{
@@ -191,22 +192,25 @@ internal sealed partial class CadViewport : IDisposable
 				}
 			}
 			CadFrame inletFrame = inlet.Id == inletId ? frame : system.GetWorldInletFrame(inlet);
-			CadPoint3 p0 = inletFrame.Origin;
-			CadPoint3 p1 = p0 + inletFrame.Tangent * inlet.BranchStartHandleLength;
-			CadPoint3 p3 = outlet.Origin;
-			CadPoint3 p2 = p3 - outlet.Tangent * system.BranchEndHandleLength;
-			CadPoint3[] samples = new CadPoint3[25];
-			for (int sample = 0; sample < samples.Length; ++sample)
-			{
-				double t = sample / (double)(samples.Length - 1);
-				double inverse = 1 - t;
-				samples[sample] = p0 * (inverse * inverse * inverse)
-					+ p1 * (3 * inverse * inverse * t)
-					+ p2 * (3 * inverse * t * t)
-					+ p3 * (t * t * t);
-			}
-			AddCollectorDraftCurve(samples, outerRadius, !invalid);
+			CadCollectorBranchPath path = branchPaths != null
+				&& branchPaths.TryGetValue(inlet.Id, out CadCollectorBranchPath draftPath)
+					? draftPath
+					: inlet.BranchPath;
+			path ??= CadCollectorBranchSolver.Solve(
+				inletFrame,
+				outlet,
+				outerRadius,
+				inlet.BranchStartHandleLength,
+				system.BranchEndHandleLength
+			);
+			hasInvalidBranch |= !path.IsFeasible;
+			AddCollectorDraftCurve(
+				CadCollectorBranchSolver.Sample(path, outlet, inletFrame.Origin),
+				outerRadius,
+				!invalid && path.IsFeasible
+			);
 		}
+		collectorDraftInvalid = hasInvalidBranch;
 	}
 
 	internal bool ToggleGizmoMode()

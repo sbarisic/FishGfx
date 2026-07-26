@@ -2,6 +2,27 @@ namespace FishGfx.Cad;
 
 public sealed partial class CollectorSystemTransaction
 {
+	private static void ResolveCollectorBranchPaths(
+		CadCollectorSystem system,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations
+	)
+	{
+		foreach (CadCollectorInlet inlet in system.Inlets)
+		{
+			if (inlet.Binding != null
+				&& authoritativeEvaluations?.TryGetValue(
+					inlet.Binding.RunnerId,
+					out RunnerEvaluationResult evaluation
+				) == true
+				&& evaluation.Success)
+			{
+				inlet.BranchOuterRadiusMillimetres = evaluation.Chain.ActiveProfile
+					.ApproximateOuterRadiusMillimetres;
+			}
+		}
+		system.RecalculateBranchPaths();
+	}
+
 	private void SeedTerminalHandles(
 		CadCollectorSystem system,
 		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations,
@@ -432,10 +453,32 @@ public sealed partial class CollectorSystemTransaction
 				|| inlet.MergeStation >= 1
 				|| !double.IsFinite(inlet.BranchStartHandleLength)
 				|| inlet.BranchStartHandleLength <= 0
+				|| !double.IsFinite(inlet.BranchOuterRadiusMillimetres)
+				|| inlet.BranchOuterRadiusMillimetres <= 0
 				|| !double.IsFinite(inlet.ClockingTransitionLength)
 				|| inlet.ClockingTransitionLength <= 0)
 			{
 				error = $"Collector inlet '{inlet.Name}' has invalid dimensions or merge station.";
+				return false;
+			}
+			CadFrame worldInlet;
+			try
+			{
+				worldInlet = system.GetWorldInletFrame(inlet);
+			}
+			catch (ArgumentException exception)
+			{
+				error = $"Collector inlet '{inlet.Name}' has an invalid frame: {exception.Message}";
+				return false;
+			}
+			if (!CadCollectorBranchSolver.ValidatePath(
+				inlet.BranchPath,
+				system.OutletFrame,
+				worldInlet,
+				out string pathError
+			))
+			{
+				error = $"Collector inlet '{inlet.Name}' has an invalid branch path: {pathError}";
 				return false;
 			}
 			CadCollectorBinding binding = inlet.Binding;

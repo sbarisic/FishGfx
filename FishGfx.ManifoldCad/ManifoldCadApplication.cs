@@ -340,8 +340,9 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 					project.ActiveCollectorSystem,
 					collectorDraft.InletId,
 					collectorDraft.Frame,
-					false,
-					evaluations);
+					!collectorDraft.IsFeasible,
+					evaluations,
+					collectorDraft.BranchPaths);
 			}
 		}
 		else

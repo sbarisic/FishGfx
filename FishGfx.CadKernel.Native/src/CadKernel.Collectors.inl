@@ -18,6 +18,14 @@ fgcad_status fgcad_document_build_collector_system(
 		{
 			throw std::invalid_argument("The collector branch end handle must be positive.");
 		}
+		for (size_t index = 0; index < inlet_count; ++index)
+		{
+			if (inlets[index].branch_span_count > 2)
+			{
+				throw std::invalid_argument(
+					"A collector inlet supports at most two solved cubic spans.");
+			}
+		}
 		fgcad_build_metrics metrics{};
 		metrics.revision = system->generation_revision;
 
@@ -244,20 +252,32 @@ fgcad_status fgcad_document_build_collector_system(
 			TopoDS_Face first;
 			TopoDS_Face last;
 		};
-		auto swept_volume = [&](const fgcad_frame& frame,
-			const gp_Pnt& control1,
-			const gp_Pnt& control2,
-			const gp_Pnt& end,
-			const TopoDS_Face& section,
-			double interface_overlap,
-			const gp_Dir& outlet_tangent,
-			double outlet_overlap)
+		struct collector_branch_span
 		{
-			fgcad_point3 c1 = point(control1);
-			fgcad_point3 c2 = point(control2);
-			fgcad_point3 p3 = point(end);
-			Handle(Geom_BezierCurve) curve = make_bezier(frame, c1, c2, p3);
-			TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(curve).Edge();
+			gp_Pnt start;
+			gp_Pnt control1;
+			gp_Pnt control2;
+			gp_Pnt end;
+		};
+		auto make_span_curve = [](const collector_branch_span& span)
+		{
+			NCollection_Array1<gp_Pnt> poles(1, 4);
+			poles.SetValue(1, span.start);
+			poles.SetValue(2, span.control1);
+			poles.SetValue(3, span.control2);
+			poles.SetValue(4, span.end);
+			return Handle(Geom_BezierCurve)(new Geom_BezierCurve(poles));
+		};
+		auto swept_volume = [&](const fgcad_frame& frame,
+			const std::vector<collector_branch_span>& spans,
+			const TopoDS_Face& section,
+			double interface_overlap)
+		{
+			if (spans.empty())
+			{
+				throw std::invalid_argument(
+					"A collector branch sweep requires at least one cubic span.");
+			}
 			gp_Vec lead = -gp_Vec(unit(frame.tangent)) * interface_overlap;
 			gp_Pnt lead_start = point(frame.origin).Translated(lead);
 			BRepBuilderAPI_MakeWire wire_builder;
@@ -266,13 +286,10 @@ fgcad_status fgcad_document_build_collector_system(
 				wire_builder.Add(
 					BRepBuilderAPI_MakeEdge(lead_start, point(frame.origin)).Edge());
 			}
-			wire_builder.Add(edge);
-			if (outlet_overlap > 0)
+			for (const collector_branch_span& span : spans)
 			{
-				gp_Pnt overlap_end = end.Translated(
-					gp_Vec(outlet_tangent) * outlet_overlap);
 				wire_builder.Add(
-					BRepBuilderAPI_MakeEdge(end, overlap_end).Edge());
+					BRepBuilderAPI_MakeEdge(make_span_curve(span)).Edge());
 			}
 			if (!wire_builder.IsDone())
 			{
@@ -749,12 +766,32 @@ fgcad_status fgcad_document_build_collector_system(
 		auto same_inlet_geometry = [&](const fgcad_collector_inlet& left,
 			const fgcad_collector_inlet& right)
 		{
-			return std::strcmp(left.inlet_id, right.inlet_id) == 0
-				&& same_frame(left.frame, right.frame)
-				&& same_frame(left.profile_reference_frame, right.profile_reference_frame)
-				&& same_profile(left.profile, right.profile)
-				&& left.merge_station == right.merge_station
-				&& left.branch_start_handle_length == right.branch_start_handle_length;
+			if (std::strcmp(left.inlet_id, right.inlet_id) != 0
+				|| !same_frame(left.frame, right.frame)
+				|| !same_frame(left.profile_reference_frame, right.profile_reference_frame)
+				|| !same_profile(left.profile, right.profile)
+				|| left.merge_station != right.merge_station
+				|| left.branch_start_handle_length != right.branch_start_handle_length
+				|| left.branch_span_count != right.branch_span_count)
+			{
+				return false;
+			}
+			for (uint32_t index = 0; index < left.branch_span_count; ++index)
+			{
+				if (!same_point(
+						left.branch_spans[index].control1,
+						right.branch_spans[index].control1)
+					|| !same_point(
+						left.branch_spans[index].control2,
+						right.branch_spans[index].control2)
+					|| !same_point(
+						left.branch_spans[index].end,
+						right.branch_spans[index].end))
+				{
+					return false;
+				}
+			}
+			return true;
 		};
 
 		std::string system_id = require_text(system->system_id, "system_id");
@@ -802,7 +839,7 @@ fgcad_status fgcad_document_build_collector_system(
 		auto previous = document->collectors.find(system_id);
 		std::ostringstream assembly_key_stream;
 		assembly_key_stream << std::setprecision(17)
-			<< "abi=7;builder=runner-sew-2;collector-sew-3;transactional-publish=1;occt=8.0.0;"
+			<< "abi=8;builder=runner-sew-2;collector-sew-3;collector-branch-solver-1;transactional-publish=1;occt=8.0.0;"
 			<< system->outlet_frame.origin.x << ','
 			<< system->outlet_frame.origin.y << ','
 			<< system->outlet_frame.origin.z << ','
@@ -835,7 +872,18 @@ fgcad_status fgcad_document_build_collector_system(
 				<< inlet.frame.normal.x << ',' << inlet.frame.normal.y << ',' << inlet.frame.normal.z << ','
 				<< inlet.profile.outer_diameter << ',' << inlet.profile.wall_thickness << ','
 				<< inlet.merge_station << ',' << inlet.branch_start_handle_length << ','
-				<< member->geometry_key << ';';
+				<< inlet.branch_span_count << ',';
+			for (uint32_t span_index = 0;
+				span_index < inlet.branch_span_count && span_index < 2;
+				++span_index)
+			{
+				const auto& span = inlet.branch_spans[span_index];
+				assembly_key_stream
+					<< span.control1.x << ',' << span.control1.y << ',' << span.control1.z << ','
+					<< span.control2.x << ',' << span.control2.y << ',' << span.control2.z << ','
+					<< span.end.x << ',' << span.end.y << ',' << span.end.z << ',';
+			}
+			assembly_key_stream << member->geometry_key << ';';
 		}
 		replacement.assembly_key = assembly_key_stream.str();
 		auto publish_staged_runners = [&]()
@@ -999,19 +1047,103 @@ fgcad_status fgcad_document_build_collector_system(
 			constexpr double outer_interface_overlap = 0;
 			gp_Pnt p0 = point(inlet.frame.origin);
 			gp_Dir inlet_tangent = unit(inlet.frame.tangent);
-			gp_Pnt p1 = p0.Translated(
-				gp_Vec(inlet_tangent) * inlet.branch_start_handle_length);
 			double outer_radius = inlet_radii.first;
-			// Every branch owns its complete cubic and terminates on the same
-			// outlet frame.  Their common P2/P3 controls make the outer and inner
-			// volumes overlap before the endpoint, so the N-to-one Boolean has
-			// positive volume to merge without a separately generated trunk/stub.
-			// Continue the cubic beyond the published outlet plane so all branch
-			// volumes have a robust positive-volume intersection. Both material
-			// and gas unions are trimmed back to outlet_origin after fusion, so
-			// this construction overlap never appears in the resulting collector.
-			gp_Pnt p3 = outlet_origin.Translated(
-				gp_Vec(outlet_tangent) * construction_overlap);
+			std::vector<collector_branch_span> design_spans;
+			if (inlet.branch_span_count == 0)
+			{
+				// ABI compatibility for native fixtures created before solved branch
+				// paths were introduced. Managed production builds always send one or
+				// two authoritative spans.
+				gp_Pnt p1 = p0.Translated(
+					gp_Vec(inlet_tangent) * inlet.branch_start_handle_length);
+				gp_Pnt p2 = outlet_origin.Translated(
+					-gp_Vec(outlet_tangent) * system->branch_end_handle_length);
+				design_spans.push_back({ p0, p1, p2, outlet_origin });
+			}
+			else
+			{
+				if (inlet.branch_span_count > 2)
+				{
+					throw std::invalid_argument(
+						"A collector inlet supports at most two solved cubic spans.");
+				}
+				gp_Pnt start = p0;
+				for (uint32_t span_index = 0;
+					span_index < inlet.branch_span_count;
+					++span_index)
+				{
+					const auto& source = inlet.branch_spans[span_index];
+					collector_branch_span span{
+						start,
+						point(source.control1),
+						point(source.control2),
+						point(source.end)
+					};
+					if (span.start.Distance(span.control1) <= Precision::Confusion()
+						|| span.control2.Distance(span.end) <= Precision::Confusion())
+					{
+						throw std::invalid_argument(
+							"A solved collector branch contains a zero-length cubic handle.");
+					}
+					design_spans.push_back(span);
+					start = span.end;
+				}
+				double endpoint_tolerance = std::max(
+					Precision::Confusion() * 10.0,
+					outer_radius * 1.0e-8);
+				if (design_spans.back().end.Distance(outlet_origin) > endpoint_tolerance)
+				{
+					throw std::invalid_argument(
+						"A solved collector branch does not terminate at the outlet frame.");
+				}
+				gp_Dir start_direction(gp_Vec(
+					design_spans.front().start,
+					design_spans.front().control1));
+				gp_Dir end_direction(gp_Vec(
+					design_spans.back().control2,
+					design_spans.back().end));
+				if (start_direction.Dot(inlet_tangent) < 1.0 - 1.0e-7
+					|| end_direction.Dot(outlet_tangent) < 1.0 - 1.0e-7)
+				{
+					throw std::invalid_argument(
+						"A solved collector branch does not preserve its inlet/outlet tangency.");
+				}
+				for (size_t span_index = 1;
+					span_index < design_spans.size();
+					++span_index)
+				{
+					const collector_branch_span& before = design_spans[span_index - 1];
+					const collector_branch_span& after = design_spans[span_index];
+					gp_Dir incoming(gp_Vec(before.control2, before.end));
+					gp_Dir outgoing(gp_Vec(after.start, after.control1));
+					if (incoming.Dot(outgoing) < 1.0 - 1.0e-7)
+					{
+						throw std::invalid_argument(
+							"A two-span collector branch is not G1-continuous at its join.");
+					}
+				}
+			}
+
+			auto point_on_span = [](const collector_branch_span& span, double parameter)
+			{
+				double inverse = 1.0 - parameter;
+				double p0_weight = inverse * inverse * inverse;
+				double p1_weight = 3.0 * inverse * inverse * parameter;
+				double p2_weight = 3.0 * inverse * parameter * parameter;
+				double p3_weight = parameter * parameter * parameter;
+				return gp_Pnt(
+					span.start.X() * p0_weight + span.control1.X() * p1_weight
+						+ span.control2.X() * p2_weight + span.end.X() * p3_weight,
+					span.start.Y() * p0_weight + span.control1.Y() * p1_weight
+						+ span.control2.Y() * p2_weight + span.end.Y() * p3_weight,
+					span.start.Z() * p0_weight + span.control1.Z() * p1_weight
+						+ span.control2.Z() * p2_weight + span.end.Z() * p3_weight);
+			};
+			// The committed path ends exactly on the outlet plane. Native fixtures
+			// predating ABI v8 keep their original perturbed construction endpoint.
+			// Production paths retain their solved P1/P2 controls and extend only
+			// the construction P3 downstream. The resulting material and gas are
+			// trimmed at the committed outlet plane before publication.
 			gp_Vec endpoint_radial(outlet_origin, p0);
 			endpoint_radial -= gp_Vec(outlet_tangent)
 				* endpoint_radial.Dot(gp_Vec(outlet_tangent));
@@ -1020,35 +1152,27 @@ fgcad_status fgcad_document_build_collector_system(
 				endpoint_radial = gp_Vec(unit(system->outlet_frame.normal));
 			}
 			endpoint_radial.Normalize();
-			p3.Translate(endpoint_radial * std::max(
+			gp_Pnt construction_end = outlet_origin.Translated(
+				gp_Vec(outlet_tangent) * construction_overlap);
+			construction_end.Translate(endpoint_radial * std::max(
 				inlet.profile.wall_thickness * 0.5,
 				outer_radius * 0.1));
-			gp_Pnt p2 = outlet_origin.Translated(
-				-gp_Vec(outlet_tangent) * system->branch_end_handle_length);
-			auto point_on_branch = [&](double parameter)
+			std::vector<collector_branch_span> sweep_spans = design_spans;
+			sweep_spans.back().end = construction_end;
+			if (inlet.branch_span_count == 0)
 			{
-				double inverse = 1.0 - parameter;
-				double p0_weight = inverse * inverse * inverse;
-				double p1_weight = 3.0 * inverse * inverse * parameter;
-				double p2_weight = 3.0 * inverse * parameter * parameter;
-				double p3_weight = parameter * parameter * parameter;
-				return gp_Pnt(
-					p0.X() * p0_weight + p1.X() * p1_weight
-						+ p2.X() * p2_weight + p3.X() * p3_weight,
-					p0.Y() * p0_weight + p1.Y() * p1_weight
-						+ p2.Y() * p2_weight + p3.Y() * p3_weight,
-					p0.Z() * p0_weight + p1.Z() * p1_weight
-						+ p2.Z() * p2_weight + p3.Z() * p3_weight);
-			};
+				// Preserve the pre-v8 native-fixture construction curve exactly.
+				design_spans.back().end = construction_end;
+			}
 			// Sample the actual cubic rather than its tangent-line approximation.
 			// A strongly curved branch can leave that line quickly enough for an
 			// otherwise valid gas channel to fail its connectivity probe.
-			inlet_gas_samples[index] = point_on_branch(0.05);
+			inlet_gas_samples[index] = point_on_span(design_spans.front(), 0.05);
 			if (!has_outlet_gas_sample)
 			{
 				for (double parameter = 0.95; parameter >= 0.5; parameter -= 0.05)
 				{
-					gp_Pnt candidate = point_on_branch(parameter);
+					gp_Pnt candidate = point_on_span(design_spans.back(), parameter);
 					double outlet_projection = gp_Vec(
 						outlet_origin,
 						candidate).Dot(gp_Vec(outlet_tangent));
@@ -1064,12 +1188,17 @@ fgcad_status fgcad_document_build_collector_system(
 			fgcad_bezier_evaluation evaluation{};
 			try
 			{
-				evaluation = evaluate_cubic_bezier_internal(
-					inlet.frame,
-					point(p1),
-					point(p2),
-					point(p3),
-					outer_radius);
+				fgcad_frame entry_frame = inlet.frame;
+				for (const collector_branch_span& span : design_spans)
+				{
+					evaluation = evaluate_cubic_bezier_internal(
+						entry_frame,
+						point(span.control1),
+						point(span.control2),
+						point(span.end),
+						outer_radius);
+					entry_frame = evaluation.exit_frame;
+				}
 			}
 			catch (const std::invalid_argument& exception)
 			{
@@ -1086,23 +1215,15 @@ fgcad_status fgcad_document_build_collector_system(
 			auto sweep_start = std::chrono::steady_clock::now();
 			collector_sweep_volume branch_outer_sweep = swept_volume(
 				inlet.frame,
-				p1,
-				p2,
-				p3,
+				sweep_spans,
 				inlet_faces.outer,
-				outer_interface_overlap,
-				outlet_tangent,
-				0
+				outer_interface_overlap
 			);
 			collector_sweep_volume branch_inner_sweep = swept_volume(
 				inlet.frame,
-				p1,
-				p2,
-				p3,
+				sweep_spans,
 				inlet_faces.inner,
-				outer_interface_overlap,
-				outlet_tangent,
-				0
+				outer_interface_overlap
 			);
 			metrics.sweep_microseconds += static_cast<uint64_t>(
 				std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1147,8 +1268,8 @@ fgcad_status fgcad_document_build_collector_system(
 			inlet_source.feature.kind = FGCAD_FEATURE_CUBIC_BEZIER;
 			inlet_source.feature.entry_frame = inlet.frame;
 			inlet_source.feature.exit_frame = evaluation.exit_frame;
-			inlet_source.feature.control1 = point(p1);
-			inlet_source.feature.control2 = point(p2);
+			inlet_source.feature.control1 = point(design_spans.front().control1);
+			inlet_source.feature.control2 = point(design_spans.back().control2);
 			inlet_source.faces = shape_faces(branch_outer);
 			for (const TopoDS_Face& face : shape_faces(branch_inner))
 			{
@@ -2242,8 +2363,16 @@ fgcad_status fgcad_document_build_collector_system(
 				cell_fuzzy_tolerance,
 				true);
 			++metrics.merge_boolean_count;
-			if (solid_count(untrimmed_outer_union) != 1
-				|| solid_count(untrimmed_gas_union) != 1)
+			size_t untrimmed_outer_solid_count = solid_count(untrimmed_outer_union);
+			size_t untrimmed_gas_solid_count = solid_count(untrimmed_gas_union);
+			append_native_log(
+				"collector",
+				"Temporary branch unions: outerSolids="
+					+ std::to_string(untrimmed_outer_solid_count)
+					+ "; gasSolids="
+					+ std::to_string(untrimmed_gas_solid_count) + ".");
+			if (untrimmed_outer_solid_count != 1
+				|| untrimmed_gas_solid_count != 1)
 			{
 				throw std::runtime_error(
 					"The temporarily overlapped collector branches did not form one material and one gas union.");

@@ -27,12 +27,12 @@ internal sealed partial class CadUi
 		(string Label, double Value)[] fields = inlet == null
 			? new[]
 			{
-				("End handle mm", system.BranchEndHandleLength),
+				("End handle target mm", system.BranchEndHandleLength),
 			}
 			: new[]
 			{
 				("Merge station", inlet.MergeStation),
-				("Branch handle mm", inlet.BranchStartHandleLength),
+				("Branch handle target mm", inlet.BranchStartHandleLength),
 				("Clocking length mm", inlet.ClockingTransitionLength),
 			};
 		for (int index = 0; index < parameters.Length; ++index)

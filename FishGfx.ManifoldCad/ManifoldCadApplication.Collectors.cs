@@ -172,6 +172,7 @@ internal sealed partial class ManifoldCadApplication
 				if (inletId.HasValue)
 				{
 					system.Inlets.Single(inlet => inlet.Id == inletId.Value).LocalFrame = frame;
+					system.RecalculateBranchPaths();
 				}
 				else
 				{
@@ -272,12 +273,52 @@ internal sealed partial class ManifoldCadApplication
 		viewport.SetSelectedFrame(draft.SystemId, draft.InletId, draft.Frame);
 		CadCollectorSystem system = project.CollectorSystems.Single(
 			item => item.Id == draft.SystemId);
+		CadFrame outletFrame = draft.InletId.HasValue ? system.OutletFrame : draft.Frame;
+		Dictionary<Guid, CadCollectorBranchPath> previousPaths =
+			draft.BranchPaths.ToDictionary(pair => pair.Key, pair => pair.Value);
+		draft.BranchPaths.Clear();
+		draft.IsFeasible = true;
+		draft.Diagnostic = null;
+		foreach (CadCollectorInlet branchInlet in system.Inlets)
+		{
+			CadFrame inletFrame = branchInlet.Id == draft.InletId
+				? draft.Frame
+				: system.GetWorldInletFrame(branchInlet);
+			double outerRadius = branchInlet.BranchOuterRadiusMillimetres;
+			if (branchInlet.Binding != null
+				&& evaluations.TryGetValue(
+					branchInlet.Binding.RunnerId,
+					out RunnerEvaluationResult evaluatedRunner
+				)
+				&& evaluatedRunner.Success)
+			{
+				outerRadius = evaluatedRunner.Chain.ActiveProfile
+					.ApproximateOuterRadiusMillimetres;
+			}
+			CadCollectorBranchPath path = CadCollectorBranchSolver.Solve(
+				inletFrame,
+				outletFrame,
+				outerRadius,
+				branchInlet.BranchStartHandleLength,
+				system.BranchEndHandleLength,
+				previousPaths.TryGetValue(branchInlet.Id, out CadCollectorBranchPath previousPath)
+					? previousPath
+					: branchInlet.BranchPath
+			);
+			draft.BranchPaths[branchInlet.Id] = path;
+			if (!path.IsFeasible)
+			{
+				draft.IsFeasible = false;
+				draft.Diagnostic ??= $"{branchInlet.Name}: {path.Diagnostic}";
+			}
+		}
 		viewport.SetCollectorDraft(
 			system,
 			draft.InletId,
 			draft.Frame,
-			false,
-			evaluations
+			!draft.IsFeasible,
+			evaluations,
+			draft.BranchPaths
 		);
 		CadCollectorInlet inlet = draft.InletId.HasValue
 			? system.Inlets.Single(item => item.Id == draft.InletId.Value)
@@ -291,6 +332,14 @@ internal sealed partial class ManifoldCadApplication
 			inspectorFrame.Origin,
 			inspectorFrame.ToEulerDegrees()
 		);
+		if (!draft.IsFeasible)
+		{
+			ui.SetStatus(draft.Diagnostic, true);
+		}
+		else
+		{
+			ui.SetStatus($"{system.Name}: branch preview ready; exact geometry is stale.");
+		}
 	}
 
 	private void CommitCollectorDraft()
@@ -313,8 +362,27 @@ internal sealed partial class ManifoldCadApplication
 				}
 				else
 				{
-					system.SetOutletFramePreservingWorldInlets(draft.Frame);
+					system.SetOutletFramePreservingWorldInlets(
+						draft.Frame,
+						draft.BranchPaths
+					);
 				}
+				foreach (CadCollectorInlet inlet in system.Inlets)
+				{
+					if (draft.BranchPaths.TryGetValue(
+						inlet.Id,
+						out CadCollectorBranchPath path
+					))
+					{
+						inlet.BranchOuterRadiusMillimetres = path.OuterRadiusMillimetres;
+						if (draft.InletId.HasValue)
+						{
+							inlet.BranchPath = path.DeepClone();
+						}
+					}
+				}
+				system.IsResolved = draft.IsFeasible;
+				system.Diagnostic = draft.IsFeasible ? null : draft.Diagnostic;
 			},
 			out string error
 		) || !transaction.Commit(out error))
@@ -429,6 +497,7 @@ internal sealed partial class ManifoldCadApplication
 								break;
 					}
 				}
+				system.RecalculateBranchPaths();
 			},
 			out string error
 		) || !transaction.Commit(out error))

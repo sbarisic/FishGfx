@@ -124,7 +124,7 @@ int main()
 		std::cout << "[native-test] " << name << std::endl;
 	};
 	checkpoint("startup");
-	require(fgcad_api_version() == 7, "ABI version mismatch");
+	require(fgcad_api_version() == 8, "ABI version mismatch");
 	fgcad_document* document = nullptr;
 	require(fgcad_document_create(&document) == FGCAD_STATUS_OK, "Document creation failed");
 	require(document != nullptr, "Document handle was null");
@@ -445,6 +445,23 @@ int main()
 		collector_inlets[index].merge_station = index == 0 ? 0.35 : 0.65;
 		collector_inlets[index].branch_start_handle_length = 30;
 	}
+	collector_inlets[0].branch_span_count = 1;
+	collector_inlets[0].branch_spans[0] = {
+		{ 60, -50, 0 },
+		{ 140, 0, 0 },
+		{ 200, 0, 0 }
+	};
+	collector_inlets[1].branch_span_count = 2;
+	collector_inlets[1].branch_spans[0] = {
+		{ 30, 50, 0 },
+		{ 70, 40, 0 },
+		{ 100, 25, 0 }
+	};
+	collector_inlets[1].branch_spans[1] = {
+		{ 130, 10, 0 },
+		{ 160, 0, 0 },
+		{ 200, 0, 0 }
+	};
 	fgcad_status collector_status = fgcad_document_build_collector_system(
 		document, &collector, collector_inlets, 2);
 	std::string collector_error = std::string("Circular 2 into 1 collector failed: ")

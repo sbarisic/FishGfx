@@ -145,6 +145,7 @@ public sealed partial class CollectorSystemTransaction
 			authoritativeEvaluations,
 			preset == CollectorLayoutPreset.Radial
 		);
+		ResolveCollectorBranchPaths(candidate, authoritativeEvaluations);
 		if (!ValidateSystem(candidate, stagedGraphs, out error))
 		{
 			return false;
@@ -181,6 +182,7 @@ public sealed partial class CollectorSystemTransaction
 			authoritativeEvaluations,
 			preset == CollectorLayoutPreset.Radial
 		);
+		ResolveCollectorBranchPaths(system, authoritativeEvaluations);
 		if (!ValidateSystem(system, stagedGraphs, out error))
 		{
 			ReplaceCollector(systemId, backup);

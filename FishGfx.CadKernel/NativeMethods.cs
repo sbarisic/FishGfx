@@ -328,6 +328,22 @@ internal unsafe struct NativeRunnerFeatureSpec
 }
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+internal readonly record struct NativeCollectorBranchSpan(
+	NativePoint3 Control1,
+	NativePoint3 Control2,
+	NativePoint3 End
+)
+{
+	internal NativeCollectorBranchSpan(CadCollectorWorldBranchSpan span)
+		: this(
+			new NativePoint3(span.Control1),
+			new NativePoint3(span.Control2),
+			new NativePoint3(span.End))
+	{
+	}
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
 internal unsafe struct NativeCollectorInlet
 {
 	internal fixed byte InletId[40];
@@ -337,6 +353,9 @@ internal unsafe struct NativeCollectorInlet
 	internal NativeRunnerProfile Profile;
 	internal double MergeStation;
 	internal double BranchStartHandleLength;
+	internal uint BranchSpanCount;
+	internal NativeCollectorBranchSpan BranchSpan0;
+	internal NativeCollectorBranchSpan BranchSpan1;
 
 	internal static NativeCollectorInlet FromManaged(
 		CadCollectorSystem system,
@@ -345,16 +364,49 @@ internal unsafe struct NativeCollectorInlet
 		CadFrame profileReferenceFrame
 	)
 	{
+		CadFrame worldInletFrame = system.GetWorldInletFrame(inlet);
+		CadCollectorBranchPath branchPath = inlet.BranchPath
+			?? throw new InvalidOperationException(
+				$"Collector inlet '{inlet.Name}' has no solved branch path.");
+		if (!CadCollectorBranchSolver.ValidatePath(
+			branchPath,
+			system.OutletFrame,
+			worldInletFrame,
+			out string branchError
+		))
+		{
+			throw new InvalidOperationException(
+				$"Collector inlet '{inlet.Name}' has a stale or invalid branch path: "
+					+ branchError
+			);
+		}
+		IReadOnlyList<CadCollectorWorldBranchSpan> branchSpans =
+			CadCollectorBranchSolver.ToWorldSpans(
+				branchPath,
+				system.OutletFrame,
+				worldInletFrame.Origin
+			);
+		if (!branchPath.IsFeasible || branchSpans.Count is < 1 or > 2)
+		{
+			throw new InvalidOperationException(
+				$"Collector inlet '{inlet.Name}' has no feasible one- or two-span branch path. "
+				+ branchPath.Diagnostic);
+		}
 		NativeCollectorInlet result = new()
 		{
-			Frame = new NativeFrame(system.GetWorldInletFrame(inlet)),
+			Frame = new NativeFrame(worldInletFrame),
 			ProfileReferenceFrame = new NativeFrame(
 				profile.Kind == RunnerProfileKind.MateProfile
 					? profileReferenceFrame
-					: system.GetWorldInletFrame(inlet)),
+					: worldInletFrame),
 			Profile = NativeRunnerProfile.FromManaged(profile),
 			MergeStation = inlet.MergeStation,
 			BranchStartHandleLength = inlet.BranchStartHandleLength,
+			BranchSpanCount = checked((uint)branchSpans.Count),
+			BranchSpan0 = new NativeCollectorBranchSpan(branchSpans[0]),
+			BranchSpan1 = branchSpans.Count == 2
+				? new NativeCollectorBranchSpan(branchSpans[1])
+				: default,
 		};
 		CopyText(result.InletId, inlet.Id.ToString("D"), 39);
 		CopyText(result.RunnerId, inlet.Binding.RunnerId.ToString("D"), 39);

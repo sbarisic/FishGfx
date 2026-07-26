@@ -221,8 +221,8 @@ public sealed class CadExactBuildState
 
 public static class CadBuildCompatibility
 {
-	public const uint NativeAbiVersion = 7;
-	public const string BuilderVersion = "runner-sew-2.collector-sew-3.transactional-publish-1";
+	public const uint NativeAbiVersion = 8;
+	public const string BuilderVersion = "runner-sew-2.collector-sew-3.collector-branch-solver-1.transactional-publish-1";
 	public const string OcctVersion = "8.0.0";
 	public const int SewingPolicyVersion = 3;
 }
@@ -286,6 +286,16 @@ public static class CadGeometryDependencyHash
 			Append(value, inlet.LocalFrame);
 			Append(value, inlet.MergeStation);
 			Append(value, inlet.BranchStartHandleLength);
+			Append(value, inlet.BranchOuterRadiusMillimetres);
+			Append(value, inlet.BranchPath?.SolverVersion);
+			Append(value, inlet.BranchPath?.IsFeasible);
+			foreach (CadCollectorBranchSpan span in inlet.BranchPath?.Spans
+				?? Enumerable.Empty<CadCollectorBranchSpan>())
+			{
+				Append(value, span.Control1Local);
+				Append(value, span.Control2Local);
+				Append(value, span.EndLocal);
+			}
 			Append(value, inlet.ClockingTransitionLength);
 			CadRunner runner = project.Runners.FirstOrDefault(
 				item => item.Id == inlet.Binding?.RunnerId

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using FishGfx.Cad;
 using Xunit;
 
@@ -237,6 +238,10 @@ public sealed class CollectorSystemTests
 			inlet => inlet.Id,
 			system.GetWorldInletFrame
 		);
+		Dictionary<Guid, CadPoint3[]> originalControls = system.Inlets.ToDictionary(
+			inlet => inlet.Id,
+			inlet => BranchControlPoints(system, inlet)
+		);
 		CadQuaternion rotation = CadQuaternion.FromEulerDegrees(new CadPoint3(23, -41, 67));
 		CadFrame movedOutlet = new(
 			system.OutletFrame.Origin + new CadPoint3(35, -18, 24),
@@ -249,8 +254,12 @@ public sealed class CollectorSystemTests
 		Assert.Equal(movedOutlet, system.OutletFrame);
 		foreach (CadCollectorInlet inlet in system.Inlets)
 		{
-			AssertFrameEqual(originalWorldFrames[inlet.Id], system.GetWorldInletFrame(inlet));
+			CadFrame worldInlet = system.GetWorldInletFrame(inlet);
+			AssertFrameEqual(originalWorldFrames[inlet.Id], worldInlet);
+			AssertBranchMatchesFrames(system, inlet, worldInlet);
 		}
+		Assert.Contains(system.Inlets, inlet => !originalControls[inlet.Id]
+			.SequenceEqual(BranchControlPoints(system, inlet)));
 	}
 
 	[Fact]
@@ -303,7 +312,7 @@ public sealed class CollectorSystemTests
 	}
 
 	[Fact]
-	public void VersionThreePersistenceRetainsFramesBindingsAndStableIds()
+	public void VersionFivePersistenceRetainsFramesBindingsPathsAndStableIds()
 	{
 		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();
 		Assert.True(project.TryCreateCollectorSystem(
@@ -327,6 +336,45 @@ public sealed class CollectorSystemTests
 		Assert.Equal(
 			system.Inlets.Select(inlet => inlet.Binding.RunnerId),
 			restored.Inlets.Select(inlet => inlet.Binding.RunnerId));
+		for (int index = 0; index < system.Inlets.Count; ++index)
+		{
+			AssertBranchPathEqual(
+				system.Inlets[index].BranchPath,
+				restored.Inlets[index].BranchPath
+			);
+		}
+	}
+
+	[Fact]
+	public void VersionFourPersistenceRecalculatesMissingCollectorBranchPaths()
+	{
+		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();
+		Assert.True(project.TryCreateCollectorSystem(
+			new[] { first.Id, second.Id },
+			CollectorLayoutPreset.Row,
+			"Legacy collector",
+			out CadCollectorSystem system,
+			out string createError
+		), createError);
+		JsonObject root = JsonNode.Parse(RunnerCollectionJson.Serialize(project))!.AsObject();
+		root["version"] = 4;
+		foreach (JsonNode inletNode in root["collectorSystems"]![0]!["inlets"]!.AsArray())
+		{
+			JsonObject inlet = inletNode!.AsObject();
+			inlet.Remove("branchOuterRadiusMillimetres");
+			inlet.Remove("branchPath");
+		}
+
+		RunnerCollectionLoadResult loaded = RunnerCollectionJson.Deserialize(root.ToJsonString());
+
+		Assert.True(loaded.Success, string.Join(Environment.NewLine, loaded.Errors));
+		CadCollectorSystem restored = Assert.Single(loaded.CollectorSystems);
+		Assert.Equal(system.Inlets.Count, restored.Inlets.Count);
+		foreach (CadCollectorInlet inlet in restored.Inlets)
+		{
+			Assert.Equal(21.2, inlet.BranchOuterRadiusMillimetres, 9);
+			AssertBranchMatchesFrames(restored, inlet, restored.GetWorldInletFrame(inlet));
+		}
 	}
 
 	[Fact]
@@ -608,6 +656,68 @@ public sealed class CollectorSystemTests
 		Assert.Equal(expected.X, actual.X, 9);
 		Assert.Equal(expected.Y, actual.Y, 9);
 		Assert.Equal(expected.Z, actual.Z, 9);
+	}
+
+	private static void AssertBranchMatchesFrames(
+		CadCollectorSystem system,
+		CadCollectorInlet inlet,
+		CadFrame worldInlet
+	)
+	{
+		CadCollectorBranchPath path = Assert.IsType<CadCollectorBranchPath>(inlet.BranchPath);
+		Assert.True(path.IsFeasible, path.Diagnostic);
+		Assert.True(
+			CadCollectorBranchSolver.ValidatePath(
+				path,
+				system.OutletFrame,
+				worldInlet,
+				out string validationError
+			),
+			validationError
+		);
+		IReadOnlyList<CadCollectorWorldBranchSpan> spans =
+			CadCollectorBranchSolver.ToWorldSpans(
+				path,
+				system.OutletFrame,
+				worldInlet.Origin
+			);
+		Assert.InRange(spans.Count, 1, 2);
+		Assert.True((spans[0].Control1 - spans[0].Start).Length > 0);
+		Assert.True((spans[^1].End - spans[^1].Control2).Length > 0);
+		AssertPointEqual(system.OutletFrame.Origin, spans[^1].End);
+	}
+
+	private static CadPoint3[] BranchControlPoints(
+		CadCollectorSystem system,
+		CadCollectorInlet inlet
+	)
+	{
+		return CadCollectorBranchSolver.ToWorldSpans(
+			inlet.BranchPath,
+			system.OutletFrame,
+			system.GetWorldInletFrame(inlet).Origin
+		).SelectMany(span => new[] { span.Control1, span.Control2, span.End }).ToArray();
+	}
+
+	private static void AssertBranchPathEqual(
+		CadCollectorBranchPath expected,
+		CadCollectorBranchPath actual
+	)
+	{
+		Assert.NotNull(expected);
+		Assert.NotNull(actual);
+		Assert.Equal(expected.SolverVersion, actual.SolverVersion);
+		Assert.Equal(expected.OuterRadiusMillimetres, actual.OuterRadiusMillimetres, 9);
+		Assert.Equal(expected.IsFeasible, actual.IsFeasible);
+		Assert.Equal(expected.MinimumRadiusMillimetres, actual.MinimumRadiusMillimetres, 9);
+		Assert.Equal(expected.Diagnostic, actual.Diagnostic);
+		Assert.Equal(expected.Spans.Count, actual.Spans.Count);
+		for (int index = 0; index < expected.Spans.Count; ++index)
+		{
+			AssertPointEqual(expected.Spans[index].Control1Local, actual.Spans[index].Control1Local);
+			AssertPointEqual(expected.Spans[index].Control2Local, actual.Spans[index].Control2Local);
+			AssertPointEqual(expected.Spans[index].EndLocal, actual.Spans[index].EndLocal);
+		}
 	}
 
 	private static (ManifoldProject Project, CadRunner First, CadRunner Second)

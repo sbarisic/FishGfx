@@ -48,7 +48,13 @@ public sealed class CadCollectorInlet
 
 	public double MergeStation { get; set; } = 0.5;
 
+	// Preferred start-handle length. The solved path may adjust it when the
+	// requested outlet pose otherwise violates the active tube bend radius.
 	public double BranchStartHandleLength { get; set; } = 35;
+
+	public double BranchOuterRadiusMillimetres { get; set; } = 21.2;
+
+	public CadCollectorBranchPath BranchPath { get; set; }
 
 	public double ClockingTransitionLength { get; set; } = 20;
 
@@ -63,6 +69,8 @@ public sealed class CadCollectorInlet
 			LocalFrame = LocalFrame,
 			MergeStation = MergeStation,
 			BranchStartHandleLength = BranchStartHandleLength,
+			BranchOuterRadiusMillimetres = BranchOuterRadiusMillimetres,
+			BranchPath = BranchPath?.DeepClone(),
 			ClockingTransitionLength = ClockingTransitionLength,
 			Binding = Binding?.DeepClone(),
 		};
@@ -90,6 +98,8 @@ public sealed class CadCollectorSystem
 
 	public double OverlapLength { get; set; } = 12;
 
+	// Preferred shared end-handle length. Each solved branch may adjust it to
+	// preserve its endpoint frame and bend-radius clearance.
 	public double BranchEndHandleLength { get; set; } = 35;
 
 	public List<CadCollectorInlet> Inlets { get; set; } = new();
@@ -116,11 +126,78 @@ public sealed class CadCollectorSystem
 		(CadCollectorInlet Inlet, CadFrame WorldFrame)[] inletFrames = Inlets
 			.Select(inlet => (inlet, GetWorldInletFrame(inlet)))
 			.ToArray();
+		Dictionary<Guid, CadCollectorBranchPath> solvedPaths = inletFrames.ToDictionary(
+			item => item.Inlet.Id,
+			item => CadCollectorBranchSolver.Solve(
+				item.WorldFrame,
+				outletFrame,
+				item.Inlet.BranchOuterRadiusMillimetres,
+				item.Inlet.BranchStartHandleLength,
+				BranchEndHandleLength,
+				item.Inlet.BranchPath
+			)
+		);
+		SetOutletFramePreservingWorldInlets(outletFrame, solvedPaths);
+	}
+
+	internal void SetOutletFramePreservingWorldInlets(
+		CadFrame outletFrame,
+		IReadOnlyDictionary<Guid, CadCollectorBranchPath> solvedPaths
+	)
+	{
+		ArgumentNullException.ThrowIfNull(solvedPaths);
+		(CadCollectorInlet Inlet, CadFrame WorldFrame)[] inletFrames = Inlets
+			.Select(inlet => (inlet, GetWorldInletFrame(inlet)))
+			.ToArray();
+		CadCollectorBranchPath[] stagedPaths = new CadCollectorBranchPath[inletFrames.Length];
+		for (int index = 0; index < inletFrames.Length; ++index)
+		{
+			(CadCollectorInlet inlet, CadFrame worldFrame) = inletFrames[index];
+			if (!solvedPaths.TryGetValue(inlet.Id, out CadCollectorBranchPath path))
+			{
+				throw new InvalidOperationException(
+					$"Collector inlet '{inlet.Name}' has no staged branch path."
+				);
+			}
+			if (!CadCollectorBranchSolver.ValidatePath(
+				path,
+				outletFrame,
+				worldFrame,
+				out string error
+			))
+			{
+				throw new InvalidOperationException($"{inlet.Name}: {error}");
+			}
+			stagedPaths[index] = path.DeepClone();
+		}
 
 		OutletFrame = outletFrame;
-		foreach ((CadCollectorInlet inlet, CadFrame worldFrame) in inletFrames)
+		for (int index = 0; index < inletFrames.Length; ++index)
 		{
+			(CadCollectorInlet inlet, CadFrame worldFrame) = inletFrames[index];
 			inlet.LocalFrame = worldFrame.RelativeTo(outletFrame);
+			inlet.BranchOuterRadiusMillimetres = stagedPaths[index].OuterRadiusMillimetres;
+			inlet.BranchPath = stagedPaths[index];
+		}
+	}
+
+	public void RecalculateBranchPaths()
+	{
+		CadCollectorBranchPath[] solvedPaths = Inlets.Select(inlet =>
+		{
+			CadFrame worldFrame = GetWorldInletFrame(inlet);
+			return CadCollectorBranchSolver.Solve(
+				worldFrame,
+				OutletFrame,
+				inlet.BranchOuterRadiusMillimetres,
+				inlet.BranchStartHandleLength,
+				BranchEndHandleLength,
+				inlet.BranchPath
+			);
+		}).ToArray();
+		for (int index = 0; index < Inlets.Count; ++index)
+		{
+			Inlets[index].BranchPath = solvedPaths[index];
 		}
 	}
 

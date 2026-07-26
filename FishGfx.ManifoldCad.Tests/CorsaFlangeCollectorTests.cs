@@ -121,6 +121,11 @@ public sealed class CorsaFlangeCollectorTests
 			inlet => inlet.Id,
 			fixture.Collector.GetWorldInletFrame
 		);
+		Dictionary<Guid, CadPoint3[]> originalBranchControls = fixture.Collector.Inlets
+			.ToDictionary(
+				inlet => inlet.Id,
+				inlet => BranchControlPoints(fixture.Collector, inlet)
+			);
 		CadFrame rotatedOutlet = new(
 			fixture.Collector.OutletFrame.Origin,
 			new CadPoint3(1, 0, 0),
@@ -140,7 +145,16 @@ public sealed class CorsaFlangeCollectorTests
 			Assert.Equal(expected.Tangent.X, actual.Tangent.X, 9);
 			Assert.Equal(expected.Tangent.Y, actual.Tangent.Y, 9);
 			Assert.Equal(expected.Tangent.Z, actual.Tangent.Z, 9);
+			Assert.True(inlet.BranchPath.IsFeasible, inlet.BranchPath.Diagnostic);
+			Assert.True(CadCollectorBranchSolver.ValidatePath(
+				inlet.BranchPath,
+				fixture.Collector.OutletFrame,
+				actual,
+				out string branchError
+			), branchError);
 		}
+		Assert.Contains(fixture.Collector.Inlets, inlet => !originalBranchControls[inlet.Id]
+			.SequenceEqual(BranchControlPoints(fixture.Collector, inlet)));
 		foreach (CadRunner runner in fixture.Runners)
 		{
 			RunnerEvaluationResult result = await fixture.Project.EvaluateRunnerAsync(
@@ -536,6 +550,18 @@ public sealed class CorsaFlangeCollectorTests
 			Environment.NewLine,
 			result.Diagnostics.Select(diagnostic => diagnostic.Message)
 		);
+	}
+
+	private static CadPoint3[] BranchControlPoints(
+		CadCollectorSystem system,
+		CadCollectorInlet inlet
+	)
+	{
+		return CadCollectorBranchSolver.ToWorldSpans(
+			inlet.BranchPath,
+			system.OutletFrame,
+			system.GetWorldInletFrame(inlet).Origin
+		).SelectMany(span => new[] { span.Control1, span.Control2, span.End }).ToArray();
 	}
 
 	private sealed class CorsaCollectorFixture : IAsyncDisposable

@@ -184,6 +184,13 @@ typedef struct fgcad_runner_feature_spec
 	double end_handle_length;
 } fgcad_runner_feature_spec;
 
+typedef struct fgcad_collector_branch_span
+{
+	fgcad_point3 control1;
+	fgcad_point3 control2;
+	fgcad_point3 end;
+} fgcad_collector_branch_span;
+
 typedef struct fgcad_collector_inlet
 {
 	char inlet_id[40];
@@ -193,6 +200,8 @@ typedef struct fgcad_collector_inlet
 	fgcad_runner_profile profile;
 	double merge_station;
 	double branch_start_handle_length;
+	uint32_t branch_span_count;
+	fgcad_collector_branch_span branch_spans[2];
 } fgcad_collector_inlet;
 
 typedef struct fgcad_collector_system_spec

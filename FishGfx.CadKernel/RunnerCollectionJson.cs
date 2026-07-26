@@ -15,7 +15,7 @@ public sealed class RunnerCollectionLoadResult
 public static class RunnerCollectionJson
 {
 	public const string Schema = "fishgfx.runner-collection";
-	public const int CurrentVersion = 4;
+	public const int CurrentVersion = 5;
 
 	private static readonly JsonSerializerOptions Options = new()
 	{
@@ -277,6 +277,8 @@ public static class RunnerCollectionJson
 				LocalFrame = inlet.LocalFrame,
 				MergeStation = inlet.MergeStation,
 				BranchStartHandleLength = inlet.BranchStartHandleLength,
+				BranchOuterRadiusMillimetres = inlet.BranchOuterRadiusMillimetres,
+				BranchPath = inlet.BranchPath?.DeepClone(),
 				ClockingTransitionLength = inlet.ClockingTransitionLength,
 				Binding = inlet.Binding == null
 					? null
@@ -326,6 +328,10 @@ public static class RunnerCollectionJson
 					LocalFrame = item.LocalFrame,
 					MergeStation = item.MergeStation,
 					BranchStartHandleLength = item.BranchStartHandleLength,
+					BranchOuterRadiusMillimetres = item.BranchOuterRadiusMillimetres > 0
+						? item.BranchOuterRadiusMillimetres
+						: 21.2,
+					BranchPath = item.BranchPath?.DeepClone(),
 					ClockingTransitionLength = item.ClockingTransitionLength,
 					Binding = new CadCollectorBinding
 					{
@@ -336,6 +342,11 @@ public static class RunnerCollectionJson
 				};
 			}).ToList(),
 		};
+		if (system.Inlets.Any(inlet => inlet.BranchPath == null
+			|| inlet.BranchPath.SolverVersion != CadCollectorBranchPath.CurrentSolverVersion))
+		{
+			system.RecalculateBranchPaths();
+		}
 		system.SetGenerationRevision(dto.GenerationRevision);
 		if (dto.ExactBuild.HasValue)
 		{
@@ -445,6 +456,8 @@ public static class RunnerCollectionJson
 		public CadFrame LocalFrame { get; set; }
 		public double MergeStation { get; set; }
 		public double BranchStartHandleLength { get; set; }
+		public double BranchOuterRadiusMillimetres { get; set; }
+		public CadCollectorBranchPath BranchPath { get; set; }
 		public double ClockingTransitionLength { get; set; }
 		public CollectorBindingDto Binding { get; set; }
 	}

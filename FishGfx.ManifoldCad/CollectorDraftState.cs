@@ -24,4 +24,10 @@ internal sealed class CollectorDraftState
 
 	internal CadFrame Frame { get; set; }
 
+	internal Dictionary<Guid, CadCollectorBranchPath> BranchPaths { get; } = new();
+
+	internal bool IsFeasible { get; set; } = true;
+
+	internal string Diagnostic { get; set; }
+
 }
