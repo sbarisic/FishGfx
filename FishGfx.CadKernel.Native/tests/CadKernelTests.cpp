@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace
@@ -76,11 +77,54 @@ std::filesystem::path temporary(const char* extension)
 	return std::filesystem::temp_directory_path()
 		/ (std::string("fishgfx-cad-native-test-") + std::to_string(std::rand()) + extension);
 }
+
+std::pair<fgcad_point3, fgcad_point3> runner_bounds(
+	fgcad_document* document,
+	const char* runner_id)
+{
+	fgcad_tessellation* tessellation = nullptr;
+	require(fgcad_document_tessellate_runner(
+		document,
+		runner_id,
+		0.25,
+		0.2,
+		&tessellation) == FGCAD_STATUS_OK,
+		"Transactional runner tessellation failed");
+	std::vector<fgcad_mesh_vertex> vertices(
+		fgcad_tessellation_vertex_count(tessellation));
+	std::vector<uint32_t> indices(fgcad_tessellation_index_count(tessellation));
+	std::vector<fgcad_face_range> faces(fgcad_tessellation_face_count(tessellation));
+	std::vector<fgcad_geometry_source_ref> sources(
+		fgcad_tessellation_source_count(tessellation));
+	std::vector<fgcad_edge_range> edges(fgcad_tessellation_edge_count(tessellation));
+	std::vector<fgcad_point3> edge_points(
+		fgcad_tessellation_edge_point_count(tessellation));
+	fgcad_point3 minimum{};
+	fgcad_point3 maximum{};
+	require(fgcad_tessellation_copy(
+		tessellation,
+		vertices.data(), vertices.size(),
+		indices.data(), indices.size(),
+		faces.data(), faces.size(),
+		sources.data(), sources.size(),
+		edges.data(), edges.size(),
+		edge_points.data(), edge_points.size(),
+		&minimum,
+		&maximum) == FGCAD_STATUS_OK,
+		"Transactional runner tessellation copy failed");
+	fgcad_tessellation_destroy(tessellation);
+	return { minimum, maximum };
+}
 }
 
 int main()
 {
-	require(fgcad_api_version() == 5, "ABI version mismatch");
+	auto checkpoint = [](const char* name)
+	{
+		std::cout << "[native-test] " << name << std::endl;
+	};
+	checkpoint("startup");
+	require(fgcad_api_version() == 7, "ABI version mismatch");
 	fgcad_document* document = nullptr;
 	require(fgcad_document_create(&document) == FGCAD_STATUS_OK, "Document creation failed");
 	require(document != nullptr, "Document handle was null");
@@ -228,6 +272,7 @@ int main()
 		) == FGCAD_STATUS_OK,
 		"Exact cubic Bezier runner sweep failed"
 	);
+	checkpoint("bezier runner built");
 	fgcad_point3 zero_exit = bezier_control2;
 	require(
 		fgcad_evaluate_cubic_bezier(
@@ -273,6 +318,48 @@ int main()
 		fgcad_document_build_runner(document, "runner-a", "Runner A", features, 3) == FGCAD_STATUS_OK,
 		"Exact annular runner sweep failed"
 	);
+	fgcad_build_metrics runner_metrics{};
+	require(
+		fgcad_document_get_build_metrics(document, "runner-a", &runner_metrics)
+			== FGCAD_STATUS_OK,
+		"Runner operation metrics were unavailable"
+	);
+	require(
+		runner_metrics.merge_boolean_count == 0
+			&& runner_metrics.interface_boolean_count == 0
+			&& runner_metrics.final_boolean_count == 0
+			&& runner_metrics.cut_count == 0,
+		"Runner construction used a prohibited Boolean operation"
+	);
+	checkpoint("straight bend straight runner built");
+	auto original_runner_bounds = runner_bounds(document, "runner-a");
+	fgcad_runner_feature replacement_features[3]{ features[0], features[1], features[2] };
+	replacement_features[2].exit_frame.origin.y = 225;
+	require(fgcad_document_begin_runner_build(document, "runner-a") == FGCAD_STATUS_OK,
+		"Runner publication transaction did not begin");
+	require(fgcad_document_build_runner(
+		document,
+		"runner-a",
+		"Transient runner A",
+		replacement_features,
+		3) == FGCAD_STATUS_OK,
+		"Transactional replacement runner did not build");
+	auto transient_runner_bounds = runner_bounds(document, "runner-a");
+	require(
+		transient_runner_bounds.second.y > original_runner_bounds.second.y + 25,
+		"Transactional replacement runner was not made visible before commit");
+	std::filesystem::path staged_snapshot = temporary("-staged.xbf");
+	require(
+		fgcad_document_save_xcaf(document, staged_snapshot.string().c_str())
+			!= FGCAD_STATUS_OK,
+		"An uncommitted runner publication leaked into an XCAF snapshot");
+	std::filesystem::remove(staged_snapshot);
+	require(fgcad_document_abort_runner_build(document, "runner-a") == FGCAD_STATUS_OK,
+		"Runner publication transaction did not abort");
+	auto restored_runner_bounds = runner_bounds(document, "runner-a");
+	require(
+		std::abs(restored_runner_bounds.second.y - original_runner_bounds.second.y) < 1.0e-6,
+		"Aborting a runner publication did not restore the previous valid solid");
 	fgcad_runner_profile larger_profile = circular(55, 2.5);
 	fgcad_runner_feature transitioned[4]{};
 	transitioned[0] = loft(
@@ -295,6 +382,7 @@ int main()
 		fgcad_document_build_runner(document, "runner-b", "Runner B", transitioned, 4) == FGCAD_STATUS_OK,
 		"Repeated exact hollow profile transitions failed"
 	);
+	checkpoint("repeated loft runner built");
 	fgcad_runner_feature reversed[2]{};
 	reversed[0] = loft(
 		"88888888-8888-8888-8888-888888888888",
@@ -308,6 +396,7 @@ int main()
 		fgcad_document_build_runner(document, "runner-c", "Runner C", reversed, 2) == FGCAD_STATUS_OK,
 		"Negative-facing exact profile transition failed"
 	);
+	checkpoint("negative runner built");
 
 	fgcad_runner_profile collector_branch_profile = circular(4, 0.5);
 	fgcad_runner_feature collector_runner_a = straight(
@@ -361,6 +450,26 @@ int main()
 	std::string collector_error = std::string("Circular 2 into 1 collector failed: ")
 		+ fgcad_last_error();
 	require(collector_status == FGCAD_STATUS_OK, collector_error.c_str());
+	fgcad_build_metrics collector_metrics{};
+	require(
+		fgcad_document_get_build_metrics(
+			document,
+			collector.system_id,
+			&collector_metrics) == FGCAD_STATUS_OK,
+		"Collector operation metrics were unavailable"
+	);
+	require(
+		collector_metrics.merge_boolean_count == 1
+			&& collector_metrics.interface_boolean_count == 0
+			&& collector_metrics.final_boolean_count == 0
+			&& collector_metrics.cut_count == 0,
+		"Collector construction violated the one-merge-Boolean invariant"
+	);
+	require(
+		collector_metrics.solid_count == 1
+			&& collector_metrics.shell_count == 1,
+		"Collector construction did not produce exactly one connected closed shell"
+	);
 	fgcad_tessellation* collector_tessellation = nullptr;
 	require(fgcad_document_tessellate_collector_system(
 		document,
@@ -448,6 +557,11 @@ int main()
 		}),
 		"Branch-only collector unexpectedly generated a separate trunk");
 	fgcad_tessellation_destroy(collector_tessellation);
+	require(fgcad_document_commit_collector_system_build(
+		document,
+		collector.system_id,
+		collector.generation_revision) == FGCAD_STATUS_OK,
+		"Initial collector-system publication did not commit");
 
 	fgcad_runner_profile flange_collector_profile = circular(42.4, 2);
 	fgcad_runner_feature flange_runner_a = straight(
@@ -609,6 +723,11 @@ int main()
 		!retained_straight_interface_bridge,
 		"Full-size collector retained a temporary straight inlet bridge");
 	fgcad_tessellation_destroy(flange_collector_tessellation);
+	require(fgcad_document_commit_collector_system_build(
+		document,
+		flange_collector.system_id,
+		flange_collector.generation_revision) == FGCAD_STATUS_OK,
+		"Full-size flange collector publication did not commit");
 	require(
 		fgcad_document_remove_collector_system(
 			document,
@@ -748,6 +867,11 @@ int main()
 			fgcad_tessellation_vertex_count(compact_tessellation) > 0,
 			"Compact multi-inlet collector tessellation was empty");
 		fgcad_tessellation_destroy(compact_tessellation);
+		require(fgcad_document_commit_collector_system_build(
+			document,
+			compact_collector.system_id,
+			compact_collector.generation_revision) == FGCAD_STATUS_OK,
+			"Compact multi-inlet collector publication did not commit");
 		require(
 			fgcad_document_remove_collector_system(
 				document,
@@ -765,8 +889,36 @@ int main()
 	verify_compact_multi_collector(3);
 	verify_compact_multi_collector(4);
 
+	fgcad_collector_system_spec aborted_reuse = collector;
+	aborted_reuse.generation_revision = 2;
+	require(fgcad_document_begin_collector_system_build(
+		document,
+		collector.system_id,
+		aborted_reuse.generation_revision) == FGCAD_STATUS_OK,
+		"Collector rollback staging did not begin");
+	require(fgcad_document_build_collector_system(
+		document,
+		&aborted_reuse,
+		collector_inlets,
+		2) == FGCAD_STATUS_OK,
+		"Collector rollback fixture did not publish its staged replacement");
+	require(fgcad_document_abort_collector_system_build(
+		document,
+		aborted_reuse.system_id,
+		aborted_reuse.generation_revision) == FGCAD_STATUS_OK,
+		"A completed collector publication could not be rolled back");
+	collector_tessellation = nullptr;
+	require(fgcad_document_tessellate_collector_system(
+		document,
+		collector.system_id,
+		0.25,
+		0.2,
+		&collector_tessellation) == FGCAD_STATUS_OK,
+		"Rolling back a completed collector build discarded the previous solid");
+	fgcad_tessellation_destroy(collector_tessellation);
+
 	fgcad_collector_system_spec reused_members = collector;
-	reused_members.generation_revision = 2;
+	reused_members.generation_revision = 3;
 	require(fgcad_document_begin_collector_system_build(
 		document,
 		collector.system_id,
@@ -778,9 +930,14 @@ int main()
 		collector_inlets,
 		2) == FGCAD_STATUS_OK,
 		"Collector could not reuse unchanged published member runners");
+	require(fgcad_document_commit_collector_system_build(
+		document,
+		reused_members.system_id,
+		reused_members.generation_revision) == FGCAD_STATUS_OK,
+		"Reused collector-system publication did not commit");
 
 	fgcad_collector_system_spec invalid_replacement = collector;
-	invalid_replacement.generation_revision = 3;
+	invalid_replacement.generation_revision = 4;
 	invalid_replacement.overlap_length = -1;
 	require(fgcad_document_begin_collector_system_build(
 		document,
@@ -974,6 +1131,32 @@ int main()
 			closed_profile->id
 		) == FGCAD_STATUS_OK,
 		"OCAF closed-profile selector binding failed"
+	);
+	fgcad_build_metrics rebound_metrics{};
+	require(
+		fgcad_document_build_runner(reopened, "runner-a", "Runner A", features, 3)
+			== FGCAD_STATUS_OK,
+		"Runner rebuild after source-topology mutation failed"
+	);
+	require(
+		fgcad_document_get_build_metrics(reopened, "runner-a", &rebound_metrics)
+			== FGCAD_STATUS_OK,
+		"Runner metrics after source-topology mutation were unavailable"
+	);
+	require(
+		(rebound_metrics.cache_flags & FGCAD_CACHE_RUNNER_SOLID) == 0,
+		"A source-topology mutation incorrectly reused a stale runner solid"
+	);
+	require(
+		fgcad_document_build_runner(reopened, "runner-a", "Runner A", features, 3)
+			== FGCAD_STATUS_OK,
+		"Unchanged runner cache rebuild failed"
+	);
+	require(
+		fgcad_document_get_build_metrics(reopened, "runner-a", &rebound_metrics)
+			== FGCAD_STATUS_OK
+			&& (rebound_metrics.cache_flags & FGCAD_CACHE_RUNNER_SOLID) != 0,
+		"An unchanged runner did not reuse its worker-owned solid cache"
 	);
 	std::filesystem::path selected_binary = temporary("-selector.xbf");
 	require(

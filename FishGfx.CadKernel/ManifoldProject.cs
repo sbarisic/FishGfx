@@ -37,9 +37,21 @@ public sealed class CadRunner
 
 	public RunnerGraph Graph { get; set; } = new();
 
+	public CadExactBuildState ExactBuild { get; } = new();
+
 	public long EditRevision => Interlocked.Read(ref editRevision);
 
-	public long CommitEdit() => Interlocked.Increment(ref editRevision);
+	public long CommitEdit()
+	{
+		long revision = Interlocked.Increment(ref editRevision);
+		ExactBuild.MarkStale(revision);
+		return revision;
+	}
+
+	internal void SetEditRevision(long value)
+	{
+		Interlocked.Exchange(ref editRevision, value);
+	}
 
 	internal CadRunner DeepClone()
 	{
@@ -51,6 +63,7 @@ public sealed class CadRunner
 			Graph = Graph.DeepClone(),
 		};
 		Interlocked.Exchange(ref clone.editRevision, EditRevision);
+		clone.ExactBuild.Restore(ExactBuild.Snapshot);
 		return clone;
 	}
 }

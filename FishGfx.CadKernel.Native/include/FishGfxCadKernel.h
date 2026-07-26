@@ -208,6 +208,46 @@ typedef struct fgcad_collector_system_spec
 	double branch_end_handle_length;
 } fgcad_collector_system_spec;
 
+typedef enum fgcad_build_cache_flags
+{
+	FGCAD_CACHE_NONE = 0,
+	FGCAD_CACHE_RUNNER_SECTION = 1 << 0,
+	FGCAD_CACHE_RUNNER_SOLID = 1 << 1,
+	FGCAD_CACHE_COLLECTOR_BODY = 1 << 2,
+	FGCAD_CACHE_SYSTEM_ASSEMBLY = 1 << 3,
+	FGCAD_CACHE_TESSELLATION = 1 << 4,
+} fgcad_build_cache_flags;
+
+typedef struct fgcad_build_metrics
+{
+	uint64_t revision;
+	uint64_t total_microseconds;
+	uint64_t evaluation_microseconds;
+	uint64_t sweep_microseconds;
+	uint64_t loft_microseconds;
+	uint64_t sewing_microseconds;
+	uint64_t merge_microseconds;
+	uint64_t validation_microseconds;
+	uint64_t tessellation_microseconds;
+	uint32_t sweep_count;
+	uint32_t loft_count;
+	uint32_t sew_count;
+	uint32_t merge_boolean_count;
+	uint32_t interface_boolean_count;
+	uint32_t final_boolean_count;
+	uint32_t cut_count;
+	uint32_t validation_count;
+	uint32_t classification_count;
+	uint32_t cache_flags;
+	double measured_gap;
+	double selected_tolerance;
+	uint32_t solid_count;
+	uint32_t shell_count;
+	uint32_t face_count;
+	uint32_t edge_count;
+	uint32_t vertex_count;
+} fgcad_build_metrics;
+
 FGCAD_API uint32_t fgcad_api_version(void);
 FGCAD_API const char* fgcad_last_error(void);
 FGCAD_API fgcad_status fgcad_evaluate_cubic_bezier(
@@ -279,6 +319,18 @@ FGCAD_API fgcad_status fgcad_document_build_runner(
 	const fgcad_runner_feature* features,
 	size_t feature_count
 );
+FGCAD_API fgcad_status fgcad_document_begin_runner_build(
+	fgcad_document* document,
+	const char* runner_id
+);
+FGCAD_API fgcad_status fgcad_document_commit_runner_build(
+	fgcad_document* document,
+	const char* runner_id
+);
+FGCAD_API fgcad_status fgcad_document_abort_runner_build(
+	fgcad_document* document,
+	const char* runner_id
+);
 FGCAD_API fgcad_status fgcad_document_remove_runner(
 	fgcad_document* document,
 	const char* runner_id
@@ -299,6 +351,11 @@ FGCAD_API fgcad_status fgcad_document_begin_collector_system_build(
 	const char* system_id,
 	uint64_t generation_revision
 );
+FGCAD_API fgcad_status fgcad_document_commit_collector_system_build(
+	fgcad_document* document,
+	const char* system_id,
+	uint64_t generation_revision
+);
 FGCAD_API fgcad_status fgcad_document_abort_collector_system_build(
 	fgcad_document* document,
 	const char* system_id,
@@ -312,6 +369,11 @@ FGCAD_API fgcad_status fgcad_document_rename_collector_system(
 	fgcad_document* document,
 	const char* system_id,
 	const char* name
+);
+FGCAD_API fgcad_status fgcad_document_get_build_metrics(
+	fgcad_document* document,
+	const char* owner_id,
+	fgcad_build_metrics* metrics
 );
 FGCAD_API fgcad_status fgcad_document_tessellate_part(
 	fgcad_document* document,

@@ -227,9 +227,17 @@ internal sealed partial class ManifoldCadApplication
 				.Take(collectorMemberCount)
 				.Select(item => item.Id)
 				.ToArray();
+			CollectorLayoutPreset automaticLayout = Environment.GetEnvironmentVariable(
+				"FISHGFX_MANIFOLD_AUTO_COLLECTOR_LAYOUT"
+			)?.Trim().ToUpperInvariant() switch
+			{
+				"CIRCULAR" or "RADIAL" => CollectorLayoutPreset.Radial,
+				"STAGGERED" => CollectorLayoutPreset.Staggered,
+				_ => CollectorLayoutPreset.Row,
+			};
 			if (!project.TryCreateCollectorSystem(
 				collectorMembers,
-				CollectorLayoutPreset.Row,
+				automaticLayout,
 				$"Automatic {collectorMemberCount} into 1",
 				evaluations,
 				out CadCollectorSystem automaticCollector,

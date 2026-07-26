@@ -212,6 +212,34 @@ internal sealed partial class CadUi : IDisposable
 			}
 		};
 		modelPanel.AddChild(flipMate);
+		Button rebuildExact = new()
+		{
+			Position = new Vector2(16, 780),
+			Size = new Vector2(108, 34),
+			Text = "Rebuild Exact",
+		};
+		rebuildExact.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left)
+			{
+				RebuildExactRequested?.Invoke();
+			}
+		};
+		modelPanel.AddChild(rebuildExact);
+		Button saveDraft = new()
+		{
+			Position = new Vector2(132, 780),
+			Size = new Vector2(108, 34),
+			Text = "Save Draft",
+		};
+		saveDraft.OnButtonPressed += (_, button, _) =>
+		{
+			if (button == global::FishUI.FishMouseButton.Left)
+			{
+				OpenFile("*.fgcad", FilePickerMode.Save, SaveDraftRequested);
+			}
+		};
+		modelPanel.AddChild(saveDraft);
 		ui.AddControl(modelPanel);
 
 		inspectorPanel = new Panel
@@ -250,7 +278,11 @@ internal sealed partial class CadUi : IDisposable
 
 	internal event Action<string> SaveProjectRequested;
 
+	internal event Action<string> SaveDraftRequested;
+
 	internal event Action<string> ExportRequested;
+
+	internal event Action RebuildExactRequested;
 
 	internal event Action CreateMateRequested;
 
@@ -337,7 +369,9 @@ internal sealed partial class CadUi : IDisposable
 		foreach (CadRunner runner in project.Runners)
 		{
 			CadMate mate = project.Mates.FirstOrDefault(item => item.Id == runner.StartMateId);
-			TreeNode node = runnersRoot.AddChild($"{runner.Name} -> {mate?.Name ?? "missing mate"}",
+			string exactState = runner.ExactBuild.Snapshot.Status.ToString().ToUpperInvariant();
+			TreeNode node = runnersRoot.AddChild(
+				$"{runner.Name} [{exactState}] -> {mate?.Name ?? "missing mate"}",
 				new TreeIdentity(TreeIdentityKind.Runner, runner.Id));
 			node.IsSelected = runner.Id == selectedRunnerId;
 		}
@@ -346,7 +380,7 @@ internal sealed partial class CadUi : IDisposable
 		foreach (CadCollectorSystem system in project.CollectorSystems)
 		{
 			TreeNode systemNode = collectorsRoot.AddChild(
-				$"{system.Name} [{(system.IsResolved ? "current" : "STALE")}]",
+				$"{system.Name} [{system.ExactBuild.Snapshot.Status.ToString().ToUpperInvariant()}]",
 				new TreeIdentity(TreeIdentityKind.Collector, system.Id)
 			);
 			systemNode.IsExpanded = true;

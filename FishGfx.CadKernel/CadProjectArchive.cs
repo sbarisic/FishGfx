@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -9,13 +10,15 @@ public sealed class CadProjectPackage
 	public ManifoldProject Project { get; internal set; }
 
 	public byte[] ModelDocument { get; internal set; }
+
+	public bool ExactGeometryFresh { get; internal set; }
 }
 
 public static class CadProjectArchive
 {
 	public const string Schema = "fishgfx.manifold-cad";
 
-	public const int CurrentVersion = 3;
+	public const int CurrentVersion = 4;
 
 	private const string ManifestEntry = "manifest.json";
 	private const string GraphEntry = "graph.json";
@@ -29,7 +32,12 @@ public static class CadProjectArchive
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 	};
 
-	public static void Save(string path, ManifoldProject project, ReadOnlySpan<byte> modelDocument)
+	public static void Save(
+		string path,
+		ManifoldProject project,
+		ReadOnlySpan<byte> modelDocument,
+		bool draft = false
+	)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(path);
 		ArgumentNullException.ThrowIfNull(project);
@@ -48,7 +56,11 @@ public static class CadProjectArchive
 			using (FileStream stream = File.Create(temporaryPath))
 			using (ZipArchive archive = new(stream, ZipArchiveMode.Create, false))
 			{
-				WriteText(archive, ManifestEntry, JsonSerializer.Serialize(CreateManifest(project), Options));
+				WriteText(
+					archive,
+					ManifestEntry,
+					JsonSerializer.Serialize(CreateManifest(project, modelDocument, draft), Options)
+				);
 				WriteText(archive, GraphEntry, RunnerCollectionJson.Serialize(project));
 				WriteText(archive, ViewEntry, JsonSerializer.Serialize(project.View, Options));
 				WriteBytes(archive, ModelEntry, modelDocument);
@@ -82,6 +94,21 @@ public static class CadProjectArchive
 			|| manifest.Id == Guid.Empty)
 		{
 			throw new InvalidDataException("The project schema or version is unsupported.");
+		}
+		byte[] modelDocument = ReadBytes(archive, ModelEntry);
+		if (manifest.Version >= 4)
+		{
+			string actualXcafHash = Convert.ToHexString(SHA256.HashData(modelDocument));
+			if (!string.Equals(
+				actualXcafHash,
+				manifest.XcafSha256,
+				StringComparison.OrdinalIgnoreCase
+			))
+			{
+				throw new InvalidDataException(
+					"The archived XCAF document failed its SHA-256 integrity check."
+				);
+			}
 		}
 
 		RunnerCollectionLoadResult graphResult = RunnerCollectionJson.Deserialize(ReadText(archive, GraphEntry));
@@ -179,14 +206,80 @@ public static class CadProjectArchive
 			project.View.ActiveCollectorInletId = null;
 		}
 
+		bool compatibleArchive = manifest.Version >= 4
+			&& !manifest.IsDraft
+			&& manifest.NativeAbiVersion == CadBuildCompatibility.NativeAbiVersion
+			&& string.Equals(
+				manifest.BuilderVersion,
+				CadBuildCompatibility.BuilderVersion,
+				StringComparison.Ordinal
+			)
+			&& string.Equals(
+				manifest.OcctVersion,
+				CadBuildCompatibility.OcctVersion,
+				StringComparison.Ordinal
+			)
+			&& manifest.SewingPolicyVersion == CadBuildCompatibility.SewingPolicyVersion;
+		Dictionary<Guid, string> dependencies = manifest.ExactDependencies?
+			.Where(item => item.OwnerId != Guid.Empty && !string.IsNullOrWhiteSpace(item.Hash))
+			.GroupBy(item => item.OwnerId)
+			.ToDictionary(group => group.Key, group => group.Last().Hash)
+			?? new Dictionary<Guid, string>();
+		bool allFresh = compatibleArchive;
+		foreach (CadRunner runner in project.Runners)
+		{
+			string expected = CadGeometryDependencyHash.Runner(project, runner);
+			CadExactBuildSnapshot exact = runner.ExactBuild.Snapshot;
+			bool fresh = compatibleArchive
+				&& exact.IsCurrent
+				&& dependencies.TryGetValue(runner.Id, out string archived)
+				&& string.Equals(archived, expected, StringComparison.OrdinalIgnoreCase)
+				&& exact.PublishedRevision == runner.EditRevision
+				&& string.Equals(
+					exact.PublishedDependencyHash,
+					expected,
+					StringComparison.OrdinalIgnoreCase
+				);
+			if (!fresh)
+			{
+				runner.ExactBuild.MarkStale(runner.EditRevision, expected);
+				allFresh = false;
+			}
+		}
+		foreach (CadCollectorSystem system in project.CollectorSystems)
+		{
+			string expected = CadGeometryDependencyHash.Collector(project, system);
+			CadExactBuildSnapshot exact = system.ExactBuild.Snapshot;
+			bool fresh = compatibleArchive
+				&& exact.IsCurrent
+				&& dependencies.TryGetValue(system.Id, out string archived)
+				&& string.Equals(archived, expected, StringComparison.OrdinalIgnoreCase)
+				&& exact.PublishedRevision == system.GenerationRevision
+				&& string.Equals(
+					exact.PublishedDependencyHash,
+					expected,
+					StringComparison.OrdinalIgnoreCase
+				);
+			if (!fresh)
+			{
+				system.ExactBuild.MarkStale(system.GenerationRevision, expected);
+				allFresh = false;
+			}
+		}
+
 		return new CadProjectPackage
 		{
 			Project = project,
-			ModelDocument = ReadBytes(archive, ModelEntry),
+			ModelDocument = modelDocument,
+			ExactGeometryFresh = allFresh,
 		};
 	}
 
-	private static ProjectManifest CreateManifest(ManifoldProject project)
+	private static ProjectManifest CreateManifest(
+		ManifoldProject project,
+		ReadOnlySpan<byte> modelDocument,
+		bool draft
+	)
 	{
 		return new ProjectManifest
 		{
@@ -195,6 +288,21 @@ public static class CadProjectArchive
 			Id = project.Id,
 			Name = project.Name,
 			Units = "millimetres",
+			IsDraft = draft,
+			NativeAbiVersion = CadBuildCompatibility.NativeAbiVersion,
+			BuilderVersion = CadBuildCompatibility.BuilderVersion,
+			OcctVersion = CadBuildCompatibility.OcctVersion,
+			SewingPolicyVersion = CadBuildCompatibility.SewingPolicyVersion,
+			XcafSha256 = Convert.ToHexString(SHA256.HashData(modelDocument)),
+			ExactDependencies = project.Runners.Select(runner => new ExactDependencyDto
+			{
+				OwnerId = runner.Id,
+				Hash = CadGeometryDependencyHash.Runner(project, runner),
+			}).Concat(project.CollectorSystems.Select(system => new ExactDependencyDto
+			{
+				OwnerId = system.Id,
+				Hash = CadGeometryDependencyHash.Collector(project, system),
+			})).ToList(),
 			Parts = project.Parts.Select(part => new PartDto
 			{
 				Id = part.Id,
@@ -270,9 +378,30 @@ public static class CadProjectArchive
 
 		public string Units { get; set; }
 
+		public bool IsDraft { get; set; }
+
+		public uint NativeAbiVersion { get; set; }
+
+		public string BuilderVersion { get; set; }
+
+		public string OcctVersion { get; set; }
+
+		public int SewingPolicyVersion { get; set; }
+
+		public string XcafSha256 { get; set; }
+
+		public List<ExactDependencyDto> ExactDependencies { get; set; }
+
 		public List<PartDto> Parts { get; set; }
 
 		public List<MateDto> Mates { get; set; }
+	}
+
+	private sealed class ExactDependencyDto
+	{
+		public Guid OwnerId { get; set; }
+
+		public string Hash { get; set; }
 	}
 
 	private sealed class PartDto

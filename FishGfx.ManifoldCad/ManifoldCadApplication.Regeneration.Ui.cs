@@ -21,6 +21,32 @@ internal sealed partial class ManifoldCadApplication
 		}
 		if (completion.Error != null)
 		{
+			if (completion.Error is OperationCanceledException
+				&& completion.Request.ExactBuild
+				&& IsPublished(
+					completion.Request.ExactState.Snapshot,
+					new ExactArtifactSnapshot(
+						completion.Request.Revision,
+						completion.Request.DependencyHash
+					)
+				))
+			{
+				return;
+			}
+			if (completion.Request.ExactBuild)
+			{
+				if (completion.Error is OperationCanceledException)
+				{
+					completion.Request.ExactState.Cancel(completion.Request.Revision);
+				}
+				else
+				{
+					completion.Request.ExactState.Fail(
+						completion.Request.Revision,
+						completion.Error.Message
+					);
+				}
+			}
 			ApplicationLog.Current?.Exception(
 				$"Runner regeneration failed: id={current.Id}; name={current.Name}.",
 				completion.Error
@@ -42,6 +68,24 @@ internal sealed partial class ManifoldCadApplication
 		if (current == ActiveRunner)
 		{
 			evaluation = completion.Evaluation;
+		}
+		if (!completion.Request.ExactBuild)
+		{
+			runnerBuildErrors.Remove(current.Id);
+			ui.SetStatus(
+				$"{current.Name}: preview evaluated in "
+					+ $"{completion.EvaluationMilliseconds} ms; exact geometry is stale."
+			);
+			RefreshUi();
+			return;
+		}
+		if (!completion.Request.ExactState.TryPublish(
+			completion.Request.Revision,
+			completion.Request.DependencyHash
+		))
+		{
+			viewport.MarkRunnerStale(current.Id);
+			return;
 		}
 		viewport.AddOrReplace(null, current.Id, completion.Preview, true);
 		if (current == ActiveRunner)
@@ -93,9 +137,9 @@ internal sealed partial class ManifoldCadApplication
 				+ $"evaluatedRunners={previewEvaluations.Count}; "
 				+ $"previewMeshes={viewport.CollectorDraftMeshCount}"
 		);
-		ui.SetStatus(
-			$"{current.Name}: preview ready; building exact collector..."
-		);
+		ui.SetStatus(request.ExactBuild
+			? $"{current.Name}: preview ready; building exact collector..."
+			: $"{current.Name}: preview ready; exact collector is stale.");
 	}
 
 	private void ApplyCollectorRegeneration(CollectorRegenerationCompletion completion)
@@ -112,6 +156,45 @@ internal sealed partial class ManifoldCadApplication
 		}
 		if (completion.Error != null)
 		{
+			if (completion.Error is OperationCanceledException
+				&& completion.Request.ExactBuild
+				&& IsPublished(
+					completion.Request.ExactState.Snapshot,
+					new ExactArtifactSnapshot(
+						completion.Request.Revision,
+						completion.Request.DependencyHash
+					)
+				))
+			{
+				return;
+			}
+			if (completion.Request.ExactBuild)
+			{
+				if (completion.Error is OperationCanceledException)
+				{
+					completion.Request.ExactState.Cancel(completion.Request.Revision);
+				}
+				else
+				{
+					completion.Request.ExactState.Fail(
+						completion.Request.Revision,
+						completion.Error.Message
+					);
+				}
+				foreach ((Guid runnerId, CadExactBuildState state) in
+					completion.Request.RunnerExactStates)
+				{
+					long revision = completion.Request.Runners[runnerId].EditRevision;
+					if (completion.Error is OperationCanceledException)
+					{
+						state.Cancel(revision);
+					}
+					else
+					{
+						state.Fail(revision, completion.Error.Message);
+					}
+				}
+			}
 			ApplicationLog.Current?.Exception(
 				$"Collector regeneration failed: id={current.Id}; name={current.Name}; "
 					+ $"revision={current.GenerationRevision}.",
@@ -134,6 +217,37 @@ internal sealed partial class ManifoldCadApplication
 			ui.SetStatus($"{current.Name}: {completion.Error.Message}", true);
 			RefreshUi();
 			return;
+		}
+
+		if (!completion.Request.ExactBuild)
+		{
+			foreach ((Guid runnerId, RunnerEvaluationResult result) in completion.Evaluations)
+			{
+				evaluations[runnerId] = result;
+				runnerBuildErrors.Remove(runnerId);
+			}
+			ui.SetStatus(
+				$"{current.Name}: preview evaluated in "
+					+ $"{completion.EvaluationMilliseconds} ms; exact geometry is stale."
+			);
+			RefreshUi();
+			return;
+		}
+		if (!completion.Request.ExactState.TryPublish(
+			completion.Request.Revision,
+			completion.Request.DependencyHash
+		))
+		{
+			viewport.MarkRunnerStale(current.Id);
+			return;
+		}
+		foreach ((Guid runnerId, CadExactBuildState state) in
+			completion.Request.RunnerExactStates)
+		{
+			state.TryPublish(
+				completion.Request.Runners[runnerId].EditRevision,
+				completion.Request.RunnerDependencyHashes[runnerId]
+			);
 		}
 
 		foreach (CadCollectorInlet inlet in current.Inlets)

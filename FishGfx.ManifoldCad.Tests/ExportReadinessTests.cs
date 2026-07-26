@@ -15,6 +15,7 @@ public sealed class ExportReadinessTests
 			[runner.Id] = evaluation,
 		};
 		Dictionary<Guid, string> errors = new();
+		MarkExactCurrent(project, runner);
 
 		Assert.True(ManifoldCadApplication.CanExportProject(project, evaluations, errors));
 		project.ReplacePart(project.Parts[0].Id, "replacement.step");
@@ -51,6 +52,11 @@ public sealed class ExportReadinessTests
 		);
 		Assert.True(evaluation.Success);
 		Assert.False(project.EvaluateRunner(runner).Success);
+		string dependencyHash = CadGeometryDependencyHash.Runner(project, runner);
+		runner.ExactBuild.Request(runner.EditRevision, dependencyHash);
+		Assert.True(runner.ExactBuild.TryBegin(runner.EditRevision, dependencyHash));
+		await document.BuildRunnerAsync(runner, evaluation, cancellationToken);
+		Assert.True(runner.ExactBuild.TryPublish(runner.EditRevision, dependencyHash));
 
 		Dictionary<Guid, RunnerEvaluationResult> evaluations = new()
 		{
@@ -68,5 +74,13 @@ public sealed class ExportReadinessTests
 			evaluations,
 			new Dictionary<Guid, string>()
 		));
+	}
+
+	private static void MarkExactCurrent(ManifoldProject project, CadRunner runner)
+	{
+		string dependencyHash = CadGeometryDependencyHash.Runner(project, runner);
+		runner.ExactBuild.Request(runner.EditRevision, dependencyHash);
+		Assert.True(runner.ExactBuild.TryBegin(runner.EditRevision, dependencyHash));
+		Assert.True(runner.ExactBuild.TryPublish(runner.EditRevision, dependencyHash));
 	}
 }

@@ -31,25 +31,35 @@
              CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
-  <Target Name="EnsureCadNativeRuntimeConfigured"
-          BeforeTargets="ConfigureCadNativeRuntime">
+  <Target Name="EnsureCadNativeRuntimeConfigured">
     <Error Condition="!Exists('$(CadVcpkgToolchain)')"
            Text="The native CAD vcpkg toolchain is missing. Run .\tools\bootstrap-manifold-cad.ps1 -Configuration $(Configuration) from the repository root." />
     <Error Condition="!Exists('$(CadNativeSourceRoot)\CMakePresets.json')"
            Text="The native CAD CMake presets file is missing." />
   </Target>
   <Target Name="ConfigureCadNativeRuntime"
-          BeforeTargets="BuildCadNativeRuntime">
+          DependsOnTargets="EnsureCadNativeRuntimeConfigured">
     <Exec WorkingDirectory="$(CadNativeSourceRoot)"
           Command="&quot;$(CadCMakeExecutable)&quot; --preset windows-x64 --no-warn-unused-cli" />
   </Target>
   <Target Name="BuildCadNativeRuntime"
-          BeforeTargets="CopyCadNativeRuntime">
+          DependsOnTargets="ConfigureCadNativeRuntime">
     <Exec Command="&quot;$(CadCMakeExecutable)&quot; --build &quot;$(CadNativeBuildRoot)&quot; --config $(Configuration)" />
   </Target>
-  <Target Name="CopyCadNativeRuntime" AfterTargets="Build">
+  <Target Name="PrepareCadNativeRuntime"
+          BeforeTargets="GetCopyToOutputDirectoryItems;CopyFilesToOutputDirectory;ComputeFilesToPublish"
+          DependsOnTargets="BuildCadNativeRuntime">
     <ItemGroup Condition="Exists('$(CadNativeRuntimeDir)')">
       <CadNativeRuntime Include="$(CadNativeRuntimeDir)\*.dll" />
+      <Content Include="@(CadNativeRuntime)"
+               Link="%(Filename)%(Extension)"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest" />
+      <Content Include="$(CadOcctNotice)"
+               Link="notices\OpenCASCADE-LICENSE.txt"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest"
+               Condition="Exists('$(CadOcctNotice)')" />
     </ItemGroup>
     <Copy SourceFiles="@(CadNativeRuntime)"
           DestinationFolder="$(OutDir)"

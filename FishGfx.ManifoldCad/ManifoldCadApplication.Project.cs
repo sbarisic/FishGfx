@@ -283,11 +283,11 @@ internal sealed partial class ManifoldCadApplication
 		RefreshUi();
 	}
 
-	private void RegenerateRunner(CadRunner runner)
+	private void RegenerateRunner(CadRunner runner, bool exactBuild = false)
 	{
 		if (!autoMode)
 		{
-			QueueRunnerRegeneration(runner);
+			QueueRunnerRegeneration(runner, exactBuild);
 			return;
 		}
 		RegenerateRunnerSynchronously(runner);
@@ -303,6 +303,9 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 
+		string dependencyHash = CadGeometryDependencyHash.Runner(project, runner);
+		runner.ExactBuild.Request(runner.EditRevision, dependencyHash);
+		runner.ExactBuild.TryBegin(runner.EditRevision, dependencyHash);
 		Stopwatch timing = Stopwatch.StartNew();
 		RunnerEvaluationResult result = project.EvaluateRunnerAsync(document, runner).GetAwaiter().GetResult();
 		long evaluationMilliseconds = timing.ElapsedMilliseconds;
@@ -312,8 +315,14 @@ internal sealed partial class ManifoldCadApplication
 
 		if (!result.Success)
 		{
-			runnerBuildErrors[runner.Id] = string.Join(Environment.NewLine,
-				result.Diagnostics.Select(item => item.Message));
+			runnerBuildErrors[runner.Id] = string.Join(
+				Environment.NewLine,
+				result.Diagnostics.Select(item => item.Message)
+			);
+			runner.ExactBuild.Fail(
+				runner.EditRevision,
+				runnerBuildErrors[runner.Id]
+			);
 			ApplicationLog.Current?.Error(
 				$"Runner evaluation failed: id={runner.Id}; name={runner.Name}; "
 					+ runnerBuildErrors[runner.Id]
@@ -329,44 +338,66 @@ internal sealed partial class ManifoldCadApplication
 
 		try
 		{
+			bool nativeBuildStaged = false;
 			timing.Restart();
-			long revision = document.BuildRunnerAsync(runner, result).GetAwaiter().GetResult();
-			long buildMilliseconds = timing.ElapsedMilliseconds;
-			timing.Restart();
-			CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync(
-				runner.Id,
-				InteractiveLinearDeflection,
-				InteractiveAngularDeflection
-			).GetAwaiter().GetResult();
-			long tessellationMilliseconds = timing.ElapsedMilliseconds;
-
-			if (preview.Revision != revision || revision != document.Revision)
+			try
 			{
-				throw new InvalidOperationException("Runner regeneration was superseded by a newer document revision.");
-			}
+				nativeBuildStaged = true;
+				document.BeginRunnerBuildAsync(runner.Id).GetAwaiter().GetResult();
+				long revision = document.BuildRunnerAsync(runner, result).GetAwaiter().GetResult();
+				long buildMilliseconds = timing.ElapsedMilliseconds;
+				timing.Restart();
+				CadRevisioned<CadTessellation> preview = document.TessellateRunnerAsync(
+					runner.Id,
+					InteractiveLinearDeflection,
+					InteractiveAngularDeflection
+				).GetAwaiter().GetResult();
+				long tessellationMilliseconds = timing.ElapsedMilliseconds;
 
-			timing.Restart();
-			viewport.AddOrReplace(null, runner.Id, preview.Value, true);
-			if (runner == ActiveRunner)
-			{
-				UpdateBezierEditor(nodeCanvas.SelectedNode);
+				if (preview.Revision != revision || revision != document.Revision)
+				{
+					throw new InvalidOperationException(
+						"Runner regeneration was superseded by a newer document revision."
+					);
+				}
+				document.CommitRunnerBuildAsync(runner.Id).GetAwaiter().GetResult();
+				nativeBuildStaged = false;
+
+				timing.Restart();
+				viewport.AddOrReplace(null, runner.Id, preview.Value, true);
+				runner.ExactBuild.TryPublish(runner.EditRevision, dependencyHash);
+				if (runner == ActiveRunner)
+				{
+					UpdateBezierEditor(nodeCanvas.SelectedNode);
+				}
+				long uploadMilliseconds = timing.ElapsedMilliseconds;
+				runnerBuildErrors.Remove(runner.Id);
+				Console.WriteLine(
+					$"[Manifold CAD] Regenerated {runner.Name}: eval={evaluationMilliseconds} ms, "
+						+ $"build={buildMilliseconds} ms, mesh={tessellationMilliseconds} ms, "
+						+ $"upload={uploadMilliseconds} ms"
+				);
+				string lengthDescription = result.LengthIsToleranceControlled
+					? "tolerance-controlled kernel length"
+					: "exact line/arc length";
+				ui.SetStatus(
+					$"{runner.Name} {result.LengthMillimetres:F2} mm | "
+						+ $"{lengthDescription} | exact solid valid | "
+						+ $"eval {evaluationMilliseconds} ms, build {buildMilliseconds} ms, "
+						+ $"mesh {tessellationMilliseconds} ms, upload {uploadMilliseconds} ms"
+				);
 			}
-			long uploadMilliseconds = timing.ElapsedMilliseconds;
-			runnerBuildErrors.Remove(runner.Id);
-			Console.WriteLine(
-				$"[Manifold CAD] Regenerated {runner.Name}: eval={evaluationMilliseconds} ms, "
-				+ $"build={buildMilliseconds} ms, mesh={tessellationMilliseconds} ms, "
-				+ $"upload={uploadMilliseconds} ms"
-			);
-			string lengthDescription = result.LengthIsToleranceControlled
-				? "tolerance-controlled kernel length"
-				: "exact line/arc length";
-			ui.SetStatus($"{runner.Name} {result.LengthMillimetres:F2} mm | {lengthDescription} | exact solid valid | "
-				+ $"eval {evaluationMilliseconds} ms, build {buildMilliseconds} ms, "
-				+ $"mesh {tessellationMilliseconds} ms, upload {uploadMilliseconds} ms");
+			finally
+			{
+				if (nativeBuildStaged)
+				{
+					document.AbortRunnerBuildAsync(runner.Id).GetAwaiter().GetResult();
+				}
+			}
 		}
 		catch (Exception exception)
 		{
+			runner.ExactBuild.Fail(runner.EditRevision, exception.Message);
 			ApplicationLog.Current?.Exception(
 				$"Runner regeneration failed: id={runner.Id}; name={runner.Name}.",
 				exception
@@ -430,7 +461,7 @@ internal sealed partial class ManifoldCadApplication
 		}
 	}
 
-	private void RegenerateAllRunners()
+	private void RegenerateAllRunners(bool exactBuild = false)
 	{
 		HashSet<Guid> regeneratedCollectors = new();
 		foreach (CadRunner runner in project.Runners)
@@ -439,11 +470,11 @@ internal sealed partial class ManifoldCadApplication
 				candidate.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
 			if (system == null)
 			{
-				RegenerateRunner(runner);
+				RegenerateRunner(runner, exactBuild);
 			}
 			else if (regeneratedCollectors.Add(system.Id))
 			{
-				RegenerateCollectorSystem(system);
+				RegenerateCollectorSystem(system, exactBuild);
 			}
 		}
 	}

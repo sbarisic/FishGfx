@@ -127,6 +127,80 @@ internal readonly record struct NativeEdgeRange(
 	uint PointCount
 );
 
+[StructLayout(LayoutKind.Sequential)]
+internal readonly record struct NativeBuildMetrics(
+	ulong Revision,
+	ulong TotalMicroseconds,
+	ulong EvaluationMicroseconds,
+	ulong SweepMicroseconds,
+	ulong LoftMicroseconds,
+	ulong SewingMicroseconds,
+	ulong MergeMicroseconds,
+	ulong ValidationMicroseconds,
+	ulong TessellationMicroseconds,
+	uint SweepCount,
+	uint LoftCount,
+	uint SewCount,
+	uint MergeBooleanCount,
+	uint InterfaceBooleanCount,
+	uint FinalBooleanCount,
+	uint CutCount,
+	uint ValidationCount,
+	uint ClassificationCount,
+	CadBuildCacheLayers CacheFlags,
+	double MeasuredGap,
+	double SelectedTolerance,
+	uint SolidCount,
+	uint ShellCount,
+	uint FaceCount,
+	uint EdgeCount,
+	uint VertexCount
+)
+{
+	internal CadBuildMetrics ToManaged()
+	{
+		static TimeSpan Duration(ulong microseconds)
+		{
+			return TimeSpan.FromTicks(checked((long)microseconds * 10));
+		}
+
+		return new CadBuildMetrics(
+			Revision,
+			new CadBuildStageMetrics(
+				Duration(TotalMicroseconds),
+				Duration(EvaluationMicroseconds),
+				Duration(SweepMicroseconds),
+				Duration(LoftMicroseconds),
+				Duration(SewingMicroseconds),
+				Duration(MergeMicroseconds),
+				Duration(ValidationMicroseconds),
+				Duration(TessellationMicroseconds)
+			),
+			new CadBuildOperationMetrics(
+				SweepCount,
+				LoftCount,
+				SewCount,
+				MergeBooleanCount,
+				InterfaceBooleanCount,
+				FinalBooleanCount,
+				CutCount,
+				ValidationCount,
+				ClassificationCount
+			),
+			CacheFlags,
+			MeasuredGap,
+			SelectedTolerance,
+			new CadTopologyMetrics(
+				SolidCount,
+				ShellCount,
+				FaceCount,
+				EdgeCount,
+				VertexCount
+			)
+		);
+	}
+}
+
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
 internal unsafe struct NativeRunnerProfile
 {
@@ -479,6 +553,36 @@ internal static partial class NativeMethods
 		nuint featureCount
 	);
 
+	[LibraryImport(
+		Library,
+		EntryPoint = "fgcad_document_begin_runner_build",
+		StringMarshalling = StringMarshalling.Utf8
+	)]
+	internal static partial NativeStatus DocumentBeginRunnerBuild(
+		CadDocumentSafeHandle document,
+		string runnerId
+	);
+
+	[LibraryImport(
+		Library,
+		EntryPoint = "fgcad_document_commit_runner_build",
+		StringMarshalling = StringMarshalling.Utf8
+	)]
+	internal static partial NativeStatus DocumentCommitRunnerBuild(
+		CadDocumentSafeHandle document,
+		string runnerId
+	);
+
+	[LibraryImport(
+		Library,
+		EntryPoint = "fgcad_document_abort_runner_build",
+		StringMarshalling = StringMarshalling.Utf8
+	)]
+	internal static partial NativeStatus DocumentAbortRunnerBuild(
+		CadDocumentSafeHandle document,
+		string runnerId
+	);
+
 	[LibraryImport(Library, EntryPoint = "fgcad_document_remove_runner", StringMarshalling = StringMarshalling.Utf8)]
 	internal static partial NativeStatus DocumentRemoveRunner(CadDocumentSafeHandle document, string runnerId);
 
@@ -510,6 +614,17 @@ internal static partial class NativeMethods
 
 	[LibraryImport(
 		Library,
+		EntryPoint = "fgcad_document_commit_collector_system_build",
+		StringMarshalling = StringMarshalling.Utf8
+	)]
+	internal static partial NativeStatus DocumentCommitCollectorSystemBuild(
+		CadDocumentSafeHandle document,
+		string systemId,
+		ulong generationRevision
+	);
+
+	[LibraryImport(
+		Library,
 		EntryPoint = "fgcad_document_abort_collector_system_build",
 		StringMarshalling = StringMarshalling.Utf8
 	)]
@@ -530,6 +645,13 @@ internal static partial class NativeMethods
 		CadDocumentSafeHandle document,
 		string systemId,
 		string name
+	);
+
+	[LibraryImport(Library, EntryPoint = "fgcad_document_get_build_metrics", StringMarshalling = StringMarshalling.Utf8)]
+	internal static partial NativeStatus DocumentGetBuildMetrics(
+		CadDocumentSafeHandle document,
+		string ownerId,
+		out NativeBuildMetrics metrics
 	);
 
 	[LibraryImport(Library, EntryPoint = "fgcad_document_tessellate_part", StringMarshalling = StringMarshalling.Utf8)]

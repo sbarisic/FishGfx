@@ -171,7 +171,8 @@ internal sealed partial class CadViewport : IDisposable
 				{
 					AddCollectorDraftCurve(
 						SampleCubicBezier(terminal),
-						terminal.OutputProfile.ApproximateOuterRadiusMillimetres
+						terminal.OutputProfile.ApproximateOuterRadiusMillimetres,
+						!invalid
 					);
 				}
 			}
@@ -190,7 +191,7 @@ internal sealed partial class CadViewport : IDisposable
 					+ p2 * (3 * inverse * t * t)
 					+ p3 * (t * t * t);
 			}
-			AddCollectorDraftCurve(samples, outerRadius);
+			AddCollectorDraftCurve(samples, outerRadius, !invalid);
 		}
 	}
 

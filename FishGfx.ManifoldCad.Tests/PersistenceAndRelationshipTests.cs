@@ -7,6 +7,26 @@ namespace FishGfx.ManifoldCad.Tests;
 public sealed class PersistenceAndRelationshipTests
 {
 	[Fact]
+	public void VersionFourPersistenceRejectsNegativeRevisions()
+	{
+		(ManifoldProject project, _, CadRunner runner) = RunnerGraphTests.CreateProject();
+		string json = RunnerCollectionJson.Serialize(project);
+		string invalid = json.Replace(
+			$"\"editRevision\": {runner.EditRevision}",
+			"\"editRevision\": -1",
+			StringComparison.Ordinal
+		);
+
+		RunnerCollectionLoadResult result = RunnerCollectionJson.Deserialize(invalid);
+
+		Assert.False(result.Success);
+		Assert.Contains(
+			result.Errors,
+			error => error.Contains("cannot be negative", StringComparison.Ordinal)
+		);
+	}
+
+	[Fact]
 	public void VersionOneGraphMigratesMateOwnershipAndTerminalOutput()
 	{
 		Guid graphId = Guid.NewGuid();

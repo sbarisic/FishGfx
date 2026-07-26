@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -36,8 +37,10 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
+#include <BRepClass3d_SolidExplorer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
 #include <BOPAlgo_GlueEnum.hxx>
+#include <BOPAlgo_CellsBuilder.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -45,14 +48,19 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepCheck_Result.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepGProp.hxx>
+#include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_ReShape.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
@@ -82,8 +90,9 @@
 #include <Precision.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <STEPCAFControl_Writer.hxx>
+#include <ShapeAnalysis_FreeBounds.hxx>
 #include <ShapeFix_Shape.hxx>
-#include <ShapeFix_Shell.hxx>
+#include <ShapeFix_Solid.hxx>
 #include <Standard_Failure.hxx>
 #include <TCollection_ExtendedString.hxx>
 #include <TDataStd_Name.hxx>
@@ -99,6 +108,8 @@
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
 #include <TopoDS_Vertex.hxx>
 #include <TopoDS_Wire.hxx>
 #include <XCAFApp_Application.hxx>
@@ -211,10 +222,18 @@ struct runner_source
 	std::string owner_id;
 };
 
+struct runner_boundary_record
+{
+	TopoDS_Wire inner;
+	TopoDS_Wire outer;
+};
+
 struct runner_section_record
 {
 	std::string key;
 	TopoDS_Shape shape;
+	runner_boundary_record entry_boundary;
+	runner_boundary_record exit_boundary;
 	std::vector<runner_source> sources;
 	bool validated{};
 };
@@ -225,6 +244,10 @@ struct runner_record
 	std::string name;
 	std::string geometry_key;
 	TopoDS_Shape shape;
+	runner_boundary_record start_boundary;
+	runner_boundary_record end_boundary;
+	TopoDS_Face start_cap;
+	TopoDS_Face end_cap;
 	std::vector<runner_source> sources;
 	std::vector<runner_section_record> sections;
 };
@@ -244,6 +267,7 @@ struct collector_record
 	fgcad_collector_system_spec geometry_spec{};
 	std::vector<fgcad_collector_inlet> inlet_specs;
 	bool has_wall_cache{};
+	std::string assembly_key;
 };
 
 struct selector_record
@@ -731,6 +755,64 @@ std::vector<TopoDS_Face> shape_faces(const TopoDS_Shape& shape)
 	return faces;
 }
 
+gp_Pnt face_representative_point(const TopoDS_Face& face)
+{
+	gp_Pnt point;
+	double u = 0;
+	double v = 0;
+	double parameter = 0.5;
+	gp_Vec derivative_u;
+	gp_Vec derivative_v;
+	if (BRepClass3d_SolidExplorer::FindAPointInTheFace(
+		face,
+		point,
+		u,
+		v,
+		parameter,
+		derivative_u,
+		derivative_v))
+	{
+		return point;
+	}
+
+	GProp_GProps properties;
+	BRepGProp::SurfaceProperties(face, properties);
+	return properties.CentreOfMass();
+}
+
+uint32_t count_shape_type(const TopoDS_Shape& shape, TopAbs_ShapeEnum type)
+{
+	if (shape.IsNull())
+	{
+		return 0;
+	}
+
+	uint32_t count = 0;
+	if (shape.ShapeType() == type)
+	{
+		++count;
+	}
+	for (TopExp_Explorer explorer(shape, type); explorer.More(); explorer.Next())
+	{
+		if (!explorer.Current().IsSame(shape))
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
+void capture_topology_metrics(
+	const TopoDS_Shape& shape,
+	fgcad_build_metrics& metrics)
+{
+	metrics.solid_count = count_shape_type(shape, TopAbs_SOLID);
+	metrics.shell_count = count_shape_type(shape, TopAbs_SHELL);
+	metrics.face_count = count_shape_type(shape, TopAbs_FACE);
+	metrics.edge_count = count_shape_type(shape, TopAbs_EDGE);
+	metrics.vertex_count = count_shape_type(shape, TopAbs_VERTEX);
+}
+
 template<typename operation_type>
 void apply_boolean_history(operation_type& operation, std::vector<runner_source>& sources)
 {
@@ -782,38 +864,52 @@ void remap_sources_to_result_surfaces(
 	const TopoDS_Shape& result,
 	std::vector<runner_source>& sources)
 {
-	std::vector<TopoDS_Face> result_faces = shape_faces(result);
+	struct surface_record
+	{
+		TopoDS_Face face;
+		Handle(Geom_Surface) surface;
+		TopLoc_Location location;
+	};
+	auto describe = [](const TopoDS_Face& face)
+	{
+		TopLoc_Location location;
+		Handle(Geom_Surface) surface = BRep_Tool::Surface(face, location);
+		return surface_record{ face, std::move(surface), std::move(location) };
+	};
+	std::vector<surface_record> result_faces;
+	for (const TopoDS_Face& face : shape_faces(result))
+	{
+		result_faces.push_back(describe(face));
+	}
 	for (runner_source& source : sources)
 	{
 		std::vector<TopoDS_Face> original_faces = std::move(source.faces);
-		source.faces.clear();
-		for (const TopoDS_Face& candidate : result_faces)
+		std::vector<surface_record> original_surfaces;
+		original_surfaces.reserve(original_faces.size());
+		for (const TopoDS_Face& face : original_faces)
 		{
-			TopLoc_Location candidate_location;
-			Handle(Geom_Surface) candidate_surface = BRep_Tool::Surface(
-				candidate,
-				candidate_location);
+			original_surfaces.push_back(describe(face));
+		}
+		source.faces.clear();
+		for (const surface_record& candidate : result_faces)
+		{
 			bool matches = std::any_of(
-				original_faces.begin(),
-				original_faces.end(),
-				[&](const TopoDS_Face& original)
+				original_surfaces.begin(),
+				original_surfaces.end(),
+				[&](const surface_record& original)
 				{
-					if (candidate.IsSame(original))
+					if (candidate.face.IsSame(original.face))
 					{
 						return true;
 					}
-					TopLoc_Location original_location;
-					Handle(Geom_Surface) original_surface = BRep_Tool::Surface(
-						original,
-						original_location);
-					return !candidate_surface.IsNull()
-						&& !original_surface.IsNull()
-						&& candidate_surface == original_surface
-						&& candidate_location.IsEqual(original_location);
+					return !candidate.surface.IsNull()
+						&& !original.surface.IsNull()
+						&& candidate.surface == original.surface
+						&& candidate.location.IsEqual(original.location);
 				});
 			if (matches)
 			{
-				source.faces.push_back(candidate);
+				source.faces.push_back(candidate.face);
 			}
 		}
 	}
@@ -860,18 +956,6 @@ fgcad_status guarded(action_type&& action)
 }
 }
 
-struct fgcad_document
-{
-	std::unordered_map<std::string, part_record> parts;
-	std::unordered_map<std::string, runner_record> runners;
-	std::unordered_map<std::string, collector_record> collectors;
-	std::unordered_map<std::string, runner_record> staged_runners;
-	std::unordered_map<std::string, runner_record> runner_build_cache;
-	std::string staged_collector_id;
-	uint64_t staged_generation_revision{};
-	std::unordered_map<std::string, selector_record> selectors;
-};
-
 struct fgcad_tessellation
 {
 	std::vector<fgcad_mesh_vertex> vertices;
@@ -882,6 +966,31 @@ struct fgcad_tessellation
 	std::vector<fgcad_point3> edge_points;
 	fgcad_point3 minimum{};
 	fgcad_point3 maximum{};
+};
+
+struct fgcad_document
+{
+	std::unordered_map<std::string, part_record> parts;
+	std::unordered_map<std::string, runner_record> runners;
+	std::unordered_map<std::string, collector_record> collectors;
+	std::unordered_map<std::string, runner_record> staged_runners;
+	std::unordered_map<std::string, runner_record> runner_build_cache;
+	std::string staged_runner_id;
+	runner_record staged_previous_runner;
+	bool staged_previous_runner_exists{};
+	bool staged_runner_published{};
+	std::string staged_collector_id;
+	uint64_t staged_generation_revision{};
+	collector_record staged_previous_collector;
+	bool staged_previous_collector_exists{};
+	bool staged_collector_published{};
+	std::unordered_map<std::string, runner_record> staged_previous_member_runners;
+	std::vector<std::string> staged_missing_member_runners;
+	std::unordered_map<std::string, selector_record> selectors;
+	std::unordered_map<std::string, fgcad_build_metrics> build_metrics;
+	std::unordered_map<std::string, fgcad_tessellation> tessellation_cache;
+	std::deque<std::string> tessellation_cache_order;
+	uint64_t source_geometry_revision{};
 };
 
 namespace
@@ -1066,6 +1175,8 @@ extern "C"
 #include "CadKernel.Collectors.inl"
 
 #include "CadKernel.Tessellation.inl"
+
+#include "CadKernel.Metrics.inl"
 
 #include "CadKernel.Persistence.inl"
 

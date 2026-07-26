@@ -172,7 +172,7 @@ internal sealed partial class ManifoldCadApplication
 				}
 				else
 				{
-					system.OutletFrame = frame;
+					system.SetOutletFramePreservingWorldInlets(frame);
 				}
 			},
 			out string error
@@ -283,7 +283,7 @@ internal sealed partial class ManifoldCadApplication
 				}
 				else
 				{
-					system.OutletFrame = draft.Frame;
+					system.SetOutletFramePreservingWorldInlets(draft.Frame);
 				}
 			},
 			out string error
@@ -388,11 +388,14 @@ internal sealed partial class ManifoldCadApplication
 		RefreshUi();
 	}
 
-	private void RegenerateCollectorSystem(CadCollectorSystem system)
+	private void RegenerateCollectorSystem(
+		CadCollectorSystem system,
+		bool exactBuild = false
+	)
 	{
 		if (!autoMode)
 		{
-			QueueCollectorRegeneration(system);
+			QueueCollectorRegeneration(system, exactBuild);
 			return;
 		}
 		RegenerateCollectorSystemSynchronously(system);
@@ -404,6 +407,18 @@ internal sealed partial class ManifoldCadApplication
 		Dictionary<Guid, RunnerEvaluationResult> members = new();
 		bool nativeBuildStaged = false;
 		long generationRevision = system.GenerationRevision;
+		string dependencyHash = CadGeometryDependencyHash.Collector(project, system);
+		system.ExactBuild.Request(generationRevision, dependencyHash);
+		system.ExactBuild.TryBegin(generationRevision, dependencyHash);
+		Dictionary<Guid, string> runnerHashes = new();
+		foreach (CadCollectorInlet inlet in system.Inlets)
+		{
+			CadRunner runner = project.Runners.Single(item => item.Id == inlet.Binding.RunnerId);
+			string runnerHash = CadGeometryDependencyHash.Runner(project, runner);
+			runnerHashes[runner.Id] = runnerHash;
+			runner.ExactBuild.Request(runner.EditRevision, runnerHash);
+			runner.ExactBuild.TryBegin(runner.EditRevision, runnerHash);
+		}
 		ApplicationLog.Current?.Info(
 			$"Collector regeneration started: id={system.Id}; name={system.Name}; "
 				+ $"revision={generationRevision}; inlets={system.Inlets.Count}; "
@@ -475,8 +490,8 @@ internal sealed partial class ManifoldCadApplication
 
 			long evaluatedMilliseconds = timing.ElapsedMilliseconds;
 			timing.Restart();
-			document.BeginCollectorSystemBuildAsync(system).GetAwaiter().GetResult();
 			nativeBuildStaged = true;
+			document.BeginCollectorSystemBuildAsync(system).GetAwaiter().GetResult();
 			int rebuiltRunnerCount = 0;
 			foreach (CadCollectorInlet inlet in system.Inlets)
 			{
@@ -498,7 +513,6 @@ internal sealed partial class ManifoldCadApplication
 				}
 			}
 			long revision = document.BuildCollectorSystemAsync(system, members).GetAwaiter().GetResult();
-			nativeBuildStaged = false;
 			long buildMilliseconds = timing.ElapsedMilliseconds;
 			timing.Restart();
 			CadRevisioned<CadTessellation> preview = document.TessellateCollectorSystemAsync(
@@ -511,6 +525,10 @@ internal sealed partial class ManifoldCadApplication
 				throw new InvalidOperationException(
 					"Collector regeneration was superseded by a newer document revision.");
 			}
+			document.CommitCollectorSystemBuildAsync(system.Id, generationRevision)
+				.GetAwaiter()
+				.GetResult();
+			nativeBuildStaged = false;
 			foreach (CadCollectorInlet inlet in system.Inlets)
 			{
 				viewport.RemoveRunner(inlet.Binding.RunnerId);
@@ -522,6 +540,12 @@ internal sealed partial class ManifoldCadApplication
 				}
 			}
 			viewport.AddOrReplace(null, system.Id, preview.Value, true);
+			system.ExactBuild.TryPublish(generationRevision, dependencyHash);
+			foreach ((Guid runnerId, string runnerHash) in runnerHashes)
+			{
+				CadRunner runner = project.Runners.Single(item => item.Id == runnerId);
+				runner.ExactBuild.TryPublish(runner.EditRevision, runnerHash);
+			}
 			system.IsResolved = true;
 			system.Diagnostic = null;
 			ApplicationLog.Current?.Info(
@@ -538,6 +562,12 @@ internal sealed partial class ManifoldCadApplication
 		}
 		catch (Exception exception)
 		{
+			system.ExactBuild.Fail(generationRevision, exception.Message);
+			foreach ((Guid runnerId, _) in runnerHashes)
+			{
+				CadRunner runner = project.Runners.Single(item => item.Id == runnerId);
+				runner.ExactBuild.Fail(runner.EditRevision, exception.Message);
+			}
 			ApplicationLog.Current?.Exception(
 				$"Collector regeneration failed: id={system.Id}; name={system.Name}; "
 					+ $"revision={generationRevision}.",

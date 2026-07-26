@@ -1,5 +1,31 @@
 // Versioned C ABI entry points for immutable preview tessellation transfer.
 
+namespace
+{
+constexpr size_t tessellation_cache_capacity = 24;
+
+void cache_tessellation(
+	fgcad_document& document,
+	const std::string& key,
+	const fgcad_tessellation& value)
+{
+	auto existing = document.tessellation_cache.find(key);
+	if (existing != document.tessellation_cache.end())
+	{
+		existing->second = value;
+		return;
+	}
+	while (document.tessellation_cache.size() >= tessellation_cache_capacity
+		&& !document.tessellation_cache_order.empty())
+	{
+		document.tessellation_cache.erase(document.tessellation_cache_order.front());
+		document.tessellation_cache_order.pop_front();
+	}
+	document.tessellation_cache.emplace(key, value);
+	document.tessellation_cache_order.push_back(key);
+}
+}
+
 fgcad_status fgcad_document_tessellate_part(
 	fgcad_document* document,
 	const char* part_id,
@@ -40,9 +66,39 @@ fgcad_status fgcad_document_tessellate_runner(
 			throw std::invalid_argument("Tessellation arguments cannot be null.");
 		}
 
-		auto found = document->runners.find(require_text(runner_id, "runner_id"));
+		std::string id = require_text(runner_id, "runner_id");
+		auto found = document->runners.find(id);
 		if (found == document->runners.end()) throw std::out_of_range("The runner was not found.");
-		auto result = tessellate(found->second.shape, linear_deflection, angular_deflection, found->second.sources);
+		std::ostringstream key_stream;
+		key_stream << std::setprecision(17)
+			<< "runner:" << id << ':' << found->second.geometry_key
+			<< ":mesh-schema=2:" << linear_deflection << ':' << angular_deflection;
+		std::string key = key_stream.str();
+		auto cached = document->tessellation_cache.find(key);
+		if (cached != document->tessellation_cache.end())
+		{
+			auto metrics = document->build_metrics.find(id);
+			if (metrics != document->build_metrics.end())
+			{
+				metrics->second.cache_flags |= FGCAD_CACHE_TESSELLATION;
+			}
+			*output = new fgcad_tessellation(cached->second);
+			return FGCAD_STATUS_OK;
+		}
+		auto started = std::chrono::steady_clock::now();
+		auto result = tessellate(
+			found->second.shape,
+			linear_deflection,
+			angular_deflection,
+			found->second.sources);
+		auto metrics = document->build_metrics.find(id);
+		if (metrics != document->build_metrics.end())
+		{
+			metrics->second.tessellation_microseconds = static_cast<uint64_t>(
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - started).count());
+		}
+		cache_tessellation(*document, key, *result);
 		*output = result.release();
 		return FGCAD_STATUS_OK;
 	});
@@ -62,17 +118,43 @@ fgcad_status fgcad_document_tessellate_collector_system(
 		{
 			throw std::invalid_argument("Tessellation arguments cannot be null.");
 		}
-		auto found = document->collectors.find(require_text(system_id, "system_id"));
+		std::string id = require_text(system_id, "system_id");
+		auto found = document->collectors.find(id);
 		if (found == document->collectors.end())
 		{
 			throw std::out_of_range("The collector system was not found.");
 		}
+		std::ostringstream key_stream;
+		key_stream << std::setprecision(17)
+			<< "collector:" << id << ':' << found->second.assembly_key
+			<< ":mesh-schema=2:" << linear_deflection << ':' << angular_deflection;
+		std::string key = key_stream.str();
+		auto cached = document->tessellation_cache.find(key);
+		if (cached != document->tessellation_cache.end())
+		{
+			auto metrics = document->build_metrics.find(id);
+			if (metrics != document->build_metrics.end())
+			{
+				metrics->second.cache_flags |= FGCAD_CACHE_TESSELLATION;
+			}
+			*output = new fgcad_tessellation(cached->second);
+			return FGCAD_STATUS_OK;
+		}
+		auto started = std::chrono::steady_clock::now();
 		auto result = tessellate(
 			found->second.shape,
 			linear_deflection,
 			angular_deflection,
 			found->second.sources
 		);
+		auto metrics = document->build_metrics.find(id);
+		if (metrics != document->build_metrics.end())
+		{
+			metrics->second.tessellation_microseconds = static_cast<uint64_t>(
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - started).count());
+		}
+		cache_tessellation(*document, key, *result);
 		*output = result.release();
 		return FGCAD_STATUS_OK;
 	});

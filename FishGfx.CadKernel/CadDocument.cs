@@ -43,7 +43,7 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		{
 			await document.InvokeAsync(() =>
 			{
-				const uint requiredApiVersion = 5;
+				const uint requiredApiVersion = CadBuildCompatibility.NativeAbiVersion;
 				uint apiVersion = NativeMethods.ApiVersion();
 
 				if (apiVersion != requiredApiVersion)
@@ -134,6 +134,25 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		}, cancellationToken);
 	}
 
+	public Task<CadRevisioned<CadBuildMetrics>> GetBuildMetricsAsync(
+		Guid ownerId,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return InvokeAsync(() =>
+		{
+			Check(
+				NativeMethods.DocumentGetBuildMetrics(
+					handle,
+					ownerId.ToString("D"),
+					out NativeBuildMetrics metrics
+				),
+				"Read CAD build metrics"
+			);
+			return new CadRevisioned<CadBuildMetrics>(Revision, metrics.ToManaged());
+		}, cancellationToken);
+	}
+
 	public Task<CadRevisioned<MateFrameResult>> GetMateFrameAsync(
 		CadTopologyRef topology,
 		CadPoint3 localHit,
@@ -173,6 +192,39 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 			);
 		}
 		return BuildRunnerCoreAsync(runner, evaluation, null, cancellationToken);
+	}
+
+	public Task<long> BeginRunnerBuildAsync(
+		Guid runnerId,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentBeginRunnerBuild(handle, runnerId.ToString("D")),
+			"Begin exact runner publication"
+		), cancellationToken);
+	}
+
+	public Task<long> CommitRunnerBuildAsync(
+		Guid runnerId,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentCommitRunnerBuild(handle, runnerId.ToString("D")),
+			"Commit exact runner publication"
+		), cancellationToken);
+	}
+
+	public Task<long> AbortRunnerBuildAsync(
+		Guid runnerId,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentAbortRunnerBuild(handle, runnerId.ToString("D")),
+			"Abort exact runner publication"
+		), cancellationToken);
 	}
 
 	public Task<long> BuildRunnerAsync(
@@ -511,6 +563,22 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		), cancellationToken);
 	}
 
+	public Task<long> CommitCollectorSystemBuildAsync(
+		Guid systemId,
+		long generationRevision,
+		CancellationToken cancellationToken = default
+	)
+	{
+		return MutateAsync(() => Check(
+			NativeMethods.DocumentCommitCollectorSystemBuild(
+				handle,
+				systemId.ToString("D"),
+				checked((ulong)generationRevision)
+			),
+			"Commit exact collector-system publication"
+		), cancellationToken);
+	}
+
 	public Task<long> RemoveCollectorSystemAsync(
 		Guid systemId,
 		CancellationToken cancellationToken = default
@@ -693,15 +761,20 @@ public sealed class CadDocument : IAsyncDisposable, IDisposable
 		}
 
 		TaskCompletionSource<T> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		int executionState = 0;
 		CancellationTokenRegistration registration = cancellationToken.Register(() =>
-			completion.TrySetCanceled(cancellationToken)
-		);
+		{
+			if (Interlocked.CompareExchange(ref executionState, 2, 0) == 0)
+			{
+				completion.TrySetCanceled(cancellationToken);
+			}
+		});
 
 		try
 		{
 			queue.Add(() =>
 			{
-				if (completion.Task.IsCompleted)
+				if (Interlocked.CompareExchange(ref executionState, 1, 0) != 0)
 				{
 					registration.Dispose();
 					return;

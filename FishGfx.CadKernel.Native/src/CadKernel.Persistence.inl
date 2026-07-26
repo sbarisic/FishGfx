@@ -8,6 +8,12 @@ fgcad_status fgcad_document_save_xcaf(fgcad_document* document, const char* path
 		{
 			throw std::invalid_argument("The document cannot be null.");
 		}
+		if (!document->staged_runner_id.empty()
+			|| !document->staged_collector_id.empty())
+		{
+			throw std::invalid_argument(
+				"A project snapshot cannot be saved while exact geometry publication is staged.");
+		}
 
 		std::string path = require_text(path_utf8, "path_utf8");
 		Handle(TDocStd_Document) xcaf = make_xcaf_document(
@@ -206,6 +212,23 @@ fgcad_status fgcad_document_load_xcaf(fgcad_document* document, const char* path
 		document->runners = std::move(replacement.runners);
 		document->selectors = std::move(replacement.selectors);
 		document->collectors = std::move(replacement.collectors);
+		document->staged_runners.clear();
+		document->runner_build_cache.clear();
+		document->staged_runner_id.clear();
+		document->staged_previous_runner = runner_record{};
+		document->staged_previous_runner_exists = false;
+		document->staged_runner_published = false;
+		document->staged_collector_id.clear();
+		document->staged_generation_revision = 0;
+		document->staged_previous_collector = collector_record{};
+		document->staged_previous_collector_exists = false;
+		document->staged_collector_published = false;
+		document->staged_previous_member_runners.clear();
+		document->staged_missing_member_runners.clear();
+		document->build_metrics.clear();
+		document->tessellation_cache.clear();
+		document->tessellation_cache_order.clear();
+		++document->source_geometry_revision;
 
 		return FGCAD_STATUS_OK;
 	});
@@ -219,9 +242,19 @@ fgcad_status fgcad_document_export_step_ap242(fgcad_document* document, const ch
 			|| std::any_of(document->runners.begin(), document->runners.end(), [](const auto& item)
 			{
 				return item.second.shape.IsNull();
+			})
+			|| std::any_of(document->collectors.begin(), document->collectors.end(), [](const auto& item)
+			{
+				return item.second.shape.IsNull();
 			}))
 		{
 			throw std::invalid_argument("A valid exact runner is required before STEP export.");
+		}
+		if (!document->staged_runner_id.empty()
+			|| !document->staged_collector_id.empty())
+		{
+			throw std::invalid_argument(
+				"STEP export cannot read an uncommitted exact-geometry publication.");
 		}
 
 		Handle(TDocStd_Document) xcaf = make_xcaf_document(

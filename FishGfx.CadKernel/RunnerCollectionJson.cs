@@ -15,7 +15,7 @@ public sealed class RunnerCollectionLoadResult
 public static class RunnerCollectionJson
 {
 	public const string Schema = "fishgfx.runner-collection";
-	public const int CurrentVersion = 3;
+	public const int CurrentVersion = 4;
 
 	private static readonly JsonSerializerOptions Options = new()
 	{
@@ -47,6 +47,11 @@ public static class RunnerCollectionJson
 				["id"] = runner.Id,
 				["name"] = runner.Name,
 				["startMateId"] = runner.StartMateId,
+				["editRevision"] = runner.EditRevision,
+				["exactBuild"] = JsonSerializer.SerializeToNode(
+					runner.ExactBuild.Snapshot,
+					Options
+				),
 				["graph"] = JsonNode.Parse(RunnerGraphJson.Serialize(runner.Graph)),
 			});
 		}
@@ -96,7 +101,7 @@ public static class RunnerCollectionJson
 				|| !root.TryGetProperty("version", out JsonElement version)
 				|| version.ValueKind != JsonValueKind.Number
 				|| !version.TryGetInt32(out int versionNumber)
-				|| versionNumber is not 2 and not CurrentVersion)
+				|| versionNumber is < 2 or > CurrentVersion)
 			{
 				return Failure("The runner collection schema or version is unsupported.");
 			}
@@ -130,7 +135,7 @@ public static class RunnerCollectionJson
 					errors.AddRange(graph.Errors);
 					continue;
 				}
-				result.Add(new CadRunner
+				CadRunner runner = new()
 				{
 					Id = id,
 					Name = item.TryGetProperty("name", out JsonElement name)
@@ -139,7 +144,40 @@ public static class RunnerCollectionJson
 						: "Runner",
 					StartMateId = mateId,
 					Graph = graph.Graph,
-				});
+				};
+				if (versionNumber >= 4)
+				{
+					long editRevision = item.TryGetProperty(
+						"editRevision",
+						out JsonElement editRevisionValue
+					) && editRevisionValue.TryGetInt64(out long savedRevision)
+						? savedRevision
+						: 0;
+					if (editRevision < 0)
+					{
+						errors.Add("Runner edit revisions cannot be negative.");
+						continue;
+					}
+					runner.SetEditRevision(editRevision);
+					if (item.TryGetProperty("exactBuild", out JsonElement exactBuildValue))
+					{
+						CadExactBuildSnapshot snapshot = JsonSerializer.Deserialize<CadExactBuildSnapshot>(
+							exactBuildValue.GetRawText(),
+							Options
+						);
+						if (!IsValidExactSnapshot(snapshot))
+						{
+							errors.Add("A runner contains an invalid exact-build state.");
+							continue;
+						}
+						runner.ExactBuild.Restore(snapshot);
+					}
+				}
+				else
+				{
+					runner.ExactBuild.MarkStale(runner.EditRevision);
+				}
+				result.Add(runner);
 			}
 
 			if (result.Select(runner => runner.Id).Distinct().Count() != result.Count)
@@ -231,6 +269,7 @@ public static class RunnerCollectionJson
 			OverlapLength = system.OverlapLength,
 			BranchEndHandleLength = system.BranchEndHandleLength,
 			GenerationRevision = system.GenerationRevision,
+			ExactBuild = system.ExactBuild.Snapshot,
 			Inlets = system.Inlets.Select(inlet => new CollectorInletDto
 			{
 				Id = inlet.Id,
@@ -254,6 +293,7 @@ public static class RunnerCollectionJson
 	private static CadCollectorSystem FromDto(CollectorDto dto)
 	{
 		if (dto == null || dto.Id == Guid.Empty || string.IsNullOrWhiteSpace(dto.Name)
+			|| dto.GenerationRevision < 0
 			|| dto.Inlets == null || dto.Inlets.Count < 2)
 		{
 			throw new InvalidDataException("A collector requires an ID, name, and at least two inlets.");
@@ -297,7 +337,29 @@ public static class RunnerCollectionJson
 			}).ToList(),
 		};
 		system.SetGenerationRevision(dto.GenerationRevision);
+		if (dto.ExactBuild.HasValue)
+		{
+			if (!IsValidExactSnapshot(dto.ExactBuild.Value))
+			{
+				throw new InvalidDataException(
+					"The collector contains an invalid exact-build state."
+				);
+			}
+			system.ExactBuild.Restore(dto.ExactBuild.Value);
+		}
+		else
+		{
+			system.ExactBuild.MarkStale(system.GenerationRevision);
+		}
 		return system;
+	}
+
+	private static bool IsValidExactSnapshot(CadExactBuildSnapshot snapshot)
+	{
+		return Enum.IsDefined(snapshot.Status)
+			&& snapshot.RequestedRevision >= 0
+			&& snapshot.BuildingRevision >= 0
+			&& snapshot.PublishedRevision >= 0;
 	}
 
 	private static RunnerCollectionLoadResult MigrateVersionOne(string json)
@@ -372,6 +434,7 @@ public static class RunnerCollectionJson
 		public double OverlapLength { get; set; }
 		public double BranchEndHandleLength { get; set; }
 		public long GenerationRevision { get; set; }
+		public CadExactBuildSnapshot? ExactBuild { get; set; }
 		public List<CollectorInletDto> Inlets { get; set; }
 	}
 

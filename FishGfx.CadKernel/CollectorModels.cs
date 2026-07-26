@@ -97,6 +97,8 @@ public sealed class CadCollectorSystem
 
 	public string Diagnostic { get; set; }
 
+	public CadExactBuildState ExactBuild { get; } = new();
+
 	public CadGenerationStamp GenerationStamp =>
 		new(CadGenerationOwnerKind.CollectorSystem, Id, GenerationRevision);
 
@@ -106,9 +108,24 @@ public sealed class CadCollectorSystem
 		return OutletFrame.Compose(inlet.LocalFrame);
 	}
 
+	public void SetOutletFramePreservingWorldInlets(CadFrame outletFrame)
+	{
+		(CadCollectorInlet Inlet, CadFrame WorldFrame)[] inletFrames = Inlets
+			.Select(inlet => (inlet, GetWorldInletFrame(inlet)))
+			.ToArray();
+
+		OutletFrame = outletFrame;
+		foreach ((CadCollectorInlet inlet, CadFrame worldFrame) in inletFrames)
+		{
+			inlet.LocalFrame = worldFrame.RelativeTo(outletFrame);
+		}
+	}
+
 	public long CommitEdit()
 	{
-		return Interlocked.Increment(ref generationRevision);
+		long revision = Interlocked.Increment(ref generationRevision);
+		ExactBuild.MarkStale(revision);
+		return revision;
 	}
 
 	internal void SetGenerationRevision(long value)
@@ -133,6 +150,7 @@ public sealed class CadCollectorSystem
 			Diagnostic = Diagnostic,
 		};
 		clone.SetGenerationRevision(GenerationRevision);
+		clone.ExactBuild.Restore(ExactBuild.Snapshot);
 		return clone;
 	}
 }

@@ -77,6 +77,52 @@ public sealed class CollectorSystemTests
 	}
 
 	[Fact]
+	public void CircularCollectorDependencySurvivesArchiveFrameCanonicalization()
+	{
+		(ManifoldProject project, IReadOnlyList<CadRunner> runners) = CreateFourRunnerProject();
+		Assert.True(project.TryCreateCollectorSystem(
+			runners.Select(runner => runner.Id),
+			CollectorLayoutPreset.Radial,
+			"Archive round trip",
+			out CadCollectorSystem system,
+			out string createError
+		), createError);
+
+		foreach (CadRunner runner in runners)
+		{
+			string runnerHash = CadGeometryDependencyHash.Runner(project, runner);
+			runner.ExactBuild.Request(runner.EditRevision, runnerHash);
+			Assert.True(runner.ExactBuild.TryBegin(runner.EditRevision, runnerHash));
+			Assert.True(runner.ExactBuild.TryPublish(runner.EditRevision, runnerHash));
+		}
+		string collectorHash = CadGeometryDependencyHash.Collector(project, system);
+		system.ExactBuild.Request(system.GenerationRevision, collectorHash);
+		Assert.True(system.ExactBuild.TryBegin(system.GenerationRevision, collectorHash));
+		Assert.True(system.ExactBuild.TryPublish(system.GenerationRevision, collectorHash));
+
+		string path = Path.Combine(
+			Path.GetTempPath(),
+			$"fishgfx-collector-frame-{Guid.NewGuid():N}.fgcad"
+		);
+		try
+		{
+			CadProjectArchive.Save(path, project, new byte[] { 3, 1, 4, 1, 5, 9 });
+			CadProjectPackage loaded = CadProjectArchive.Load(path);
+
+			Assert.True(loaded.ExactGeometryFresh);
+			CadCollectorSystem loadedSystem = Assert.Single(loaded.Project.CollectorSystems);
+			Assert.Equal(
+				collectorHash,
+				CadGeometryDependencyHash.Collector(loaded.Project, loadedSystem)
+			);
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
+	[Fact]
 	public void CreateCollectorSplicesEveryGraphAndCommitsOneSystemRevision()
 	{
 		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();
@@ -117,6 +163,69 @@ public sealed class CollectorSystemTests
 				connection.OutputNodeId == terminal.Id
 				&& runner.Graph.Nodes.Single(node => node.Id == connection.InputNodeId)
 					.DefinitionId == RunnerNodes.RunnerOutput);
+		}
+	}
+
+	[Fact]
+	public void BoundRunnerDependencyIncludesEndpointButNotRevisionOnlyChanges()
+	{
+		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();
+		Assert.True(project.TryCreateCollectorSystem(
+			new[] { first.Id, second.Id },
+			CollectorLayoutPreset.Row,
+			"Dependency fixture",
+			out CadCollectorSystem system,
+			out string createError
+		), createError);
+		string initialRunnerHash = CadGeometryDependencyHash.Runner(project, first);
+		string initialCollectorHash = CadGeometryDependencyHash.Collector(project, system);
+
+		system.CommitEdit();
+		Assert.Equal(initialRunnerHash, CadGeometryDependencyHash.Runner(project, first));
+		Assert.Equal(initialCollectorHash, CadGeometryDependencyHash.Collector(project, system));
+
+		CadCollectorInlet inlet = system.Inlets.Single(item =>
+			item.Binding.RunnerId == first.Id);
+		CadFrame frame = inlet.LocalFrame;
+		inlet.LocalFrame = new CadFrame(
+			frame.Origin + new CadPoint3(0, 2.5, -1.25),
+			frame.Tangent,
+			frame.Normal
+		);
+		system.CommitEdit();
+
+		Assert.NotEqual(initialRunnerHash, CadGeometryDependencyHash.Runner(project, first));
+		Assert.NotEqual(initialCollectorHash, CadGeometryDependencyHash.Collector(project, system));
+	}
+
+	[Fact]
+	public void MovingOrRotatingOutletPreservesEveryWorldInletConstraint()
+	{
+		(ManifoldProject project, IReadOnlyList<CadRunner> runners) = CreateFourRunnerProject();
+		Assert.True(project.TryCreateCollectorSystem(
+			runners.Select(runner => runner.Id),
+			CollectorLayoutPreset.Radial,
+			"Movable outlet",
+			out CadCollectorSystem system,
+			out string createError
+		), createError);
+		Dictionary<Guid, CadFrame> originalWorldFrames = system.Inlets.ToDictionary(
+			inlet => inlet.Id,
+			system.GetWorldInletFrame
+		);
+		CadQuaternion rotation = CadQuaternion.FromEulerDegrees(new CadPoint3(23, -41, 67));
+		CadFrame movedOutlet = new(
+			system.OutletFrame.Origin + new CadPoint3(35, -18, 24),
+			rotation.Rotate(new CadPoint3(1, 0, 0)),
+			rotation.Rotate(new CadPoint3(0, 1, 0))
+		);
+
+		system.SetOutletFramePreservingWorldInlets(movedOutlet);
+
+		Assert.Equal(movedOutlet, system.OutletFrame);
+		foreach (CadCollectorInlet inlet in system.Inlets)
+		{
+			AssertFrameEqual(originalWorldFrames[inlet.Id], system.GetWorldInletFrame(inlet));
 		}
 	}
 
@@ -461,6 +570,20 @@ public sealed class CollectorSystemTests
 			detachedBezier.Properties["endV"],
 			System.Globalization.CultureInfo.InvariantCulture
 		), 9);
+	}
+
+	private static void AssertFrameEqual(CadFrame expected, CadFrame actual)
+	{
+		AssertPointEqual(expected.Origin, actual.Origin);
+		AssertPointEqual(expected.Tangent, actual.Tangent);
+		AssertPointEqual(expected.Normal, actual.Normal);
+	}
+
+	private static void AssertPointEqual(CadPoint3 expected, CadPoint3 actual)
+	{
+		Assert.Equal(expected.X, actual.X, 9);
+		Assert.Equal(expected.Y, actual.Y, 9);
+		Assert.Equal(expected.Z, actual.Z, 9);
 	}
 
 	private static (ManifoldProject Project, CadRunner First, CadRunner Second)

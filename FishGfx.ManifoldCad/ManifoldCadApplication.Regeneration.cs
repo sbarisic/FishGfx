@@ -5,29 +5,56 @@ namespace FishGfx.ManifoldCad;
 
 internal sealed partial class ManifoldCadApplication
 {
-	private static readonly TimeSpan RegenerationDebounce = TimeSpan.FromMilliseconds(250);
+	private static readonly TimeSpan PreviewDebounce = TimeSpan.FromMilliseconds(16);
 
 	private abstract record RegenerationRequest(
 		Guid OwnerId,
 		long Revision,
 		long ProjectEpoch,
-		DateTimeOffset NotBefore
+		DateTimeOffset NotBefore,
+		bool ExactBuild,
+		string DependencyHash,
+		CadExactBuildState ExactState
 	);
 
 	private sealed record RunnerRegenerationRequest(
 		CadRunner Runner,
 		RunnerGraphPlan Plan,
 		long ProjectEpoch,
-		DateTimeOffset NotBefore
-	) : RegenerationRequest(Runner.Id, Runner.EditRevision, ProjectEpoch, NotBefore);
+		DateTimeOffset NotBefore,
+		bool ExactBuild,
+		string DependencyHash,
+		CadExactBuildState ExactState
+	) : RegenerationRequest(
+		Runner.Id,
+		Runner.EditRevision,
+		ProjectEpoch,
+		NotBefore,
+		ExactBuild,
+		DependencyHash,
+		ExactState
+	);
 
 	private sealed record CollectorRegenerationRequest(
 		CadCollectorSystem System,
 		IReadOnlyDictionary<Guid, CadRunner> Runners,
 		IReadOnlyDictionary<Guid, RunnerGraphPlan> Plans,
+		IReadOnlyDictionary<Guid, string> RunnerDependencyHashes,
+		IReadOnlyDictionary<Guid, CadExactBuildState> RunnerExactStates,
 		long ProjectEpoch,
-		DateTimeOffset NotBefore
-	) : RegenerationRequest(System.Id, System.GenerationRevision, ProjectEpoch, NotBefore);
+		DateTimeOffset NotBefore,
+		bool ExactBuild,
+		string DependencyHash,
+		CadExactBuildState ExactState
+	) : RegenerationRequest(
+		System.Id,
+		System.GenerationRevision,
+		ProjectEpoch,
+		NotBefore,
+		ExactBuild,
+		DependencyHash,
+		ExactState
+	);
 
 	private sealed record RunnerRegenerationCompletion(
 		RunnerRegenerationRequest Request,
@@ -50,7 +77,7 @@ internal sealed partial class ManifoldCadApplication
 		Exception Error
 	);
 
-	private void QueueRunnerRegeneration(CadRunner runner)
+	private void QueueRunnerRegeneration(CadRunner runner, bool exactBuild = false)
 	{
 		if (runner == null || disposed)
 		{
@@ -60,10 +87,19 @@ internal sealed partial class ManifoldCadApplication
 			system.Inlets.Any(inlet => inlet.Binding?.RunnerId == runner.Id));
 		if (collector != null)
 		{
-			QueueCollectorRegeneration(collector);
+			QueueCollectorRegeneration(collector, exactBuild);
 			return;
 		}
 
+		string dependencyHash = CadGeometryDependencyHash.Runner(project, runner);
+		if (exactBuild)
+		{
+			runner.ExactBuild.Request(runner.EditRevision, dependencyHash);
+		}
+		else
+		{
+			runner.ExactBuild.MarkStale(runner.EditRevision, dependencyHash);
+		}
 		CadRunner snapshot = runner.DeepClone();
 		RunnerGraphPlan plan = project.PlanRunner(snapshot);
 		viewport.MarkRunnerStale(runner.Id);
@@ -72,11 +108,14 @@ internal sealed partial class ManifoldCadApplication
 			snapshot,
 			plan,
 			Interlocked.Read(ref projectEpoch),
-			DateTimeOffset.UtcNow + RegenerationDebounce
+			DateTimeOffset.UtcNow + (exactBuild ? TimeSpan.Zero : PreviewDebounce),
+			exactBuild,
+			dependencyHash,
+			runner.ExactBuild
 		));
 	}
 
-	private void QueueCollectorRegeneration(CadCollectorSystem system)
+	private void QueueCollectorRegeneration(CadCollectorSystem system, bool exactBuild = false)
 	{
 		if (system == null || disposed)
 		{
@@ -113,6 +152,8 @@ internal sealed partial class ManifoldCadApplication
 		}
 		Dictionary<Guid, CadRunner> runners = new();
 		Dictionary<Guid, RunnerGraphPlan> plans = new();
+		Dictionary<Guid, string> runnerDependencyHashes = new();
+		Dictionary<Guid, CadExactBuildState> runnerExactStates = new();
 		foreach (CadCollectorInlet inlet in snapshot.Inlets)
 		{
 			CadRunner current = project.Runners.First(
@@ -120,6 +161,26 @@ internal sealed partial class ManifoldCadApplication
 			CadRunner runnerSnapshot = current.DeepClone();
 			runners.Add(runnerSnapshot.Id, runnerSnapshot);
 			plans.Add(runnerSnapshot.Id, project.PlanRunner(runnerSnapshot));
+			string runnerHash = CadGeometryDependencyHash.Runner(project, current);
+			runnerDependencyHashes.Add(current.Id, runnerHash);
+			runnerExactStates.Add(current.Id, current.ExactBuild);
+			if (exactBuild)
+			{
+				current.ExactBuild.Request(current.EditRevision, runnerHash);
+			}
+			else
+			{
+				current.ExactBuild.MarkStale(current.EditRevision, runnerHash);
+			}
+		}
+		string dependencyHash = CadGeometryDependencyHash.Collector(project, system);
+		if (exactBuild)
+		{
+			system.ExactBuild.Request(system.GenerationRevision, dependencyHash);
+		}
+		else
+		{
+			system.ExactBuild.MarkStale(system.GenerationRevision, dependencyHash);
 		}
 
 		system.IsResolved = false;
@@ -134,8 +195,13 @@ internal sealed partial class ManifoldCadApplication
 			snapshot,
 			runners,
 			plans,
+			runnerDependencyHashes,
+			runnerExactStates,
 			Interlocked.Read(ref projectEpoch),
-			DateTimeOffset.UtcNow + RegenerationDebounce
+			DateTimeOffset.UtcNow + (exactBuild ? TimeSpan.Zero : PreviewDebounce),
+			exactBuild,
+			dependencyHash,
+			system.ExactBuild
 		));
 	}
 
@@ -232,8 +298,16 @@ internal sealed partial class ManifoldCadApplication
 		long evaluationMilliseconds = 0;
 		long buildMilliseconds = 0;
 		long tessellationMilliseconds = 0;
+		bool nativeBuildStaged = false;
 		try
 		{
+			if (request.ExactBuild
+				&& !request.ExactState.TryBegin(request.Revision, request.DependencyHash))
+			{
+				throw new OperationCanceledException(
+					"Runner exact build was superseded before it started."
+				);
+			}
 			result = await document.EvaluateRunnerAsync(
 				request.Runner,
 				request.Plan,
@@ -250,9 +324,30 @@ internal sealed partial class ManifoldCadApplication
 			{
 				throw new OperationCanceledException("Runner regeneration was superseded.");
 			}
+			if (!request.ExactBuild)
+			{
+				return new RunnerRegenerationCompletion(
+					request,
+					result,
+					null,
+					evaluationMilliseconds,
+					0,
+					0,
+					null
+				);
+			}
 			cancellationToken.ThrowIfCancellationRequested();
 			timing.Restart();
-			await document.BuildRunnerAsync(request.Runner, result).ConfigureAwait(false);
+			nativeBuildStaged = true;
+			await document.BeginRunnerBuildAsync(
+				request.Runner.Id,
+				cancellationToken
+			).ConfigureAwait(false);
+			await document.BuildRunnerAsync(
+				request.Runner,
+				result,
+				cancellationToken
+			).ConfigureAwait(false);
 			buildMilliseconds = timing.ElapsedMilliseconds;
 			if (IsSuperseded(request))
 			{
@@ -263,9 +358,30 @@ internal sealed partial class ManifoldCadApplication
 			CadTessellation preview = (await document.TessellateRunnerAsync(
 				request.Runner.Id,
 				InteractiveLinearDeflection,
-				InteractiveAngularDeflection
+				InteractiveAngularDeflection,
+				cancellationToken
 			).ConfigureAwait(false)).Value;
 			tessellationMilliseconds = timing.ElapsedMilliseconds;
+			if (IsSuperseded(request))
+			{
+				throw new OperationCanceledException("Runner regeneration was superseded.");
+			}
+			cancellationToken.ThrowIfCancellationRequested();
+			bool published = request.ExactState.TryPublish(
+				request.Revision,
+				request.DependencyHash,
+				() => document.CommitRunnerBuildAsync(
+					request.Runner.Id,
+					CancellationToken.None
+				).GetAwaiter().GetResult()
+			);
+			if (!published)
+			{
+				throw new OperationCanceledException(
+					"Runner exact publication was superseded before commit."
+				);
+			}
+			nativeBuildStaged = false;
 			return new RunnerRegenerationCompletion(
 				request,
 				result,
@@ -278,6 +394,20 @@ internal sealed partial class ManifoldCadApplication
 		}
 		catch (Exception exception)
 		{
+			if (nativeBuildStaged)
+			{
+				try
+				{
+					await document.AbortRunnerBuildAsync(
+						request.Runner.Id,
+						CancellationToken.None
+					).ConfigureAwait(false);
+				}
+				catch (Exception abortException)
+				{
+					exception = new AggregateException(exception, abortException);
+				}
+			}
 			return new RunnerRegenerationCompletion(
 				request,
 				result,
@@ -309,6 +439,28 @@ internal sealed partial class ManifoldCadApplication
 		long tessellationMilliseconds = 0;
 		try
 		{
+			if (request.ExactBuild)
+			{
+				if (!request.ExactState.TryBegin(request.Revision, request.DependencyHash))
+				{
+					throw new OperationCanceledException(
+						"Collector exact build was superseded before it started."
+					);
+				}
+				foreach ((Guid runnerId, CadExactBuildState state) in request.RunnerExactStates)
+				{
+					CadRunner runner = request.Runners[runnerId];
+					if (!state.TryBegin(
+						runner.EditRevision,
+						request.RunnerDependencyHashes[runnerId]
+					))
+					{
+						throw new OperationCanceledException(
+							"A collector member exact build was superseded before it started."
+						);
+					}
+				}
+			}
 			foreach ((Guid runnerId, RunnerGraphPlan plan) in request.Plans)
 			{
 				RunnerEvaluationResult result = await document.EvaluateRunnerAsync(
@@ -334,9 +486,25 @@ internal sealed partial class ManifoldCadApplication
 			mainThreadActions.Enqueue(
 				() => ApplyCollectorDraftPreview(request, previewResults)
 			);
+			if (!request.ExactBuild)
+			{
+				return new CollectorRegenerationCompletion(
+					request,
+					results,
+					null,
+					0,
+					evaluationMilliseconds,
+					0,
+					0,
+					null
+				);
+			}
 			timing.Restart();
-			await document.BeginCollectorSystemBuildAsync(request.System).ConfigureAwait(false);
 			staged = true;
+			await document.BeginCollectorSystemBuildAsync(
+				request.System,
+				cancellationToken
+			).ConfigureAwait(false);
 			foreach (CadCollectorInlet inlet in request.System.Inlets)
 			{
 				Guid runnerId = inlet.Binding.RunnerId;
@@ -355,7 +523,8 @@ internal sealed partial class ManifoldCadApplication
 					await document.BuildRunnerAsync(
 						request.Runners[runnerId],
 						results[runnerId],
-						request.System
+						request.System,
+						cancellationToken
 					).ConfigureAwait(false);
 					rebuiltRunnerCount++;
 				}
@@ -366,17 +535,12 @@ internal sealed partial class ManifoldCadApplication
 				}
 				cancellationToken.ThrowIfCancellationRequested();
 			}
-			await document.BuildCollectorSystemAsync(request.System, results).ConfigureAwait(false);
-			staged = false;
+			await document.BuildCollectorSystemAsync(
+				request.System,
+				results,
+				cancellationToken
+			).ConfigureAwait(false);
 			buildMilliseconds = timing.ElapsedMilliseconds;
-			lock (collectorRunnerGeometry)
-			{
-				foreach ((Guid runnerId, RunnerEvaluationResult result) in results)
-				{
-					collectorRunnerGeometry[(request.System.Id, runnerId)] =
-					result.Chain.Features.ToArray();
-				}
-			}
 			if (IsSuperseded(request))
 			{
 				throw new OperationCanceledException("Collector regeneration was superseded.");
@@ -386,9 +550,39 @@ internal sealed partial class ManifoldCadApplication
 			CadTessellation preview = (await document.TessellateCollectorSystemAsync(
 				request.System.Id,
 				InteractiveLinearDeflection,
-				InteractiveAngularDeflection
+				InteractiveAngularDeflection,
+				cancellationToken
 			).ConfigureAwait(false)).Value;
 			tessellationMilliseconds = timing.ElapsedMilliseconds;
+			if (IsSuperseded(request))
+			{
+				throw new OperationCanceledException("Collector regeneration was superseded.");
+			}
+			cancellationToken.ThrowIfCancellationRequested();
+			bool published = request.ExactState.TryPublish(
+				request.Revision,
+				request.DependencyHash,
+				() => document.CommitCollectorSystemBuildAsync(
+					request.System.Id,
+					request.System.GenerationRevision,
+					CancellationToken.None
+				).GetAwaiter().GetResult()
+			);
+			if (!published)
+			{
+				throw new OperationCanceledException(
+					"Collector exact publication was superseded before commit."
+				);
+			}
+			staged = false;
+			lock (collectorRunnerGeometry)
+			{
+				foreach ((Guid runnerId, RunnerEvaluationResult result) in results)
+				{
+					collectorRunnerGeometry[(request.System.Id, runnerId)] =
+						result.Chain.Features.ToArray();
+				}
+			}
 			return new CollectorRegenerationCompletion(
 				request,
 				results,
@@ -438,7 +632,13 @@ internal sealed partial class ManifoldCadApplication
 					out RegenerationRequest pending
 				)
 				&& (pending.Revision != request.Revision
-					|| pending.ProjectEpoch != request.ProjectEpoch);
+					|| pending.ProjectEpoch != request.ProjectEpoch
+					|| pending.ExactBuild != request.ExactBuild
+					|| !string.Equals(
+						pending.DependencyHash,
+						request.DependencyHash,
+						StringComparison.OrdinalIgnoreCase
+					));
 		}
 	}
 }

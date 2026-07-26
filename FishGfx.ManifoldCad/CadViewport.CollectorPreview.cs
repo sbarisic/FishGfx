@@ -9,7 +9,11 @@ internal sealed partial class CadViewport
 {
 	private const int CollectorPreviewSides = 16;
 
-	private void AddCollectorDraftCurve(CadPoint3[] samples, double outerRadius)
+	private void AddCollectorDraftCurve(
+		CadPoint3[] samples,
+		double outerRadius,
+		bool createTubeMesh
+	)
 	{
 		if (samples == null || samples.Length < 2
 			|| !double.IsFinite(outerRadius) || outerRadius <= 0)
@@ -17,7 +21,13 @@ internal sealed partial class CadViewport
 			return;
 		}
 		collectorDraftCurves.Add(samples);
-		collectorDraftMeshes.Add(CreateCollectorDraftTube(samples, outerRadius));
+		// Invalid curves remain useful as clean red centreline diagnostics.  A
+		// tube around a self-intersecting or over-curved path creates overlapping
+		// triangles that look like corrupted exact geometry, so do not create it.
+		if (createTubeMesh)
+		{
+			collectorDraftMeshes.Add(CreateCollectorDraftTube(samples, outerRadius));
+		}
 	}
 
 	private Mesh3D CreateCollectorDraftTube(

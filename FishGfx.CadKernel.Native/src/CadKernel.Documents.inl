@@ -39,6 +39,7 @@ fgcad_status fgcad_document_import_step(
 		import_step(part, require_text(path_utf8, "path_utf8"));
 		rebuild_topology(part);
 		document->parts[part.id] = std::move(part);
+		++document->source_geometry_revision;
 		return FGCAD_STATUS_OK;
 	});
 }
@@ -72,6 +73,7 @@ fgcad_status fgcad_document_replace_step(
 				++selector;
 			}
 		}
+		++document->source_geometry_revision;
 
 		return FGCAD_STATUS_OK;
 	});
@@ -90,7 +92,25 @@ fgcad_status fgcad_document_set_part_transform(
 			throw std::invalid_argument("The document and transform cannot be null.");
 		}
 
-		find_part(*document, require_text(part_id, "part_id")).placement = transform(*value);
+		part_record& part = find_part(*document, require_text(part_id, "part_id"));
+		gp_Trsf replacement = transform(*value);
+		bool changed = false;
+		for (int row = 1; row <= 3 && !changed; ++row)
+		{
+			for (int column = 1; column <= 4; ++column)
+			{
+				if (part.placement.Value(row, column) != replacement.Value(row, column))
+				{
+					changed = true;
+					break;
+				}
+			}
+		}
+		if (changed)
+		{
+			part.placement = replacement;
+			++document->source_geometry_revision;
+		}
 		return FGCAD_STATUS_OK;
 	});
 }
@@ -263,7 +283,15 @@ fgcad_status fgcad_document_bind_topology_selector(
 		selector.id = require_text(selector_id, "selector_id");
 		selector.part_id = part_key;
 		selector.topology_id = topology_id;
+		auto previous = document->selectors.find(selector.id);
+		bool changed = previous == document->selectors.end()
+			|| previous->second.part_id != selector.part_id
+			|| previous->second.topology_id != selector.topology_id;
 		document->selectors[selector.id] = std::move(selector);
+		if (changed)
+		{
+			++document->source_geometry_revision;
+		}
 		return FGCAD_STATUS_OK;
 	});
 }

@@ -10,6 +10,7 @@ add_library(FishGfx.CadKernel.Native SHARED
     src/CadKernel.Curves.inl
     src/CadKernel.Documents.inl
     src/CadKernel.EvaluationApi.inl
+    src/CadKernel.Metrics.inl
     src/CadKernel.Persistence.inl
     src/CadKernel.Runners.inl
     src/CadKernel.Tessellation.inl

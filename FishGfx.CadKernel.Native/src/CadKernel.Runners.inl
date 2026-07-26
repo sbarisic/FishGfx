@@ -21,17 +21,20 @@ fgcad_status fgcad_document_build_runner(
 		auto trace = [&](const char* label)
 		{
 			auto now = std::chrono::steady_clock::now();
-			stage_timings.emplace_back(
-				label,
-				std::chrono::duration_cast<std::chrono::microseconds>(now - trace_last).count());
+			long long elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+				now - trace_last).count();
+			stage_timings.emplace_back(label, elapsed);
+			if (std::getenv("FGCAD_TRACE_STAGES") != nullptr)
+			{
+				append_native_log(
+					"runner-build-stage",
+					std::string(runner_id == nullptr ? "<null>" : runner_id)
+					+ "; " + label + "Us=" + std::to_string(elapsed));
+			}
 			trace_last = now;
 		};
 
-		struct profile_wires
-		{
-			TopoDS_Wire inner;
-			TopoDS_Wire outer;
-		};
+		using profile_wires = runner_boundary_record;
 
 		auto frame_axes = [](const fgcad_frame& frame)
 		{
@@ -220,10 +223,25 @@ fgcad_status fgcad_document_build_runner(
 
 		auto annular_face = [](const profile_wires& profile)
 		{
-			BRepBuilderAPI_MakeFace builder(profile.outer);
-			builder.Add(TopoDS::Wire(profile.inner.Reversed()));
-			if (!builder.IsDone()) throw std::runtime_error("A hollow runner profile face could not be built.");
-			return builder.Face();
+			// OCCT's generated FirstShape/LastShape wires preserve the surface's
+			// local orientation, which is not guaranteed to match the normalized
+			// input profile (notably for a reverse-facing mate).  Select the hole
+			// orientation by validating the planar face instead of assuming that
+			// the inner wire must always be reversed.
+			for (bool reverse_inner : { false, true })
+			{
+				BRepBuilderAPI_MakeFace builder(profile.outer);
+				TopoDS_Wire inner = reverse_inner
+					? TopoDS::Wire(profile.inner.Reversed())
+					: profile.inner;
+				builder.Add(inner);
+				if (builder.IsDone()
+					&& BRepCheck_Analyzer(builder.Face(), true).IsValid())
+				{
+					return builder.Face();
+				}
+			}
+			throw std::runtime_error("A hollow runner profile face could not be built.");
 		};
 
 		auto feature_edge = [](const fgcad_runner_feature& feature) -> TopoDS_Edge
@@ -282,7 +300,10 @@ fgcad_status fgcad_document_build_runner(
 		auto section_key = [&](size_t first, size_t last)
 		{
 			std::ostringstream key;
-			key << std::hexfloat << (last - first) << '|';
+			key << "abi=7;builder=runner-sew-2.collector-sew-3.transactional-publish-1;occt=8.0.0;"
+				<< "sewing=2;sourceRevision="
+				<< document->source_geometry_revision << ';'
+				<< std::hexfloat << (last - first) << '|';
 			auto append_point = [&](const fgcad_point3& value)
 			{
 				key << value.x << ',' << value.y << ',' << value.z << ';';
@@ -319,7 +340,96 @@ fgcad_status fgcad_document_build_runner(
 			return key.str();
 		};
 
-		auto make_sweep = [&](size_t first, size_t last)
+		auto require_wire = [](const TopoDS_Shape& shape, const char* description)
+		{
+			if (shape.ShapeType() == TopAbs_WIRE)
+			{
+				return TopoDS::Wire(shape);
+			}
+			if (shape.ShapeType() == TopAbs_EDGE)
+			{
+				BRepBuilderAPI_MakeWire builder(TopoDS::Edge(shape));
+				if (builder.IsDone())
+				{
+					return builder.Wire();
+				}
+			}
+			throw std::runtime_error(std::string(description) + " is not a usable profile wire.");
+		};
+
+		auto surface_boundary_at = [](const TopoDS_Shape& surface,
+			const fgcad_frame& frame,
+			const char* description)
+		{
+			ShapeAnalysis_FreeBounds free_bounds(surface, false, true, false);
+			TopoDS_Wire selected;
+			double selected_gap = std::numeric_limits<double>::infinity();
+			gp_Pnt origin = point(frame.origin);
+			gp_Vec tangent(frame.tangent.x, frame.tangent.y, frame.tangent.z);
+			tangent.Normalize();
+			for (TopExp_Explorer explorer(
+				free_bounds.GetClosedWires(),
+				TopAbs_WIRE);
+				explorer.More();
+				explorer.Next())
+			{
+				TopoDS_Wire wire = TopoDS::Wire(explorer.Current());
+				double maximum_plane_gap = 0;
+				bool sampled = false;
+				for (BRepTools_WireExplorer wire_explorer(wire);
+					wire_explorer.More();
+					wire_explorer.Next())
+				{
+					BRepAdaptor_Curve curve(wire_explorer.Current());
+					double first_parameter = curve.FirstParameter();
+					double last_parameter = curve.LastParameter();
+					for (double parameter : {
+						first_parameter,
+						0.5 * (first_parameter + last_parameter),
+						last_parameter })
+					{
+						gp_Vec relative(origin, curve.Value(parameter));
+						maximum_plane_gap = std::max(
+							maximum_plane_gap,
+							std::abs(relative.Dot(tangent)));
+						sampled = true;
+					}
+				}
+				if (sampled && maximum_plane_gap < selected_gap)
+				{
+					selected = wire;
+					selected_gap = maximum_plane_gap;
+				}
+			}
+			double allowed_gap = std::max(Precision::Confusion() * 10.0, 1.0e-6);
+			if (selected.IsNull() || selected_gap > allowed_gap)
+			{
+				throw std::runtime_error(
+					std::string(description)
+					+ " could not be recovered from the generated surface; measuredGap="
+					+ std::to_string(selected_gap)
+					+ ".");
+			}
+			return selected;
+		};
+
+		auto make_surface_compound = [](const TopoDS_Shape& outer, const TopoDS_Shape& inner)
+		{
+			BRep_Builder builder;
+			TopoDS_Compound compound;
+			builder.MakeCompound(compound);
+			for (TopExp_Explorer explorer(outer, TopAbs_FACE); explorer.More(); explorer.Next())
+			{
+				builder.Add(compound, explorer.Current());
+			}
+			for (TopExp_Explorer explorer(inner, TopAbs_FACE); explorer.More(); explorer.Next())
+			{
+				builder.Add(compound, explorer.Current().Reversed());
+			}
+			return TopoDS_Shape(compound);
+		};
+
+		auto make_sweep = [&](size_t first, size_t last, const profile_wires& entry_boundary)
 		{
 			BRepBuilderAPI_MakeWire wire;
 			std::vector<TopoDS_Edge> edges;
@@ -343,19 +453,46 @@ fgcad_status fgcad_document_build_runner(
 			}
 
 			if (!wire.IsDone()) throw std::runtime_error("The grouped runner spine could not be built.");
-			TopoDS_Face section_face = annular_face(profile_at(profile, features[first].entry_frame));
-			BRepOffsetAPI_MakePipe pipe = contains_bezier
-				? BRepOffsetAPI_MakePipe(
-					wire.Wire(),
-					section_face,
-					GeomFill_IsDiscreteTrihedron,
-					true)
-				: BRepOffsetAPI_MakePipe(wire.Wire(), section_face);
-			if (!pipe.IsDone()) throw std::runtime_error("Open CASCADE could not sweep a grouped runner spine.");
+			auto build_pipe = [&](const TopoDS_Wire& profile_wire)
+			{
+				return contains_bezier
+					? BRepOffsetAPI_MakePipe(
+						wire.Wire(),
+						profile_wire,
+						GeomFill_IsDiscreteTrihedron,
+						true)
+					: BRepOffsetAPI_MakePipe(wire.Wire(), profile_wire);
+			};
+			BRepOffsetAPI_MakePipe outer_pipe = build_pipe(entry_boundary.outer);
+			BRepOffsetAPI_MakePipe inner_pipe = build_pipe(entry_boundary.inner);
+			if (!outer_pipe.IsDone() || !inner_pipe.IsDone())
+			{
+				throw std::runtime_error("Open CASCADE could not sweep the runner wall surfaces.");
+			}
 			trace("groupedSweep");
 
 			generated_section section;
-			section.shape = pipe.Shape();
+			section.shape = make_surface_compound(outer_pipe.Shape(), inner_pipe.Shape());
+			section.entry_boundary = {
+				surface_boundary_at(
+					inner_pipe.Shape(),
+					features[first].entry_frame,
+					"The sweep's inner entry boundary"),
+				surface_boundary_at(
+					outer_pipe.Shape(),
+					features[first].entry_frame,
+					"The sweep's outer entry boundary")
+			};
+			section.exit_boundary = {
+				surface_boundary_at(
+					inner_pipe.Shape(),
+					features[last - 1].exit_frame,
+					"The sweep's inner exit boundary"),
+				surface_boundary_at(
+					outer_pipe.Shape(),
+					features[last - 1].exit_frame,
+					"The sweep's outer exit boundary")
+			};
 			struct spine_curve
 			{
 				Handle(Geom_Curve) curve;
@@ -375,16 +512,26 @@ fgcad_status fgcad_document_build_runner(
 				runner_source source;
 				source.id = features[index].source_node_id;
 				source.feature = features[index];
-				const NCollection_List<TopoDS_Shape>& generated = pipe.Generated(edges[index - first]);
-				for (NCollection_List<TopoDS_Shape>::Iterator iterator(generated); iterator.More(); iterator.Next())
+				auto append_pipe_history = [&](BRepOffsetAPI_MakePipe& pipe)
 				{
-					append_faces(iterator.Value(), source.faces);
-				}
-				const NCollection_List<TopoDS_Shape>& modified = pipe.Modified(edges[index - first]);
-				for (NCollection_List<TopoDS_Shape>::Iterator iterator(modified); iterator.More(); iterator.Next())
-				{
-					append_faces(iterator.Value(), source.faces);
-				}
+					const TopoDS_Edge& edge = edges[index - first];
+					const NCollection_List<TopoDS_Shape>& generated = pipe.Generated(edge);
+					for (NCollection_List<TopoDS_Shape>::Iterator iterator(generated);
+						iterator.More();
+						iterator.Next())
+					{
+						append_faces(iterator.Value(), source.faces);
+					}
+					const NCollection_List<TopoDS_Shape>& modified = pipe.Modified(edge);
+					for (NCollection_List<TopoDS_Shape>::Iterator iterator(modified);
+						iterator.More();
+						iterator.Next())
+					{
+						append_faces(iterator.Value(), source.faces);
+					}
+				};
+				append_pipe_history(outer_pipe);
+				append_pipe_history(inner_pipe);
 				section.sources.push_back(std::move(source));
 			}
 			std::vector<TopoDS_Face> sweep_faces = shape_faces(section.shape);
@@ -438,9 +585,7 @@ fgcad_status fgcad_document_build_runner(
 			sweep_face_centers.reserve(sweep_faces.size());
 			for (const TopoDS_Face& face : sweep_faces)
 			{
-				GProp_GProps properties;
-				BRepGProp::SurfaceProperties(face, properties);
-				sweep_face_centers.push_back(properties.CentreOfMass());
+				sweep_face_centers.push_back(face_representative_point(face));
 			}
 
 			for (size_t face_index = 0; face_index < sweep_faces.size(); ++face_index)
@@ -500,52 +645,104 @@ fgcad_status fgcad_document_build_runner(
 			return section;
 		};
 
-		auto make_loft = [&](const fgcad_runner_feature& feature)
+		auto make_loft = [&](const fgcad_runner_feature& feature,
+			const profile_wires& entry_boundary)
 		{
-			profile_wires input = profile_at(feature.input_profile, feature.entry_frame);
 			profile_wires output = profile_at(feature.output_profile, feature.exit_frame);
 			trace("loftProfiles");
-			BRepOffsetAPI_ThruSections outer(true, false);
+			BRepOffsetAPI_ThruSections outer(false, false);
 			outer.CheckCompatibility(true);
-			outer.AddWire(input.outer);
+			outer.AddWire(entry_boundary.outer);
 			outer.AddWire(output.outer);
 			outer.Build();
-			BRepOffsetAPI_ThruSections inner(true, false);
+			BRepOffsetAPI_ThruSections inner(false, false);
 			inner.CheckCompatibility(true);
-			inner.AddWire(input.inner);
+			inner.AddWire(entry_boundary.inner);
 			inner.AddWire(output.inner);
 			inner.Build();
 			if (!outer.IsDone() || !inner.IsDone())
 			{
 				throw std::runtime_error(
-					"Open CASCADE could not loft the profile-transition volumes.");
+					"Open CASCADE could not loft the profile-transition surfaces.");
 			}
-			trace("loftVolumes");
-			BRepAlgoAPI_Cut hollow;
-			NCollection_List<TopoDS_Shape> hollow_arguments;
-			NCollection_List<TopoDS_Shape> hollow_tools;
-			hollow_arguments.Append(outer.Shape());
-			hollow_tools.Append(inner.Shape());
-			hollow.SetArguments(hollow_arguments);
-			hollow.SetTools(hollow_tools);
-			hollow.SetToFillHistory(false);
-			hollow.Build();
-			if (!hollow.IsDone() || hollow.Shape().IsNull())
-			{
-				throw std::runtime_error(
-					"The inner profile-transition volume could not be subtracted.");
-			}
-			trace("loftHollowCut");
-			return hollow.Shape();
+			trace("loftSurfaces");
+			generated_section section;
+			section.shape = make_surface_compound(outer.Shape(), inner.Shape());
+			trace("loftCompound");
+			TopoDS_Wire inner_entry = surface_boundary_at(
+				inner.Shape(),
+				feature.entry_frame,
+				"The loft's inner entry boundary");
+			trace("loftInnerEntry");
+			TopoDS_Wire outer_entry = surface_boundary_at(
+				outer.Shape(),
+				feature.entry_frame,
+				"The loft's outer entry boundary");
+			trace("loftOuterEntry");
+			TopoDS_Wire inner_exit = surface_boundary_at(
+				inner.Shape(),
+				feature.exit_frame,
+				"The loft's inner exit boundary");
+			trace("loftInnerExit");
+			TopoDS_Wire outer_exit = surface_boundary_at(
+				outer.Shape(),
+				feature.exit_frame,
+				"The loft's outer exit boundary");
+			trace("loftOuterExit");
+			section.entry_boundary = {
+				inner_entry,
+				outer_entry
+			};
+			section.exit_boundary = {
+				inner_exit,
+				outer_exit
+			};
+			std::vector<TopoDS_Face> loft_faces = shape_faces(section.shape);
+			trace("loftFaces");
+			section.sources.push_back({
+				feature.source_node_id,
+				feature,
+				std::move(loft_faces)
+			});
+			return section;
 		};
 
 		runner_record replacement;
 		replacement.id = require_text(runner_id, "runner_id");
 		replacement.name = require_text(runner_name, "runner_name");
 		replacement.geometry_key = section_key(0, feature_count);
+		if (!document->staged_runner_id.empty()
+			&& document->staged_runner_id != replacement.id)
+		{
+			throw std::invalid_argument(
+				"The runner build does not match the active native publication transaction.");
+		}
+		auto store_replacement = [&](runner_record&& value)
+		{
+			if (!document->staged_collector_id.empty())
+			{
+				document->staged_runners[value.id] = std::move(value);
+				return;
+			}
+			document->runners[value.id] = std::move(value);
+			if (!document->staged_runner_id.empty())
+			{
+				document->staged_runner_published = true;
+			}
+		};
+		fgcad_build_metrics metrics{};
+		auto previous_metrics = document->build_metrics.find(replacement.id);
+		metrics.revision = previous_metrics == document->build_metrics.end()
+			? 1
+			: previous_metrics->second.revision + 1;
 		auto log_timing = [&]()
 		{
 			auto trace_end = std::chrono::steady_clock::now();
+			metrics.total_microseconds = static_cast<uint64_t>(
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					trace_end - trace_start).count());
+			capture_topology_metrics(replacement.shape, metrics);
+			document->build_metrics[replacement.id] = metrics;
 			std::ostringstream timing;
 			timing << "runner=" << replacement.id
 				<< "; features=" << feature_count
@@ -569,17 +766,11 @@ fgcad_status fgcad_document_build_runner(
 		{
 			replacement = *previous_cache;
 			replacement.name = require_text(runner_name, "runner_name");
+			metrics.cache_flags |= FGCAD_CACHE_RUNNER_SOLID;
 			trace("runnerCacheHit");
 			document->runner_build_cache[replacement.id] = replacement;
 			log_timing();
-			if (!document->staged_collector_id.empty())
-			{
-				document->staged_runners[replacement.id] = std::move(replacement);
-			}
-			else
-			{
-				document->runners[replacement.id] = std::move(replacement);
-			}
+			store_replacement(std::move(replacement));
 			return FGCAD_STATUS_OK;
 		}
 		size_t section_index = 0;
@@ -592,108 +783,44 @@ fgcad_status fgcad_document_build_runner(
 				return false;
 			}
 			section = previous_cache->sections[section_index];
+			metrics.cache_flags |= FGCAD_CACHE_RUNNER_SECTION;
 			trace("sectionCacheHit");
 			return true;
 		};
-		TopoDS_Shape result;
-		auto is_joint_cap = [](const TopoDS_Face& face, const fgcad_frame& frame)
+		profile_wires current_boundary = profile_at(
+			features[0].input_profile,
+			features[0].entry_frame);
+		replacement.start_boundary = current_boundary;
+		auto append_section = [&](generated_section&& section)
 		{
-			BRepAdaptor_Surface surface(face, true);
-			if (surface.GetType() != GeomAbs_Plane) return false;
-			gp_Pln plane = surface.Plane();
-			double distance = plane.Distance(point(frame.origin));
-			double alignment = std::abs(plane.Axis().Direction().Dot(unit(frame.tangent)));
-			return distance <= 1.0e-6 && alignment >= 1.0 - 1.0e-9;
-		};
-		auto try_sew_join = [&](const TopoDS_Shape& left, const TopoDS_Shape& right,
-			const fgcad_frame& frame, TopoDS_Shape& joined)
-		{
-			BRepBuilderAPI_Sewing sewing;
-			size_t removed_caps = 0;
-			auto add_without_joint_cap = [&](const TopoDS_Shape& shape)
+			if (section.shape.IsNull())
 			{
-				for (TopExp_Explorer explorer(shape, TopAbs_FACE); explorer.More(); explorer.Next())
-				{
-					TopoDS_Face face = TopoDS::Face(explorer.Current());
-					if (is_joint_cap(face, frame))
-					{
-						++removed_caps;
-						continue;
-					}
-					sewing.Add(face);
-				}
-			};
-			add_without_joint_cap(left);
-			add_without_joint_cap(right);
-			if (removed_caps != 2) return false;
-
-			sewing.Perform();
-			TopoDS_Shape sewed = sewing.SewedShape();
-			if (sewed.IsNull() || sewed.ShapeType() != TopAbs_SHELL) return false;
-			BRepBuilderAPI_MakeSolid solid(TopoDS::Shell(sewed));
-			if (!solid.IsDone()) return false;
-			TopoDS_Shape candidate = solid.Solid();
-			if (!BRepCheck_Analyzer(candidate, true).IsValid()) return false;
-
-			for (runner_source& source : replacement.sources)
-			{
-				for (TopoDS_Face& face : source.faces)
-				{
-					if (sewing.IsModifiedSubShape(face))
-					{
-						TopoDS_Shape modified = sewing.ModifiedSubShape(face);
-						if (!modified.IsNull() && modified.ShapeType() == TopAbs_FACE)
-						{
-							face = TopoDS::Face(modified);
-						}
-					}
-				}
+				throw std::runtime_error(
+					"A generated runner wall-surface section failed topological validation.");
 			}
-			joined = candidate;
-			return true;
-		};
-		auto join_section = [&](generated_section&& section, const fgcad_frame* joint_frame)
-		{
-			if (section.shape.IsNull()
-				|| (!section.validated && !BRepCheck_Analyzer(section.shape, true).IsValid()))
+			if (!section.validated)
 			{
-				throw std::runtime_error("A generated runner feature failed exact B-rep validation.");
+				if (!BRepCheck_Analyzer(section.shape, false).IsValid())
+				{
+					throw std::runtime_error(
+						"A generated runner wall-surface section failed topological validation.");
+				}
+				section.validated = true;
+				++metrics.validation_count;
+				trace("sectionValidation");
 			}
-			section.validated = true;
-			trace("sectionValidation");
+			if (replacement.sections.empty())
+			{
+				// The cap must reuse the generated surface's actual FirstShape
+				// boundary.  The input profile wire may be geometrically equal but
+				// have different TShapes after OCCT loft compatibility processing.
+				replacement.start_boundary = section.entry_boundary;
+			}
+			current_boundary = section.exit_boundary;
 			replacement.sections.push_back(section);
 			for (runner_source& source : section.sources)
 			{
 				replacement.sources.push_back(std::move(source));
-			}
-
-			if (result.IsNull()) result = section.shape;
-			else
-			{
-				TopoDS_Shape sewn;
-				if (joint_frame != nullptr && try_sew_join(result, section.shape, *joint_frame, sewn))
-				{
-					result = sewn;
-					trace("sectionSew");
-					return;
-				}
-				BRepAlgoAPI_Fuse fuse;
-				NCollection_List<TopoDS_Shape> fuse_arguments;
-				NCollection_List<TopoDS_Shape> fuse_tools;
-				fuse_arguments.Append(result);
-				fuse_tools.Append(section.shape);
-				fuse.SetArguments(fuse_arguments);
-				fuse.SetTools(fuse_tools);
-				fuse.Build();
-				if (!fuse.IsDone()) throw std::runtime_error("Adjacent runner features could not be joined.");
-				trace("sectionFuse");
-				apply_boolean_history(fuse, replacement.sources);
-				result = fuse.Shape();
-				if (result.IsNull() || !BRepCheck_Analyzer(result, true).IsValid())
-				{
-					throw std::runtime_error("An intermediate runner join failed exact B-rep validation.");
-				}
-				trace("joinedValidation");
 			}
 		};
 
@@ -706,15 +833,16 @@ fgcad_status fgcad_document_build_runner(
 				generated_section section;
 				if (!reuse_section(key, section))
 				{
+					auto loft_start = std::chrono::steady_clock::now();
 					section.key = key;
-					section.shape = make_loft(features[index]);
-					section.sources.push_back({
-						features[index].source_node_id,
-						features[index],
-						shape_faces(section.shape)
-					});
+					section = make_loft(features[index], current_boundary);
+					section.key = key;
+					metrics.loft_microseconds += static_cast<uint64_t>(
+						std::chrono::duration_cast<std::chrono::microseconds>(
+							std::chrono::steady_clock::now() - loft_start).count());
+					++metrics.loft_count;
 				}
-				join_section(std::move(section), &features[index].entry_frame);
+				append_section(std::move(section));
 				++section_index;
 				++index;
 				continue;
@@ -732,18 +860,272 @@ fgcad_status fgcad_document_build_runner(
 			generated_section section;
 			if (!reuse_section(key, section))
 			{
-				section = make_sweep(index, end);
+				auto sweep_start = std::chrono::steady_clock::now();
+				section = make_sweep(index, end, current_boundary);
 				section.key = key;
+				metrics.sweep_microseconds += static_cast<uint64_t>(
+					std::chrono::duration_cast<std::chrono::microseconds>(
+						std::chrono::steady_clock::now() - sweep_start).count());
+				++metrics.sweep_count;
 			}
-			join_section(std::move(section), &features[index].entry_frame);
+			append_section(std::move(section));
 			++section_index;
 			index = end;
 		}
 
-		if (result.IsNull() || !BRepCheck_Analyzer(result, true).IsValid())
+		if (replacement.sections.empty())
 		{
-			throw std::runtime_error("The complete runner failed exact B-rep validation.");
+			throw std::runtime_error("The runner produced no wall-surface sections.");
 		}
+		replacement.end_boundary = current_boundary;
+		TopoDS_Face start_cap = TopoDS::Face(
+			annular_face(replacement.start_boundary).Reversed());
+		TopoDS_Face end_cap = annular_face(replacement.end_boundary);
+
+		double maximum_source_tolerance = Precision::Confusion();
+		auto include_tolerances = [&](const TopoDS_Shape& shape)
+		{
+			for (TopExp_Explorer explorer(shape, TopAbs_EDGE); explorer.More(); explorer.Next())
+			{
+				maximum_source_tolerance = std::max(
+					maximum_source_tolerance,
+					BRep_Tool::Tolerance(TopoDS::Edge(explorer.Current())));
+			}
+			for (TopExp_Explorer explorer(shape, TopAbs_VERTEX); explorer.More(); explorer.Next())
+			{
+				maximum_source_tolerance = std::max(
+					maximum_source_tolerance,
+					BRep_Tool::Tolerance(TopoDS::Vertex(explorer.Current())));
+			}
+		};
+		Bnd_Box runner_bounds;
+		for (const generated_section& section : replacement.sections)
+		{
+			include_tolerances(section.shape);
+			BRepBndLib::Add(section.shape, runner_bounds, false);
+		}
+		include_tolerances(start_cap);
+		include_tolerances(end_cap);
+		BRepBndLib::Add(start_cap, runner_bounds, false);
+		BRepBndLib::Add(end_cap, runner_bounds, false);
+		double local_scale = 1.0;
+		if (!runner_bounds.IsVoid())
+		{
+			double minimum_x = 0;
+			double minimum_y = 0;
+			double minimum_z = 0;
+			double maximum_x = 0;
+			double maximum_y = 0;
+			double maximum_z = 0;
+			runner_bounds.Get(
+				minimum_x,
+				minimum_y,
+				minimum_z,
+				maximum_x,
+				maximum_y,
+				maximum_z);
+			local_scale = std::max(
+				1.0,
+				gp_Pnt(minimum_x, minimum_y, minimum_z).Distance(
+					gp_Pnt(maximum_x, maximum_y, maximum_z)));
+		}
+		double minimum_wall = std::numeric_limits<double>::infinity();
+		for (size_t index = 0; index < feature_count; ++index)
+		{
+			minimum_wall = std::min({
+				minimum_wall,
+				features[index].input_profile.wall_thickness,
+				features[index].output_profile.wall_thickness
+			});
+		}
+		if (!std::isfinite(minimum_wall) || !(minimum_wall > 0))
+		{
+			throw std::runtime_error("The runner wall thickness is unavailable for sewing validation.");
+		}
+		double selected_tolerance = std::max({
+			Precision::Confusion(),
+			maximum_source_tolerance * 2.0,
+			local_scale * 1.0e-10
+		});
+		metrics.selected_tolerance = selected_tolerance;
+		double tolerance_ceiling = std::min(
+			minimum_wall * 0.05,
+			std::max(1.0e-4, local_scale * 2.0e-5));
+		if (selected_tolerance > tolerance_ceiling)
+		{
+			throw std::runtime_error(
+				"The runner boundaries require a sewing tolerance that exceeds the wall-scale safety limit; "
+				"selectedTolerance=" + std::to_string(selected_tolerance)
+					+ "; sourceTolerance=" + std::to_string(maximum_source_tolerance)
+					+ "; localScale=" + std::to_string(local_scale)
+					+ "; minimumWall=" + std::to_string(minimum_wall)
+					+ "; ceiling=" + std::to_string(tolerance_ceiling) + ".");
+		}
+
+		// Adjacent sections are constructed from the preceding section's actual
+		// boundary wires.  Cutting those already-shared edges makes OCCT register
+		// the same modification twice (and asserts in debug builds), so runner
+		// assembly deliberately uses sewing without edge cutting.
+		auto sewing_start = std::chrono::steady_clock::now();
+		BRepBuilderAPI_Sewing sewing(selected_tolerance, true, true, false, false);
+		for (const generated_section& section : replacement.sections)
+		{
+			sewing.Add(section.shape);
+		}
+		sewing.Add(start_cap);
+		sewing.Add(end_cap);
+		sewing.Perform();
+		metrics.sewing_microseconds += static_cast<uint64_t>(
+			std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - sewing_start).count());
+		++metrics.sew_count;
+		trace("runnerSew");
+		if (sewing.NbFreeEdges() != 0 || sewing.NbMultipleEdges() != 0)
+		{
+			throw std::runtime_error(
+				"Runner sewing did not produce a manifold closed shell: freeEdges="
+				+ std::to_string(sewing.NbFreeEdges())
+				+ "; multipleEdges="
+				+ std::to_string(sewing.NbMultipleEdges())
+				+ ".");
+		}
+		TopoDS_Shape sewed = sewing.SewedShape();
+		if (sewed.IsNull())
+		{
+			throw std::runtime_error("Runner sewing produced no shape.");
+		}
+		TopoDS_Shell shell;
+		size_t shell_count = 0;
+		if (sewed.ShapeType() == TopAbs_SHELL)
+		{
+			shell = TopoDS::Shell(sewed);
+			shell_count = 1;
+		}
+		else
+		{
+			for (TopExp_Explorer explorer(sewed, TopAbs_SHELL); explorer.More(); explorer.Next())
+			{
+				shell = TopoDS::Shell(explorer.Current());
+				++shell_count;
+			}
+		}
+		if (shell_count != 1 || shell.IsNull() || !BRep_Tool::IsClosed(shell))
+		{
+			throw std::runtime_error(
+				"Runner sewing must produce exactly one closed shell; shells="
+				+ std::to_string(shell_count)
+				+ ".");
+		}
+		BRepBuilderAPI_MakeSolid solid_builder(shell);
+		if (!solid_builder.IsDone())
+		{
+			throw std::runtime_error("The sewn runner shell could not be converted into a solid.");
+		}
+		TopoDS_Solid oriented_solid = solid_builder.Solid();
+		if (!BRepLib::OrientClosedSolid(oriented_solid))
+		{
+			throw std::runtime_error("The sewn runner shell could not be consistently oriented.");
+		}
+		TopoDS_Shape result = oriented_solid;
+		bool geometric_controls = document->staged_collector_id.empty();
+		if (geometric_controls)
+		{
+			BRepClass3d_SolidClassifier infinite_classifier(result);
+			infinite_classifier.PerformInfinitePoint(selected_tolerance);
+			++metrics.classification_count;
+			if (infinite_classifier.State() == TopAbs_IN)
+			{
+				result.Reverse();
+			}
+		}
+		auto validation_start = std::chrono::steady_clock::now();
+		// Collector-member runners are still staged at this point.  Their complete
+		// assembled system receives the authoritative geometric validation before
+		// publication, so doing the same expensive curve-on-surface checks here is
+		// redundant.  Standalone runners retain the full geometric check.
+		if (geometric_controls)
+		{
+			BRepCheck_Analyzer final_analyzer(result, true, true);
+			if (!final_analyzer.IsValid())
+			{
+				std::ostringstream statuses;
+				for (TopAbs_ShapeEnum type : {
+					TopAbs_SOLID,
+					TopAbs_SHELL,
+					TopAbs_FACE,
+					TopAbs_WIRE,
+					TopAbs_EDGE })
+				{
+					for (TopExp_Explorer explorer(result, type);
+						explorer.More();
+						explorer.Next())
+					{
+						Handle(BRepCheck_Result) check = final_analyzer.Result(
+							explorer.Current());
+						if (check.IsNull())
+						{
+							continue;
+						}
+						for (BRepCheck_Status status : check->Status())
+						{
+							if (status != BRepCheck_NoError)
+							{
+								statuses << static_cast<int>(type) << ':'
+									<< static_cast<int>(status) << ',';
+							}
+						}
+					}
+				}
+				throw std::runtime_error(
+					"The complete sewn runner failed exact B-rep validation; statuses="
+						+ statuses.str() + ".");
+			}
+			GProp_GProps result_properties;
+			BRepGProp::VolumeProperties(result, result_properties);
+			if (!(std::abs(result_properties.Mass()) > Precision::Confusion()))
+			{
+				throw std::runtime_error(
+					"The complete sewn runner has no positive wall volume.");
+			}
+		}
+		trace(geometric_controls ? "runnerGeometricValidation" : "runnerStagedValidation");
+		metrics.validation_microseconds += static_cast<uint64_t>(
+			std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - validation_start).count());
+		++metrics.validation_count;
+
+		auto mapped_face = [&](const TopoDS_Face& face)
+		{
+			if (!sewing.IsModifiedSubShape(face))
+			{
+				return face;
+			}
+			TopoDS_Shape modified = sewing.ModifiedSubShape(face);
+			return modified.ShapeType() == TopAbs_FACE
+				? TopoDS::Face(modified)
+				: face;
+		};
+		replacement.start_cap = mapped_face(start_cap);
+		replacement.end_cap = mapped_face(end_cap);
+		trace("capHistory");
+		if (geometric_controls)
+		{
+			for (runner_source& source : replacement.sources)
+			{
+				for (TopoDS_Face& face : source.faces)
+				{
+					face = mapped_face(face);
+				}
+			}
+		}
+		trace("sourceHistory");
+		if (!replacement.sources.empty())
+		{
+			replacement.sources.front().faces.push_back(replacement.start_cap);
+			replacement.sources.back().faces.push_back(replacement.end_cap);
+		}
+		remap_sources_to_result_surfaces(result, replacement.sources);
+		trace("resultSurfaceRemap");
 		trace("finalValidation");
 
 		replacement.shape = result;
@@ -754,14 +1136,89 @@ fgcad_status fgcad_document_build_runner(
 		}
 		document->runner_build_cache[replacement.id] = replacement;
 		log_timing();
-		if (!document->staged_collector_id.empty())
+		store_replacement(std::move(replacement));
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_begin_runner_build(
+	fgcad_document* document,
+	const char* runner_id)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		std::string id = require_text(runner_id, "runner_id");
+		if (!document->staged_runner_id.empty()
+			|| !document->staged_collector_id.empty())
 		{
-			document->staged_runners[replacement.id] = std::move(replacement);
+			throw std::invalid_argument("Another exact publication transaction is already active.");
 		}
-		else
+		document->staged_runner_id = id;
+		document->staged_previous_runner = runner_record{};
+		document->staged_previous_runner_exists = false;
+		document->staged_runner_published = false;
+		auto previous = document->runners.find(id);
+		if (previous != document->runners.end())
 		{
-			document->runners[replacement.id] = std::move(replacement);
+			document->staged_previous_runner = previous->second;
+			document->staged_previous_runner_exists = true;
 		}
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_commit_runner_build(
+	fgcad_document* document,
+	const char* runner_id)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		std::string id = require_text(runner_id, "runner_id");
+		if (document->staged_runner_id != id
+			|| !document->staged_runner_published)
+		{
+			throw std::invalid_argument(
+				"The runner publication commit does not match a completed active transaction.");
+		}
+		document->staged_runner_id.clear();
+		document->staged_previous_runner = runner_record{};
+		document->staged_previous_runner_exists = false;
+		document->staged_runner_published = false;
+		return FGCAD_STATUS_OK;
+	});
+}
+
+fgcad_status fgcad_document_abort_runner_build(
+	fgcad_document* document,
+	const char* runner_id)
+{
+	return guarded([&]()
+	{
+		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
+		std::string id = require_text(runner_id, "runner_id");
+		if (!document->staged_runner_id.empty()
+			&& document->staged_runner_id != id)
+		{
+			throw std::invalid_argument(
+				"The runner publication abort does not match the active transaction.");
+		}
+		if (document->staged_runner_id == id && document->staged_runner_published)
+		{
+			if (document->staged_previous_runner_exists)
+			{
+				document->runners[id] = document->staged_previous_runner;
+			}
+			else
+			{
+				document->runners.erase(id);
+			}
+		}
+		document->staged_runner_id.clear();
+		document->staged_previous_runner = runner_record{};
+		document->staged_previous_runner_exists = false;
+		document->staged_runner_published = false;
 		return FGCAD_STATUS_OK;
 	});
 }
@@ -772,6 +1229,14 @@ fgcad_status fgcad_document_remove_runner(fgcad_document* document, const char* 
 	{
 		if (document == nullptr) throw std::invalid_argument("The document cannot be null.");
 		std::string id = require_text(runner_id, "runner_id");
+		if (document->staged_runner_id == id)
+		{
+			document->staged_runner_id.clear();
+			document->staged_previous_runner = runner_record{};
+			document->staged_previous_runner_exists = false;
+			document->staged_runner_published = false;
+		}
+		document->staged_runners.erase(id);
 		document->runners.erase(id);
 		document->runner_build_cache.erase(id);
 		return FGCAD_STATUS_OK;
