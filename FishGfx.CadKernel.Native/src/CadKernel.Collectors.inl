@@ -14,14 +14,9 @@ fgcad_status fgcad_document_build_collector_system(
 			throw std::invalid_argument(
 				"A collector system requires a document, system specification, and at least two inlets.");
 		}
-		if (!(system->outlet_stub_length > 0) || !(system->merge_length > 0)
-			|| !(system->overlap_length > 0) || !(system->branch_end_handle_length > 0))
+		if (!(system->branch_end_handle_length > 0))
 		{
-			throw std::invalid_argument("Collector lengths and handles must be positive.");
-		}
-		if (system->outlet_profile.kind != FGCAD_PROFILE_CIRCULAR)
-		{
-			throw std::invalid_argument("The collector outlet profile must be circular.");
+			throw std::invalid_argument("The collector branch end handle must be positive.");
 		}
 		fgcad_build_metrics metrics{};
 		metrics.revision = system->generation_revision;
@@ -749,10 +744,6 @@ fgcad_status fgcad_document_build_collector_system(
 			const fgcad_collector_system_spec& right)
 		{
 			return same_frame(left.outlet_frame, right.outlet_frame)
-				&& same_profile(left.outlet_profile, right.outlet_profile)
-				&& left.outlet_stub_length == right.outlet_stub_length
-				&& left.merge_length == right.merge_length
-				&& left.overlap_length == right.overlap_length
 				&& left.branch_end_handle_length == right.branch_end_handle_length;
 		};
 		auto same_inlet_geometry = [&](const fgcad_collector_inlet& left,
@@ -793,17 +784,11 @@ fgcad_status fgcad_document_build_collector_system(
 				+ std::to_string(system->generation_revision)
 				+ "; inlets="
 				+ std::to_string(inlet_count));
-		if (!std::isfinite(system->outlet_stub_length)
-			|| !std::isfinite(system->merge_length)
-			|| !std::isfinite(system->overlap_length)
-			|| !std::isfinite(system->branch_end_handle_length)
-			|| !(system->outlet_stub_length > 0)
-			|| !(system->merge_length > 0)
-			|| !(system->overlap_length > 0)
+		if (!std::isfinite(system->branch_end_handle_length)
 			|| !(system->branch_end_handle_length > 0))
 		{
 			throw std::invalid_argument(
-				"Collector stub, merge, overlap, and terminal-handle lengths must be finite and positive.");
+				"The collector branch end handle must be finite and positive.");
 		}
 		replacement.geometry_spec = *system;
 		replacement.inlet_specs.assign(inlets, inlets + inlet_count);
@@ -827,11 +812,6 @@ fgcad_status fgcad_document_build_collector_system(
 			<< system->outlet_frame.normal.x << ','
 			<< system->outlet_frame.normal.y << ','
 			<< system->outlet_frame.normal.z << ';'
-			<< system->outlet_profile.outer_diameter << ','
-			<< system->outlet_profile.wall_thickness << ','
-			<< system->outlet_stub_length << ','
-			<< system->merge_length << ','
-			<< system->overlap_length << ','
 			<< system->branch_end_handle_length << ';';
 		for (size_t index = 0; index < inlet_count; ++index)
 		{
@@ -936,29 +916,10 @@ fgcad_status fgcad_document_build_collector_system(
 
 		gp_Pnt outlet_origin = point(system->outlet_frame.origin);
 		gp_Dir outlet_tangent = unit(system->outlet_frame.tangent);
-		double merge_outer_radius = 0;
-		double merge_inner_radius = 0;
-		double merge_boolean_overlap = 1.5;
-		double branch_endpoint_offset = 1.5;
 		std::vector<size_t> branch_order(inlet_count);
 		for (size_t index = 0; index < inlet_count; ++index)
 		{
 			branch_order[index] = index;
-			auto inlet_radii = radii(inlets[index].profile);
-			merge_outer_radius = std::max(
-				merge_outer_radius,
-				inlet_radii.first);
-			merge_inner_radius = std::max(
-				merge_inner_radius,
-				inlet_radii.second);
-			merge_boolean_overlap = std::max(
-				merge_boolean_overlap,
-				inlet_radii.first * 0.75);
-			branch_endpoint_offset = std::max(
-				branch_endpoint_offset,
-				std::max(
-					inlets[index].profile.wall_thickness * 1.5,
-					inlet_radii.first * 0.1));
 		}
 		std::stable_sort(
 			branch_order.begin(),
@@ -980,20 +941,28 @@ fgcad_status fgcad_document_build_collector_system(
 			});
 		append_native_log(
 			"collector",
-			"Building a branch-only collector with one shared Bezier endpoint.");
-		gp_Pnt merge_start = outlet_origin.Translated(
-			-gp_Vec(outlet_tangent) * (merge_boolean_overlap * 2.0));
+			"Building a branch-only collector from outer-wall and inner-gas branch volumes with one shared Bezier endpoint.");
 		std::vector<TopoDS_Shape> outer_volumes;
 		std::vector<TopoDS_Shape> inner_volumes;
 		std::vector<TopoDS_Shape> wall_volumes;
 		std::vector<TopoDS_Face> exact_inlet_caps(inlet_count);
 		std::vector<TopoDS_Face> opening_source_faces;
+		double construction_overlap = 5.0;
+		for (size_t index = 0; index < inlet_count; ++index)
+		{
+			construction_overlap = std::max(
+				construction_overlap,
+				radii(inlets[index].profile).first * 0.75);
+		}
 		runner_source outlet_source;
 		outlet_source.id = "outlet";
 		outlet_source.kind = FGCAD_SOURCE_COLLECTOR_OUTLET;
 		outlet_source.owner_id = system_id;
 		outlet_source.feature.entry_frame = system->outlet_frame;
 		outlet_source.feature.exit_frame = system->outlet_frame;
+		std::vector<gp_Pnt> inlet_gas_samples(inlet_count);
+		gp_Pnt outlet_gas_sample;
+		bool has_outlet_gas_sample = false;
 		for (size_t order_index = 0; order_index < inlet_count; ++order_index)
 		{
 			size_t index = branch_order[order_index];
@@ -1033,25 +1002,64 @@ fgcad_status fgcad_document_build_collector_system(
 			gp_Pnt p1 = p0.Translated(
 				gp_Vec(inlet_tangent) * inlet.branch_start_handle_length);
 			double outer_radius = inlet_radii.first;
-			// Terminate every branch inside the tapered merge core.  This creates
-			// deliberate positive-volume penetration without appending a shared
-			// coincident line segment to every branch (which gives OCCT duplicate
-			// Boolean history entries and an unstable common boundary).
+			// Every branch owns its complete cubic and terminates on the same
+			// outlet frame.  Their common P2/P3 controls make the outer and inner
+			// volumes overlap before the endpoint, so the N-to-one Boolean has
+			// positive volume to merge without a separately generated trunk/stub.
+			// Continue the cubic beyond the published outlet plane so all branch
+			// volumes have a robust positive-volume intersection. Both material
+			// and gas unions are trimmed back to outlet_origin after fusion, so
+			// this construction overlap never appears in the resulting collector.
 			gp_Pnt p3 = outlet_origin.Translated(
-				-gp_Vec(outlet_tangent) * branch_endpoint_offset);
-			gp_Vec branch_radial(outlet_origin, p0);
-			branch_radial -= gp_Vec(outlet_tangent)
-				* branch_radial.Dot(gp_Vec(outlet_tangent));
-			if (branch_radial.SquareMagnitude() > Precision::SquareConfusion())
+				gp_Vec(outlet_tangent) * construction_overlap);
+			gp_Vec endpoint_radial(outlet_origin, p0);
+			endpoint_radial -= gp_Vec(outlet_tangent)
+				* endpoint_radial.Dot(gp_Vec(outlet_tangent));
+			if (endpoint_radial.SquareMagnitude() <= Precision::SquareConfusion())
 			{
-				branch_radial.Normalize();
-				double junction_spread = std::max(
-					inlet.profile.wall_thickness * 0.75,
-					outer_radius * 0.12);
-				p3.Translate(branch_radial * junction_spread);
+				endpoint_radial = gp_Vec(unit(system->outlet_frame.normal));
 			}
-			gp_Pnt p2 = p3.Translated(
+			endpoint_radial.Normalize();
+			p3.Translate(endpoint_radial * std::max(
+				inlet.profile.wall_thickness * 0.5,
+				outer_radius * 0.1));
+			gp_Pnt p2 = outlet_origin.Translated(
 				-gp_Vec(outlet_tangent) * system->branch_end_handle_length);
+			auto point_on_branch = [&](double parameter)
+			{
+				double inverse = 1.0 - parameter;
+				double p0_weight = inverse * inverse * inverse;
+				double p1_weight = 3.0 * inverse * inverse * parameter;
+				double p2_weight = 3.0 * inverse * parameter * parameter;
+				double p3_weight = parameter * parameter * parameter;
+				return gp_Pnt(
+					p0.X() * p0_weight + p1.X() * p1_weight
+						+ p2.X() * p2_weight + p3.X() * p3_weight,
+					p0.Y() * p0_weight + p1.Y() * p1_weight
+						+ p2.Y() * p2_weight + p3.Y() * p3_weight,
+					p0.Z() * p0_weight + p1.Z() * p1_weight
+						+ p2.Z() * p2_weight + p3.Z() * p3_weight);
+			};
+			// Sample the actual cubic rather than its tangent-line approximation.
+			// A strongly curved branch can leave that line quickly enough for an
+			// otherwise valid gas channel to fail its connectivity probe.
+			inlet_gas_samples[index] = point_on_branch(0.05);
+			if (!has_outlet_gas_sample)
+			{
+				for (double parameter = 0.95; parameter >= 0.5; parameter -= 0.05)
+				{
+					gp_Pnt candidate = point_on_branch(parameter);
+					double outlet_projection = gp_Vec(
+						outlet_origin,
+						candidate).Dot(gp_Vec(outlet_tangent));
+					if (outlet_projection < -Precision::Confusion() * 10.0)
+					{
+						outlet_gas_sample = candidate;
+						has_outlet_gas_sample = true;
+						break;
+					}
+				}
+			}
 			auto evaluation_start = std::chrono::steady_clock::now();
 			fgcad_bezier_evaluation evaluation{};
 			try
@@ -1104,6 +1112,10 @@ fgcad_status fgcad_document_build_collector_system(
 			TopoDS_Shape branch_inner = branch_inner_sweep.solid;
 			opening_source_faces.push_back(branch_outer_sweep.first);
 			opening_source_faces.push_back(branch_inner_sweep.first);
+			opening_source_faces.push_back(branch_outer_sweep.last);
+			opening_source_faces.push_back(branch_inner_sweep.last);
+			outlet_source.faces.push_back(branch_outer_sweep.last);
+			outlet_source.faces.push_back(branch_inner_sweep.last);
 			auto branch_validation_start = std::chrono::steady_clock::now();
 			if (solid_count(branch_outer) != 1
 				|| solid_count(branch_inner) != 1)
@@ -1147,105 +1159,14 @@ fgcad_status fgcad_document_build_collector_system(
 			inlet_source.owner_id = system_id;
 			replacement.sources.push_back(std::move(inlet_source));
 		}
-		gp_Ax2 merge_start_axes(
-			merge_start,
-			outlet_tangent,
-			unit(system->outlet_frame.normal));
-		gp_Ax2 merge_end_axes(
-			outlet_origin,
-			outlet_tangent,
-			unit(system->outlet_frame.normal));
-		double merge_transition_allowance = std::max(
-			0.25,
-			system->outlet_profile.wall_thickness * 0.25);
-		auto circle_wire = [](const gp_Ax2& axes, double radius)
-		{
-			return BRepBuilderAPI_MakeWire(
-				BRepBuilderAPI_MakeEdge(gp_Circ(axes, radius)).Edge()).Wire();
-		};
-		auto merge_loft_start = std::chrono::steady_clock::now();
-		BRepOffsetAPI_ThruSections merge_outer_loft(true, false);
-		merge_outer_loft.CheckCompatibility(true);
-		merge_outer_loft.AddWire(circle_wire(
-			merge_start_axes,
-			merge_outer_radius + merge_transition_allowance));
-		merge_outer_loft.AddWire(circle_wire(merge_end_axes, merge_outer_radius));
-		merge_outer_loft.Build();
-		BRepOffsetAPI_ThruSections merge_inner_loft(true, false);
-		merge_inner_loft.CheckCompatibility(true);
-		merge_inner_loft.AddWire(circle_wire(
-			merge_start_axes,
-			std::max(
-				Precision::Confusion() * 10.0,
-				merge_inner_radius - merge_transition_allowance)));
-		merge_inner_loft.AddWire(circle_wire(
-			merge_end_axes,
-			merge_inner_radius));
-		merge_inner_loft.Build();
-		metrics.loft_microseconds += static_cast<uint64_t>(
-			std::chrono::duration_cast<std::chrono::microseconds>(
-				std::chrono::steady_clock::now() - merge_loft_start).count());
-		metrics.loft_count += 2;
-		if (!merge_outer_loft.IsDone() || !merge_inner_loft.IsDone())
-		{
-			throw std::runtime_error(
-				"The collector tapered merge core could not be built.");
-		}
-		auto finite_loft_solid = [](const TopoDS_Shape& shape, const char* description)
-		{
-			TopoDS_Solid solid;
-			size_t count = 0;
-			for (TopExp_Explorer explorer(shape, TopAbs_SOLID);
-				explorer.More();
-				explorer.Next())
-			{
-				solid = TopoDS::Solid(explorer.Current());
-				++count;
-			}
-			if (count != 1 || solid.IsNull() || !BRepLib::OrientClosedSolid(solid))
-			{
-				throw std::runtime_error(
-					std::string(description) + " could not be oriented as one finite solid.");
-			}
-			return TopoDS_Shape(solid);
-		};
-		TopoDS_Shape merge_outer = finite_loft_solid(
-			merge_outer_loft.Shape(),
-			"The collector outer merge core");
-		TopoDS_Shape merge_inner = finite_loft_solid(
-			merge_inner_loft.Shape(),
-			"The collector inner merge core");
-		if (merge_outer_loft.FirstShape().ShapeType() != TopAbs_FACE
-			|| merge_outer_loft.LastShape().ShapeType() != TopAbs_FACE
-			|| merge_inner_loft.FirstShape().ShapeType() != TopAbs_FACE
-			|| merge_inner_loft.LastShape().ShapeType() != TopAbs_FACE)
-		{
-			throw std::runtime_error(
-				"The collector merge loft did not retain exact section boundaries.");
-		}
-		collector_sweep_volume merge_outer_sweep{
-			merge_outer,
-			TopoDS::Face(merge_outer_loft.FirstShape()),
-			TopoDS::Face(merge_outer_loft.LastShape()) };
-		collector_sweep_volume merge_inner_sweep{
-			merge_inner,
-			TopoDS::Face(merge_inner_loft.FirstShape()),
-			TopoDS::Face(merge_inner_loft.LastShape()) };
-		opening_source_faces.push_back(merge_outer_sweep.last);
-		opening_source_faces.push_back(merge_inner_sweep.last);
-		outer_volumes.insert(
-			outer_volumes.begin(),
-			merge_outer);
-		inner_volumes.insert(
-			inner_volumes.begin(),
-			merge_inner);
-		wall_volumes.insert(wall_volumes.begin(), merge_outer);
-		outlet_source.faces = shape_faces(merge_outer);
-		for (const TopoDS_Face& face : shape_faces(merge_inner))
-		{
-			outlet_source.faces.push_back(face);
-		}
 		replacement.sources.push_back(std::move(outlet_source));
+		double minimum_wall_thickness = inlets[0].profile.wall_thickness;
+		for (size_t index = 1; index < inlet_count; ++index)
+		{
+			minimum_wall_thickness = std::min(
+				minimum_wall_thickness,
+				inlets[index].profile.wall_thickness);
+		}
 
 		auto legacy_material_boundary_assembly = [&]() -> TopoDS_Shape
 		{
@@ -1266,7 +1187,7 @@ fgcad_status fgcad_document_build_collector_system(
 		cells.SetRunParallel(true);
 		double cell_fuzzy_tolerance = std::max(
 			Precision::Confusion() * 10.0,
-			system->outlet_profile.wall_thickness * 1.0e-4);
+			minimum_wall_thickness * 1.0e-4);
 		cells.SetFuzzyValue(cell_fuzzy_tolerance);
 		cells.Perform();
 		if (cells.HasErrors())
@@ -1599,7 +1520,7 @@ fgcad_status fgcad_document_build_collector_system(
 		collector_wall_components = wall_volumes;
 		double cell_fuzzy_tolerance = std::max(
 			Precision::Confusion() * 10.0,
-			system->outlet_profile.wall_thickness * 1.0e-4);
+			minimum_wall_thickness * 1.0e-4);
 		auto merge_start_time = std::chrono::steady_clock::now();
 		TopoDS_Shape cell_result;
 		#if 0
@@ -2307,65 +2228,68 @@ fgcad_status fgcad_document_build_collector_system(
 		++metrics.merge_boolean_count;
 		#endif
 		{
-			NCollection_List<TopoDS_Shape> merge_arguments;
-			NCollection_List<TopoDS_Shape> inner_arguments;
-			for (const TopoDS_Shape& outer : outer_volumes)
+			TopoDS_Shape untrimmed_outer_union = fuse_all(
+				outer_volumes,
+				false,
+				nullptr,
+				cell_fuzzy_tolerance,
+				true);
+			++metrics.merge_boolean_count;
+			TopoDS_Shape untrimmed_gas_union = fuse_all(
+				inner_volumes,
+				false,
+				nullptr,
+				cell_fuzzy_tolerance,
+				true);
+			++metrics.merge_boolean_count;
+			if (solid_count(untrimmed_outer_union) != 1
+				|| solid_count(untrimmed_gas_union) != 1)
 			{
-				merge_arguments.Append(outer);
-			}
-			for (const TopoDS_Shape& inner : inner_volumes)
-			{
-				merge_arguments.Append(inner);
-				inner_arguments.Append(inner);
-			}
-			BOPAlgo_CellsBuilder wall_cells;
-			wall_cells.SetArguments(merge_arguments);
-			wall_cells.SetNonDestructive(true);
-			wall_cells.SetRunParallel(true);
-			wall_cells.SetUseOBB(true);
-			wall_cells.SetFuzzyValue(cell_fuzzy_tolerance);
-			wall_cells.Perform();
-			if (wall_cells.HasErrors())
-			{
-				std::ostringstream errors;
-				wall_cells.DumpErrors(errors);
 				throw std::runtime_error(
-					"The hollow collector N-to-one partition failed: " + errors.str());
+					"The temporarily overlapped collector branches did not form one material and one gas union.");
 			}
-			for (const TopoDS_Shape& outer : outer_volumes)
+			TopoDS_Face outlet_plane = BRepBuilderAPI_MakeFace(
+				gp_Pln(outlet_origin, outlet_tangent)).Face();
+			TopoDS_Solid upstream_half_space = BRepPrimAPI_MakeHalfSpace(
+				outlet_plane,
+				outlet_origin.Translated(-gp_Vec(outlet_tangent))).Solid();
+			auto trim_to_outlet = [&](const TopoDS_Shape& shape,
+				const char* description)
 			{
-				NCollection_List<TopoDS_Shape> outer_argument;
-				outer_argument.Append(outer);
-				wall_cells.AddToResult(
-					outer_argument,
-					inner_arguments,
-					1,
-					false);
-			}
-			wall_cells.RemoveInternalBoundaries();
-			if (wall_cells.HasErrors() || wall_cells.Shape().IsNull())
+				NCollection_List<TopoDS_Shape> arguments;
+				NCollection_List<TopoDS_Shape> tools;
+				arguments.Append(shape);
+				tools.Append(upstream_half_space);
+				BRepAlgoAPI_Common trim;
+				trim.SetArguments(arguments);
+				trim.SetTools(tools);
+				trim.SetNonDestructive(true);
+				trim.SetRunParallel(true);
+				trim.SetUseOBB(true);
+				trim.SetToFillHistory(false);
+				trim.SetFuzzyValue(cell_fuzzy_tolerance);
+				trim.Build();
+				++metrics.cut_count;
+				if (!trim.IsDone() || trim.Shape().IsNull()
+					|| solid_count(trim.Shape()) != 1)
+				{
+					throw std::runtime_error(
+						std::string(description)
+							+ " could not be trimmed cleanly at the outlet plane.");
+				}
+				return trim.Shape();
+			};
+			TopoDS_Shape outer_union = trim_to_outlet(
+				untrimmed_outer_union,
+				"The collector outer-wall union");
+			TopoDS_Shape gas_union = trim_to_outlet(
+				untrimmed_gas_union,
+				"The collector gas union");
+			if (solid_count(outer_union) != 1)
 			{
-				std::ostringstream errors;
-				wall_cells.DumpErrors(errors);
 				throw std::runtime_error(
-					"The hollow collector N-to-one wall selection failed: "
-						+ errors.str());
+					"The collector outer branch Boolean did not produce one connected solid.");
 			}
-			TopoDS_Shape selected_wall = wall_cells.Shape();
-			wall_cells.RemoveAllFromResult();
-			for (const TopoDS_Shape& inner : inner_volumes)
-			{
-				NCollection_List<TopoDS_Shape> inner_argument;
-				NCollection_List<TopoDS_Shape> no_avoidance;
-				inner_argument.Append(inner);
-				wall_cells.AddToResult(
-					inner_argument,
-					no_avoidance,
-					2,
-					false);
-			}
-			wall_cells.RemoveInternalBoundaries();
-			TopoDS_Shape gas_union = wall_cells.Shape();
 			TopoDS_Solid connected_gas;
 			size_t gas_solid_count = 0;
 			for (TopExp_Explorer gas_explorer(gas_union, TopAbs_SOLID);
@@ -2375,17 +2299,32 @@ fgcad_status fgcad_document_build_collector_system(
 				connected_gas = TopoDS::Solid(gas_explorer.Current());
 				++gas_solid_count;
 			}
-			if (wall_cells.HasErrors()
-				|| gas_solid_count != 1
+			if (gas_solid_count != 1
 				|| connected_gas.IsNull()
 				|| !BRepLib::OrientClosedSolid(connected_gas))
 			{
-				std::ostringstream errors;
-				wall_cells.DumpErrors(errors);
 				throw std::runtime_error(
 					"The collector gas-flow union is not one connected solid; solids="
-						+ std::to_string(gas_solid_count)
-						+ "; errors=" + errors.str());
+						+ std::to_string(gas_solid_count) + ".");
+			}
+			NCollection_List<TopoDS_Shape> cut_arguments;
+			NCollection_List<TopoDS_Shape> cut_tools;
+			cut_arguments.Append(outer_union);
+			cut_tools.Append(gas_union);
+			BRepAlgoAPI_Cut wall_cut;
+			wall_cut.SetArguments(cut_arguments);
+			wall_cut.SetTools(cut_tools);
+			wall_cut.SetNonDestructive(true);
+			wall_cut.SetRunParallel(true);
+			wall_cut.SetUseOBB(true);
+			wall_cut.SetToFillHistory(false);
+			wall_cut.SetFuzzyValue(cell_fuzzy_tolerance);
+			wall_cut.Build();
+			++metrics.cut_count;
+			if (!wall_cut.IsDone() || wall_cut.Shape().IsNull())
+			{
+				throw std::runtime_error(
+					"The collector outer wall could not be cut by the connected gas volume.");
 			}
 			auto require_inside_connected_gas = [&](const gp_Pnt& sample,
 				const std::string& opening)
@@ -2397,42 +2336,58 @@ fgcad_status fgcad_document_build_collector_system(
 				++metrics.classification_count;
 				if (classifier.State() != TopAbs_IN)
 				{
+					std::ostringstream detail;
+					detail << " sample=" << sample.X() << '/'
+						<< sample.Y() << '/' << sample.Z()
+						<< "; unionState="
+						<< static_cast<int>(classifier.State())
+						<< "; branchStates=";
+					for (const TopoDS_Shape& inner_volume : inner_volumes)
+					{
+						TopoDS_Solid inner_solid;
+						for (TopExp_Explorer explorer(inner_volume, TopAbs_SOLID);
+							explorer.More();
+							explorer.Next())
+						{
+							inner_solid = TopoDS::Solid(explorer.Current());
+							break;
+						}
+						if (inner_solid.IsNull())
+						{
+							detail << "null,";
+							continue;
+						}
+						BRepLib::OrientClosedSolid(inner_solid);
+						BRepClass3d_SolidClassifier branch_classifier(
+							inner_solid,
+							sample,
+							cell_fuzzy_tolerance);
+						detail << static_cast<int>(branch_classifier.State()) << ',';
+					}
 					throw std::runtime_error(
 						"The collector gas-flow union does not contain the "
-							+ opening + " interior sample.");
+							+ opening + " interior sample;" + detail.str());
 				}
 			};
 			for (size_t index = 0; index < inlet_count; ++index)
 			{
-				auto inlet_radii = radii(inlets[index].profile);
-				double sample_distance = std::max(
-					cell_fuzzy_tolerance * 10.0,
-					std::min(
-						inlets[index].branch_start_handle_length * 0.1,
-						inlet_radii.second * 0.25));
 				require_inside_connected_gas(
-					point(inlets[index].frame.origin).Translated(
-						gp_Vec(unit(inlets[index].frame.tangent)) * sample_distance),
+					inlet_gas_samples[index],
 					"inlet " + std::to_string(index + 1));
 			}
-			auto outlet_inner_radius = radii(system->outlet_profile).second;
-			double outlet_sample_distance = std::max(
-				cell_fuzzy_tolerance * 10.0,
-				std::min(
-					system->outlet_stub_length * 0.1,
-					outlet_inner_radius * 0.25));
+			if (!has_outlet_gas_sample)
+			{
+				throw std::runtime_error(
+					"The collector has no branch from which to validate its outlet gas path.");
+			}
 			require_inside_connected_gas(
-				point(system->outlet_frame.origin).Translated(
-					-gp_Vec(unit(system->outlet_frame.tangent))
-						* outlet_sample_distance),
+				outlet_gas_sample,
 				"outlet");
-			cell_result = selected_wall;
-			metrics.classification_count += static_cast<uint32_t>(outer_volumes.size());
+			cell_result = wall_cut.Shape();
 		}
 		metrics.merge_microseconds += static_cast<uint64_t>(
 			std::chrono::duration_cast<std::chrono::microseconds>(
 				std::chrono::steady_clock::now() - merge_start_time).count());
-		++metrics.merge_boolean_count;
 		TopoDS_Solid collector_solid;
 		size_t collector_solid_count = 0;
 		double collector_solid_volume = 0;
@@ -2501,6 +2456,21 @@ fgcad_status fgcad_document_build_collector_system(
 		const TopAbs_Orientation collector_cell_orientation = collector_solid.Orientation();
 		collector_solid.Orientation(TopAbs_FORWARD);
 		collector_wall = collector_solid;
+		if (!BRepCheck_Analyzer(collector_wall, true, true).IsValid())
+		{
+			ShapeFix_Shape wall_repair(collector_wall);
+			wall_repair.SetPrecision(cell_fuzzy_tolerance);
+			wall_repair.Perform();
+			TopoDS_Shape repaired_wall = wall_repair.Shape();
+			if (repaired_wall.IsNull()
+				|| solid_count(repaired_wall) != 1
+				|| !BRepCheck_Analyzer(repaired_wall, true, true).IsValid())
+			{
+				throw std::runtime_error(
+					"The branch-only collector wall is not a valid B-rep before runner assembly.");
+			}
+			collector_wall = repaired_wall;
+		}
 		std::array<size_t, 4> collector_wall_face_orientations{};
 		std::array<size_t, 4> collector_shell_face_orientations{};
 		for (TopExp_Explorer face_explorer(collector_wall, TopAbs_FACE);
@@ -2537,7 +2507,7 @@ fgcad_status fgcad_document_build_collector_system(
 		remap_sources_to_result_surfaces(collector_wall, replacement.sources);
 		append_native_log(
 			"collector",
-			"Collector wall published from one N-to-one general fuse: outerInputs="
+			"Collector wall published from branch-only Boolean construction: outerInputs="
 				+ std::to_string(outer_volumes.size())
 				+ "; innerInputs=" + std::to_string(inner_volumes.size())
 				+ "; fuzzyTolerance=" + std::to_string(cell_fuzzy_tolerance)
@@ -2553,7 +2523,7 @@ fgcad_status fgcad_document_build_collector_system(
 				+ std::to_string(collector_shell_face_orientations[1]) + "/"
 				+ std::to_string(collector_shell_face_orientations[2]) + "/"
 				+ std::to_string(collector_shell_face_orientations[3])
-				+ "; mergeBooleans=1; interfaceBooleans=0.");
+				+ "; outerFuses=1; gasFuses=1; outletTrims=2; wallCuts=1; interfaceBooleans=0.");
 		collector_couplers.clear();
 		}
 		replacement.wall_shape = collector_wall;
@@ -2562,7 +2532,7 @@ fgcad_status fgcad_document_build_collector_system(
 		replacement.collector_sources = replacement.sources;
 		replacement.has_wall_cache = true;
 		if (collector_wall_components.size()
-			!= replacement.runner_ids.size() + 1)
+			!= replacement.runner_ids.size())
 		{
 			throw std::runtime_error(
 				"The collector wall component cache is incomplete.");
@@ -2587,6 +2557,23 @@ fgcad_status fgcad_document_build_collector_system(
 			}
 			members.push_back(member);
 		}
+		std::vector<TopoDS_Shape> direct_system_components{ collector_wall };
+		for (const runner_record* member : members)
+		{
+			direct_system_components.push_back(member->shape);
+		}
+		TopoDS_Shape direct_system_fuse = fuse_all(
+			direct_system_components,
+			true,
+			nullptr,
+			std::max(Precision::Confusion() * 10.0, 1.0e-4),
+			true);
+		if (solid_count(direct_system_fuse) != 1
+			|| !BRepCheck_Analyzer(direct_system_fuse, true, true).IsValid())
+		{
+			throw std::runtime_error(
+				"Direct Boolean runner/collector assembly did not produce one valid solid.");
+		}
 		if (std::any_of(
 			document->staged_runners.begin(),
 			document->staged_runners.end(),
@@ -2601,833 +2588,15 @@ fgcad_status fgcad_document_build_collector_system(
 			throw std::runtime_error(
 				"The staged generation contains runners outside this collector system.");
 		}
-		auto face_area = [](const TopoDS_Face& face)
-		{
-			GProp_GProps properties;
-			BRepGProp::SurfaceProperties(face, properties);
-			return std::abs(properties.Mass());
-		};
-		auto face_center = [](const TopoDS_Face& face)
-		{
-			GProp_GProps properties;
-			BRepGProp::SurfaceProperties(face, properties);
-			return properties.CentreOfMass();
-		};
-		auto count_wires = [](const TopoDS_Face& face)
-		{
-			size_t count = 0;
-			for (TopExp_Explorer explorer(face, TopAbs_WIRE);
-				explorer.More();
-				explorer.Next())
-			{
-				++count;
-			}
-			return count;
-		};
-		auto edge_support_gap = [](const TopoDS_Edge& first, const TopoDS_Edge& second)
-		{
-			BRepAdaptor_Curve first_curve(first);
-			BRepAdaptor_Curve second_curve(second);
-			if (first_curve.GetType() == GeomAbs_Circle
-				&& second_curve.GetType() == GeomAbs_Circle)
-			{
-				gp_Circ first_circle = first_curve.Circle();
-				gp_Circ second_circle = second_curve.Circle();
-				double axis_dot = std::abs(
-					first_circle.Axis().Direction().Dot(second_circle.Axis().Direction()));
-				double axis_gap = std::max(first_circle.Radius(), second_circle.Radius())
-					* std::sqrt(std::max(0.0, 1.0 - axis_dot * axis_dot));
-				return std::max({
-					first_circle.Location().Distance(second_circle.Location()),
-					std::abs(first_circle.Radius() - second_circle.Radius()),
-					axis_gap
-				});
-			}
-			double first_start = first_curve.FirstParameter();
-			double first_end = first_curve.LastParameter();
-			double second_geometry_start = 0;
-			double second_geometry_end = 0;
-			Handle(Geom_Curve) second_geometry = BRep_Tool::Curve(
-				second,
-				second_geometry_start,
-				second_geometry_end);
-			if (second_geometry.IsNull())
-			{
-				return std::numeric_limits<double>::infinity();
-			}
-			double maximum_gap = 0;
-			for (int sample = 0; sample <= 8; ++sample)
-			{
-				double parameter = first_start
-					+ (first_end - first_start) * static_cast<double>(sample) / 8.0;
-				GeomAPI_ProjectPointOnCurve projection(
-					first_curve.Value(parameter),
-					second_geometry,
-					second_curve.FirstParameter(),
-					second_curve.LastParameter());
-				if (projection.NbPoints() == 0)
-				{
-					return std::numeric_limits<double>::infinity();
-				}
-				maximum_gap = std::max(maximum_gap, projection.LowerDistance());
-			}
-			return maximum_gap;
-		};
-		auto boundary_gap = [&](const TopoDS_Face& first, const TopoDS_Face& second)
-		{
-			std::vector<TopoDS_Edge> first_edges;
-			std::vector<TopoDS_Edge> second_edges;
-			for (TopExp_Explorer explorer(first, TopAbs_EDGE);
-				explorer.More();
-				explorer.Next())
-			{
-				first_edges.push_back(TopoDS::Edge(explorer.Current()));
-			}
-			for (TopExp_Explorer explorer(second, TopAbs_EDGE);
-				explorer.More();
-				explorer.Next())
-			{
-				second_edges.push_back(TopoDS::Edge(explorer.Current()));
-			}
-			auto directed_gap = [&](const std::vector<TopoDS_Edge>& from,
-				const std::vector<TopoDS_Edge>& to)
-			{
-				double result = 0;
-				for (const TopoDS_Edge& source : from)
-				{
-					double best = std::numeric_limits<double>::infinity();
-					for (const TopoDS_Edge& target : to)
-					{
-						best = std::min(best, edge_support_gap(source, target));
-					}
-					result = std::max(result, best);
-				}
-				return result;
-			};
-			return std::max(
-				directed_gap(first_edges, second_edges),
-				directed_gap(second_edges, first_edges));
-		};
-		auto boundary_partition_gap = [&](const TopoDS_Face& reference,
-			const std::vector<TopoDS_Face>& partition)
-		{
-			struct edge_occurrence
-			{
-				TopoDS_Edge edge;
-				size_t count{};
-			};
-			std::vector<edge_occurrence> partition_edges;
-			for (const TopoDS_Face& face : partition)
-			{
-				for (TopExp_Explorer explorer(face, TopAbs_EDGE);
-					explorer.More();
-					explorer.Next())
-				{
-					TopoDS_Edge edge = TopoDS::Edge(explorer.Current());
-					auto occurrence = std::find_if(
-						partition_edges.begin(),
-						partition_edges.end(),
-						[&](const edge_occurrence& candidate)
-						{
-							return candidate.edge.IsSame(edge);
-						});
-					if (occurrence == partition_edges.end())
-					{
-						partition_edges.push_back({ edge, 1 });
-					}
-					else
-					{
-						++occurrence->count;
-					}
-				}
-			}
-			std::vector<TopoDS_Edge> reference_edges;
-			std::vector<TopoDS_Edge> exterior_partition_edges;
-			for (TopExp_Explorer explorer(reference, TopAbs_EDGE);
-				explorer.More();
-				explorer.Next())
-			{
-				reference_edges.push_back(TopoDS::Edge(explorer.Current()));
-			}
-			for (const edge_occurrence& occurrence : partition_edges)
-			{
-				if (occurrence.count == 1)
-				{
-					exterior_partition_edges.push_back(occurrence.edge);
-				}
-			}
-			auto directed_gap = [&](const std::vector<TopoDS_Edge>& from,
-				const std::vector<TopoDS_Edge>& to)
-			{
-				double result = 0;
-				for (const TopoDS_Edge& source : from)
-				{
-					double best = std::numeric_limits<double>::infinity();
-					for (const TopoDS_Edge& target : to)
-					{
-						best = std::min(best, edge_support_gap(source, target));
-					}
-					result = std::max(result, best);
-				}
-				return result;
-			};
-			return std::max(
-				directed_gap(reference_edges, exterior_partition_edges),
-				directed_gap(exterior_partition_edges, reference_edges));
-		};
-		auto find_interface_caps = [&](const TopoDS_Shape& shape,
-			const fgcad_frame& frame,
-			double expected_area,
-			double outer_radius,
-			const char* owner)
-		{
-			std::vector<TopoDS_Face> selected;
-			size_t candidate_count = 0;
-			gp_Pnt origin = point(frame.origin);
-			gp_Dir tangent = unit(frame.tangent);
-			double plane_tolerance = std::max(
-				Precision::Confusion() * 10.0,
-				outer_radius * 1.0e-6);
-			for (TopExp_Explorer explorer(shape, TopAbs_FACE);
-				explorer.More();
-				explorer.Next())
-			{
-				TopoDS_Face candidate = TopoDS::Face(explorer.Current());
-				BRepAdaptor_Surface surface(candidate, true);
-				if (surface.GetType() != GeomAbs_Plane)
-				{
-					continue;
-				}
-				gp_Pln plane = surface.Plane();
-				double alignment = std::abs(
-					plane.Axis().Direction().Dot(tangent));
-				if (alignment < 1.0 - 1.0e-8)
-				{
-					continue;
-				}
-				++candidate_count;
-				double plane_gap = plane.Distance(origin);
-				gp_Vec center_offset(origin, face_center(candidate));
-				double axial = center_offset.Dot(gp_Vec(tangent));
-				double radial = (center_offset - gp_Vec(tangent) * axial).Magnitude();
-				if (plane_gap <= plane_tolerance
-					&& radial <= outer_radius * 1.05)
-				{
-					selected.push_back(candidate);
-				}
-			}
-			double selected_area = 0;
-			for (const TopoDS_Face& face : selected)
-			{
-				selected_area += face_area(face);
-			}
-			double allowed_area_error = std::max(
-				1.0e-4,
-				expected_area * 1.0e-4);
-			if (selected.empty()
-				|| std::abs(selected_area - expected_area) > allowed_area_error)
-			{
-				throw std::runtime_error(
-					std::string(owner)
-					+ " has no complete annular interface partition at the constrained runner endpoint; candidates="
-					+ std::to_string(candidate_count)
-					+ "; selectedFaces=" + std::to_string(selected.size())
-					+ "; selectedArea=" + std::to_string(selected_area)
-					+ "; expectedArea=" + std::to_string(expected_area) + ".");
-			}
-			return selected;
-		};
-
-		std::vector<std::vector<TopoDS_Face>> collector_caps_by_inlet;
-		std::vector<TopoDS_Face> collector_caps;
-		std::vector<TopoDS_Face> runner_caps;
-		collector_caps_by_inlet.reserve(members.size());
-		runner_caps.reserve(members.size());
+		auto final_validation_start = std::chrono::steady_clock::now();
+		TopoDS_Shape fused = direct_system_fuse;
 		double measured_gap = 0;
-		double maximum_source_tolerance = Precision::Confusion();
-		auto include_tolerances = [&](const TopoDS_Shape& shape)
-		{
-			for (TopExp_Explorer explorer(shape, TopAbs_EDGE);
-				explorer.More();
-				explorer.Next())
-			{
-				maximum_source_tolerance = std::max(
-					maximum_source_tolerance,
-					BRep_Tool::Tolerance(TopoDS::Edge(explorer.Current())));
-			}
-			for (TopExp_Explorer explorer(shape, TopAbs_VERTEX);
-				explorer.More();
-				explorer.Next())
-			{
-				maximum_source_tolerance = std::max(
-					maximum_source_tolerance,
-					BRep_Tool::Tolerance(TopoDS::Vertex(explorer.Current())));
-			}
-		};
-		for (size_t index = 0; index < members.size(); ++index)
-		{
-			const runner_record& member = *members[index];
-			if (member.end_cap.IsNull())
-			{
-				throw std::runtime_error(
-					"A collector member runner did not retain its exact terminal cap.");
-			}
-			const std::string& runner_id = replacement.runner_ids[index];
-			auto inlet = std::find_if(
-				inlets,
-				inlets + inlet_count,
-				[&](const fgcad_collector_inlet& candidate)
-				{
-					return require_text(candidate.runner_id, "runner_id") == runner_id;
-				});
-			if (inlet == inlets + inlet_count)
-			{
-				throw std::runtime_error(
-					"A collector member runner has no matching inlet specification.");
-			}
-			double expected_area = face_area(member.end_cap);
-			TopoDS_Face runner_cap = member.end_cap;
-			double outer_radius = inlet->profile.kind == FGCAD_PROFILE_CIRCULAR
-				? inlet->profile.outer_diameter * 0.5
-				: inlet->profile.equivalent_radius + inlet->profile.wall_thickness;
-			std::vector<TopoDS_Face> inlet_caps = find_interface_caps(
-				collector_wall,
-				inlet->frame,
-				expected_area,
-				outer_radius,
-				"The collector");
-			measured_gap = std::max(
-				measured_gap,
-				boundary_partition_gap(runner_cap, inlet_caps));
-			runner_caps.push_back(runner_cap);
-			collector_caps_by_inlet.push_back(inlet_caps);
-			include_tolerances(runner_cap);
-			for (const TopoDS_Face& collector_cap : inlet_caps)
-			{
-				collector_caps.push_back(collector_cap);
-				include_tolerances(collector_cap);
-			}
-		}
-
-		Bnd_Box assembly_bounds;
-		BRepBndLib::Add(collector_wall, assembly_bounds, false);
-		for (const runner_record* member : members)
-		{
-			BRepBndLib::Add(member->shape, assembly_bounds, false);
-		}
-		double local_scale = 1.0;
-		if (!assembly_bounds.IsVoid())
-		{
-			double minimum_x = 0;
-			double minimum_y = 0;
-			double minimum_z = 0;
-			double maximum_x = 0;
-			double maximum_y = 0;
-			double maximum_z = 0;
-			assembly_bounds.Get(
-				minimum_x,
-				minimum_y,
-				minimum_z,
-				maximum_x,
-				maximum_y,
-				maximum_z);
-			local_scale = std::max(
-				1.0,
-				gp_Pnt(minimum_x, minimum_y, minimum_z).Distance(
-					gp_Pnt(maximum_x, maximum_y, maximum_z)));
-		}
-		double minimum_wall = system->outlet_profile.wall_thickness;
-		for (size_t index = 0; index < inlet_count; ++index)
-		{
-			minimum_wall = std::min(
-				minimum_wall,
-				inlets[index].profile.wall_thickness);
-		}
-		double selected_tolerance = std::max({
-			Precision::Confusion(),
-			maximum_source_tolerance,
-			local_scale * 1.0e-10,
-			measured_gap * 1.05
-		});
+		double selected_tolerance = std::max(
+			Precision::Confusion() * 10.0,
+			1.0e-4);
 		metrics.measured_gap = measured_gap;
 		metrics.selected_tolerance = selected_tolerance;
-		double tolerance_ceiling = std::min(
-			minimum_wall * 0.05,
-			std::max(1.0e-4, local_scale * 2.0e-5));
-		if (measured_gap > tolerance_ceiling || selected_tolerance > tolerance_ceiling)
-		{
-			throw std::runtime_error(
-				"A runner/collector interface gap exceeds the wall-scale sewing safety limit; "
-				"measuredGap=" + std::to_string(measured_gap)
-				+ "; selectedTolerance=" + std::to_string(selected_tolerance)
-				+ "; ceiling=" + std::to_string(tolerance_ceiling) + ".");
-		}
-
-		auto add_unique_face = [](std::vector<TopoDS_Face>& faces, const TopoDS_Face& face)
-		{
-			if (std::none_of(
-				faces.begin(),
-				faces.end(),
-				[&](const TopoDS_Face& existing) { return existing.IsSame(face); }))
-			{
-				faces.push_back(face);
-			}
-		};
-		auto adjacent_faces = [&](const TopoDS_Shape& owner,
-			const std::vector<TopoDS_Face>& caps)
-		{
-			std::vector<TopoDS_Face> result;
-			for (const TopoDS_Face& cap : caps)
-			{
-				for (TopExp_Explorer cap_edges(cap, TopAbs_EDGE);
-					cap_edges.More();
-					cap_edges.Next())
-				{
-					TopoDS_Edge cap_edge = TopoDS::Edge(cap_edges.Current());
-					for (TopExp_Explorer face_explorer(owner, TopAbs_FACE);
-						face_explorer.More();
-						face_explorer.Next())
-					{
-						TopoDS_Face face = TopoDS::Face(face_explorer.Current());
-						if (std::any_of(
-							caps.begin(),
-							caps.end(),
-							[&](const TopoDS_Face& candidate)
-							{
-								return candidate.IsSame(face);
-							}))
-						{
-							continue;
-						}
-						for (TopExp_Explorer face_edges(face, TopAbs_EDGE);
-							face_edges.More();
-							face_edges.Next())
-						{
-							if (cap_edge.IsSame(face_edges.Current()))
-							{
-								add_unique_face(result, face);
-								break;
-							}
-						}
-					}
-				}
-			}
-			return result;
-		};
-		std::vector<TopoDS_Face> collector_interface_faces;
-		std::vector<std::vector<TopoDS_Face>> collector_interface_faces_by_inlet(
-			members.size());
-		std::vector<std::vector<TopoDS_Face>> runner_interface_faces(members.size());
-		for (size_t index = 0; index < members.size(); ++index)
-		{
-			collector_interface_faces_by_inlet[index] = adjacent_faces(
-				collector_wall,
-				collector_caps_by_inlet[index]);
-			for (const TopoDS_Face& face : collector_interface_faces_by_inlet[index])
-			{
-				add_unique_face(collector_interface_faces, face);
-			}
-			runner_interface_faces[index] = adjacent_faces(
-				members[index]->shape,
-				{ runner_caps[index] });
-			if (runner_interface_faces[index].size() < 2)
-			{
-				throw std::runtime_error(
-					"A runner terminal boundary did not retain both wall faces.");
-			}
-		}
-		std::vector<std::pair<TopoDS_Edge, TopoDS_Shape>> boundary_edge_replacements;
-		size_t contiguous_interface_edge_count = 0;
-		auto retain_boundary_replacements = [&](
-			BRepBuilderAPI_Sewing& sewing,
-			const TopoDS_Face& face)
-		{
-			for (TopExp_Explorer edge_explorer(face, TopAbs_EDGE);
-				edge_explorer.More();
-				edge_explorer.Next())
-			{
-				TopoDS_Edge edge = TopoDS::Edge(edge_explorer.Current());
-				if (!sewing.IsModifiedSubShape(edge))
-				{
-					continue;
-				}
-				TopoDS_Shape modified = sewing.ModifiedSubShape(edge);
-				if (modified.IsNull())
-				{
-					continue;
-				}
-				auto existing = std::find_if(
-					boundary_edge_replacements.begin(),
-					boundary_edge_replacements.end(),
-					[&](const auto& item) { return item.first.IsSame(edge); });
-				if (existing == boundary_edge_replacements.end())
-				{
-					boundary_edge_replacements.emplace_back(edge, modified);
-				}
-				else
-				{
-					existing->second = modified;
-				}
-			}
-		};
-		auto interface_sewing_start = std::chrono::steady_clock::now();
-		for (size_t index = 0; index < members.size(); ++index)
-		{
-			BRepBuilderAPI_Sewing boundary_sewing(
-				selected_tolerance,
-				true,
-				true,
-				false,
-				false);
-			for (const TopoDS_Face& face : collector_interface_faces_by_inlet[index])
-			{
-				boundary_sewing.Add(face);
-			}
-			for (const TopoDS_Face& face : runner_interface_faces[index])
-			{
-				boundary_sewing.Add(face);
-			}
-			boundary_sewing.Perform();
-			if (boundary_sewing.NbMultipleEdges() != 0)
-			{
-				throw std::runtime_error(
-					"An exact interface boundary remap is non-manifold.");
-			}
-			contiguous_interface_edge_count += static_cast<size_t>(
-				boundary_sewing.NbContigousEdges());
-			for (const TopoDS_Face& face : collector_interface_faces_by_inlet[index])
-			{
-				retain_boundary_replacements(boundary_sewing, face);
-			}
-			for (const TopoDS_Face& face : runner_interface_faces[index])
-			{
-				retain_boundary_replacements(boundary_sewing, face);
-			}
-		}
-		metrics.sewing_microseconds += static_cast<uint64_t>(
-			std::chrono::duration_cast<std::chrono::microseconds>(
-				std::chrono::steady_clock::now() - interface_sewing_start).count());
-		metrics.sew_count += static_cast<uint32_t>(members.size());
-		append_native_log(
-			"collector",
-			"Interface cap staging: collectorCaps="
-				+ std::to_string(collector_caps.size())
-				+ "; runnerCaps=" + std::to_string(runner_caps.size())
-				+ "; boundaryFaces="
-				+ std::to_string(collector_interface_faces.size())
-				+ "; contiguousEdges="
-				+ std::to_string(contiguous_interface_edge_count));
-		BRep_Builder assembly_builder;
-		TopoDS_Shell direct_assembly_shell;
-		assembly_builder.MakeShell(direct_assembly_shell);
-		auto append_faces = [&](const TopoDS_Shape& shape,
-			const std::vector<TopoDS_Face>& removed_caps)
-		{
-			for (TopExp_Explorer shell_explorer(shape, TopAbs_SHELL);
-				shell_explorer.More();
-				shell_explorer.Next())
-			{
-				TopoDS_Shell owner_shell = TopoDS::Shell(shell_explorer.Current());
-				bool internal_shell = false;
-				for (TopoDS_Iterator probe(owner_shell); probe.More(); probe.Next())
-				{
-					if (probe.Value().ShapeType() == TopAbs_FACE
-						&& (probe.Value().Orientation() == TopAbs_INTERNAL
-							|| probe.Value().Orientation() == TopAbs_EXTERNAL))
-					{
-						internal_shell = true;
-						break;
-					}
-				}
-				if (internal_shell)
-				{
-					continue;
-				}
-				for (TopoDS_Iterator face_iterator(owner_shell);
-					face_iterator.More();
-					face_iterator.Next())
-				{
-					if (face_iterator.Value().ShapeType() != TopAbs_FACE)
-					{
-						continue;
-					}
-					TopoDS_Face face = TopoDS::Face(face_iterator.Value());
-				if (std::any_of(
-					removed_caps.begin(),
-					removed_caps.end(),
-					[&](const TopoDS_Face& cap) { return cap.IsSame(face); }))
-				{
-					continue;
-				}
-				Handle(BRepTools_ReShape) edge_changes = new BRepTools_ReShape();
-				bool has_edge_changes = false;
-				for (TopExp_Explorer edge_explorer(face, TopAbs_EDGE);
-					edge_explorer.More();
-					edge_explorer.Next())
-				{
-					TopoDS_Edge edge = TopoDS::Edge(edge_explorer.Current());
-					auto replacement = std::find_if(
-						boundary_edge_replacements.begin(),
-						boundary_edge_replacements.end(),
-						[&](const auto& item) { return item.first.IsSame(edge); });
-					if (replacement != boundary_edge_replacements.end())
-					{
-						edge_changes->Replace(edge, replacement->second);
-						has_edge_changes = true;
-					}
-				}
-				TopoDS_Shape adjusted_face = has_edge_changes
-					? edge_changes->Apply(face)
-					: TopoDS_Shape(face);
-				for (TopExp_Explorer adjusted_faces(adjusted_face, TopAbs_FACE);
-					adjusted_faces.More();
-					adjusted_faces.Next())
-				{
-					assembly_builder.Add(direct_assembly_shell, adjusted_faces.Current());
-				}
-				}
-			}
-		};
-		append_faces(collector_wall, collector_caps);
-		for (size_t index = 0; index < members.size(); ++index)
-		{
-			append_faces(
-				members[index]->shape,
-				{ runner_caps[index] });
-		}
-		direct_assembly_shell.Closed(true);
-		TopoDS_Shape sewed_assembly = direct_assembly_shell;
-		append_native_log(
-			"collector",
-			"Interface topology assembly: sewOperations="
-				+ std::to_string(members.size())
-				+ "; interfaceBooleans=0");
-		TopoDS_Shell assembly_shell;
-		size_t assembly_shell_count = 0;
-		if (sewed_assembly.ShapeType() == TopAbs_SHELL)
-		{
-			assembly_shell = TopoDS::Shell(sewed_assembly);
-			assembly_shell_count = 1;
-		}
-		else
-		{
-			for (TopExp_Explorer explorer(sewed_assembly, TopAbs_SHELL);
-				explorer.More();
-				explorer.Next())
-			{
-				assembly_shell = TopoDS::Shell(explorer.Current());
-				++assembly_shell_count;
-			}
-		}
-		if (assembly_shell_count != 1
-			|| assembly_shell.IsNull()
-			|| !BRep_Tool::IsClosed(assembly_shell))
-		{
-			throw std::runtime_error(
-				"Runner/collector sewing must produce exactly one closed shell; shells="
-					+ std::to_string(assembly_shell_count) + ".");
-		}
-		BRep_Builder filtered_shell_builder;
-		TopoDS_Shell filtered_shell;
-		filtered_shell_builder.MakeShell(filtered_shell);
-		size_t retained_face_count = 0;
-		size_t raw_internal_face_count = 0;
-		for (TopoDS_Iterator iterator(assembly_shell); iterator.More(); iterator.Next())
-		{
-			if (iterator.Value().ShapeType() != TopAbs_FACE)
-			{
-				continue;
-			}
-			TopoDS_Face normalized_face = TopoDS::Face(iterator.Value());
-			if (normalized_face.Orientation() == TopAbs_INTERNAL)
-			{
-				++raw_internal_face_count;
-				BRepAdaptor_Surface internal_surface(normalized_face, true);
-				GProp_GProps internal_properties;
-				BRepGProp::SurfaceProperties(normalized_face, internal_properties);
-				append_native_log(
-					"collector",
-					"Internal sewn face: surface="
-						+ std::to_string(static_cast<int>(internal_surface.GetType()))
-						+ "; area=" + std::to_string(std::abs(internal_properties.Mass()))
-						+ "; center=" + std::to_string(internal_properties.CentreOfMass().X())
-						+ "/" + std::to_string(internal_properties.CentreOfMass().Y())
-						+ "/" + std::to_string(internal_properties.CentreOfMass().Z()));
-				continue;
-			}
-			if (normalized_face.Orientation() == TopAbs_EXTERNAL)
-			{
-				continue;
-			}
-			filtered_shell_builder.Add(filtered_shell, normalized_face);
-			++retained_face_count;
-		}
-		append_native_log(
-			"collector",
-			"Raw sewn shell: retainedFaces=" + std::to_string(retained_face_count)
-				+ "; internalFaces=" + std::to_string(raw_internal_face_count));
-		filtered_shell.Closed(true);
-		assembly_shell = filtered_shell;
-		assembly_shell.Orientation(TopAbs_FORWARD);
-		auto final_validation_start = std::chrono::steady_clock::now();
-		ShapeFix_Solid solid_builder;
-		solid_builder.SetPrecision(selected_tolerance);
-		TopoDS_Shape fused = solid_builder.SolidFromShell(assembly_shell);
-		if (fused.IsNull() || fused.ShapeType() != TopAbs_SOLID)
-		{
-			throw std::runtime_error(
-				"The sewn runner/collector shell could not be oriented as a solid.");
-		}
-		// The direct shell assembly is known to need tolerance normalization after
-		// edge remapping.  Repair it once, then perform one authoritative geometric
-		// validation below.  Probing it first and constructing a second analyzer for
-		// diagnostics doubled validation time on the Corsa 4-to-1 fixture.
-		#if defined(FGCAD_ENABLE_EXPENSIVE_DIAGNOSTICS)
-		if (solid_count(fused) == 1
-			&& !BRepCheck_Analyzer(fused, true).IsValid())
-		{
-			BRepCheck_Analyzer diagnostic_analyzer(fused, true);
-			std::ostringstream statuses;
-			size_t status_count = 0;
-			Handle(BRepCheck_Result) root_result = diagnostic_analyzer.Result(fused);
-			if (!root_result.IsNull())
-			{
-				for (BRepCheck_Status status : root_result->Status())
-				{
-					if (status != BRepCheck_NoError)
-					{
-						statuses << "root:" << static_cast<int>(status) << ',';
-						++status_count;
-					}
-				}
-				root_result->InitContextIterator();
-				while (root_result->MoreShapeInContext())
-				{
-					for (BRepCheck_Status status : root_result->StatusOnShape())
-					{
-						if (status != BRepCheck_NoError)
-						{
-							statuses << "rootc:" << static_cast<int>(status) << ',';
-							++status_count;
-						}
-					}
-					root_result->NextShapeInContext();
-				}
-			}
-			std::array<size_t, 4> face_orientations{};
-			for (TopExp_Explorer face_explorer(fused, TopAbs_FACE);
-				face_explorer.More();
-				face_explorer.Next())
-			{
-				const int orientation = static_cast<int>(face_explorer.Current().Orientation());
-				if (orientation >= 0 && orientation < static_cast<int>(face_orientations.size()))
-				{
-					++face_orientations[static_cast<size_t>(orientation)];
-				}
-			}
-			for (TopAbs_ShapeEnum type : {
-				TopAbs_SOLID,
-				TopAbs_SHELL,
-				TopAbs_FACE,
-				TopAbs_WIRE,
-				TopAbs_EDGE })
-			{
-				for (TopExp_Explorer explorer(fused, type);
-					explorer.More();
-					explorer.Next())
-				{
-					Handle(BRepCheck_Result) result = diagnostic_analyzer.Result(
-						explorer.Current());
-					if (result.IsNull())
-					{
-						continue;
-					}
-					for (BRepCheck_Status status : result->Status())
-					{
-						if (status != BRepCheck_NoError)
-						{
-							statuses << static_cast<int>(type)
-								<< ':' << static_cast<int>(status) << ',';
-							if (type == TopAbs_FACE)
-							{
-								GProp_GProps invalid_face_properties;
-								BRepGProp::SurfaceProperties(
-									explorer.Current(),
-									invalid_face_properties);
-								statuses << "faceArea="
-									<< std::abs(invalid_face_properties.Mass())
-									<< ";faceCenter="
-									<< invalid_face_properties.CentreOfMass().X()
-									<< '/' << invalid_face_properties.CentreOfMass().Y()
-									<< '/' << invalid_face_properties.CentreOfMass().Z()
-									<< ',';
-							}
-							++status_count;
-						}
-					}
-					result->InitContextIterator();
-					while (result->MoreShapeInContext())
-					{
-						for (BRepCheck_Status status : result->StatusOnShape())
-						{
-							if (status != BRepCheck_NoError)
-							{
-								statuses << static_cast<int>(type)
-									<< "c:" << static_cast<int>(status) << ',';
-								if (type == TopAbs_FACE)
-								{
-									GProp_GProps invalid_face_properties;
-									BRepGProp::SurfaceProperties(
-										explorer.Current(),
-										invalid_face_properties);
-									statuses << "faceArea="
-										<< std::abs(invalid_face_properties.Mass())
-										<< ";faceCenter="
-										<< invalid_face_properties.CentreOfMass().X()
-										<< '/' << invalid_face_properties.CentreOfMass().Y()
-										<< '/' << invalid_face_properties.CentreOfMass().Z()
-										<< ',';
-								}
-								++status_count;
-							}
-						}
-						result->NextShapeInContext();
-					}
-				}
-			}
-			append_native_log(
-				"collector",
-				"Sewn-system BRep diagnostics: count="
-					+ std::to_string(status_count)
-					+ "; statuses=" + statuses.str()
-					+ "; faceOrientations="
-					+ std::to_string(face_orientations[0]) + "/"
-					+ std::to_string(face_orientations[1]) + "/"
-					+ std::to_string(face_orientations[2]) + "/"
-					+ std::to_string(face_orientations[3]));
-			ShapeFix_Shape repair(fused);
-			repair.Perform();
-			TopoDS_Shape repaired = repair.Shape();
-			if (!repaired.IsNull()
-				&& solid_count(repaired) == 1
-				&& BRepCheck_Analyzer(repaired, true).IsValid())
-			{
-				fused = repaired;
-				append_native_log(
-					"collector",
-					"Healed tolerance-level defects in the sewn runner/collector shell.");
-			}
-		}
-		#endif
-		ShapeFix_Shape publication_repair(fused);
-		publication_repair.SetPrecision(selected_tolerance);
-		publication_repair.Perform();
-		TopoDS_Shape publication_candidate = publication_repair.Shape();
-		if (!publication_candidate.IsNull()
-			&& solid_count(publication_candidate) == 1)
-		{
-			fused = publication_candidate;
-		}
+		++metrics.final_boolean_count;
 		size_t published_shell_count = 0;
 		bool published_shell_closed = false;
 		for (TopExp_Explorer shell_explorer(fused, TopAbs_SHELL);
@@ -3444,9 +2613,7 @@ fgcad_status fgcad_document_build_collector_system(
 			|| !BRepCheck_Analyzer(fused, true, true).IsValid())
 		{
 			throw std::runtime_error(
-				"The sewn runner/collector system is not exactly one valid connected "
-				"closed-shell solid; shells="
-					+ std::to_string(published_shell_count) + ".");
+				"The Boolean-fused runner/collector system is not exactly one valid connected closed-shell solid.");
 		}
 		metrics.validation_microseconds += static_cast<uint64_t>(
 			std::chrono::duration_cast<std::chrono::microseconds>(
@@ -3462,11 +2629,9 @@ fgcad_status fgcad_document_build_collector_system(
 		}
 		append_native_log(
 			"collector",
-			"Sewn collector/member assembly: runners="
+			"Boolean-fused collector/member assembly: runners="
 				+ std::to_string(members.size())
-				+ "; measuredGap=" + std::to_string(measured_gap)
-				+ "; selectedTolerance=" + std::to_string(selected_tolerance)
-				+ "; interfaceBooleans=0.");
+				+ "; finalBooleans=1.");
 		double minimum_outlet_projection = std::numeric_limits<double>::infinity();
 		double maximum_outlet_projection = -std::numeric_limits<double>::infinity();
 		gp_Pnt outlet_origin_for_projection = point(system->outlet_frame.origin);
@@ -3492,7 +2657,7 @@ fgcad_status fgcad_document_build_collector_system(
 		if (maximum_outlet_projection > outlet_plane_tolerance)
 		{
 			throw std::runtime_error(
-				"The sewn collector extends downstream of its designed outlet plane; "
+				"The Boolean-fused collector extends downstream of its designed outlet plane; "
 				"a cleanup Boolean is intentionally not permitted. Maximum projection="
 					+ std::to_string(maximum_outlet_projection)
 					+ " mm; tolerance=" + std::to_string(outlet_plane_tolerance) + ".");

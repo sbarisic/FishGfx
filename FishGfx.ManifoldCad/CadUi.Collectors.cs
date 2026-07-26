@@ -27,11 +27,6 @@ internal sealed partial class CadUi
 		(string Label, double Value)[] fields = inlet == null
 			? new[]
 			{
-				("Outlet diameter mm", system.OutletProfile.OuterDiameterMillimetres),
-				("Outlet wall mm", system.OutletProfile.WallThicknessMillimetres),
-				("Outlet stub mm", system.OutletStubLength),
-				("Merge length mm", system.MergeLength),
-				("Overlap mm", system.OverlapLength),
 				("End handle mm", system.BranchEndHandleLength),
 			}
 			: new[]

@@ -199,6 +199,30 @@ public sealed class CollectorSystemTests
 	}
 
 	[Fact]
+	public void BranchOnlyCollectorDependencyIgnoresLegacyOutletBodyParameters()
+	{
+		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();
+		Assert.True(project.TryCreateCollectorSystem(
+			new[] { first.Id, second.Id },
+			CollectorLayoutPreset.Row,
+			"Branch-only dependency fixture",
+			out CadCollectorSystem system,
+			out string createError
+		), createError);
+		string initialHash = CadGeometryDependencyHash.Collector(project, system);
+
+		system.OutletStubLength += 10;
+		system.MergeLength += 20;
+		system.OverlapLength += 5;
+		system.OutletProfile = new PipeProfile(76, 2.5);
+
+		Assert.Equal(initialHash, CadGeometryDependencyHash.Collector(project, system));
+
+		system.BranchEndHandleLength += 1;
+		Assert.NotEqual(initialHash, CadGeometryDependencyHash.Collector(project, system));
+	}
+
+	[Fact]
 	public void MovingOrRotatingOutletPreservesEveryWorldInletConstraint()
 	{
 		(ManifoldProject project, IReadOnlyList<CadRunner> runners) = CreateFourRunnerProject();

@@ -302,10 +302,7 @@ public sealed partial class CollectorSystemTransaction
 	private static void ApplyPreset(CadCollectorSystem system, CollectorLayoutPreset preset)
 	{
 		int count = system.Inlets.Count;
-		double minimumInletX = Math.Max(
-			system.OutletStubLength,
-			system.BranchEndHandleLength * 1.5
-		);
+		double minimumInletX = system.BranchEndHandleLength * 1.5;
 		double circularRingRadius = CircularRingRadius(system, count);
 		double[] circularAngles = Enumerable.Range(0, count)
 			.Select(index => 2 * Math.PI * index / count)
@@ -414,19 +411,10 @@ public sealed partial class CollectorSystemTransaction
 			error = "A collector system requires at least two inlets.";
 			return false;
 		}
-		if (!double.IsFinite(system.OutletStubLength) || system.OutletStubLength <= 0
-			|| !double.IsFinite(system.MergeLength) || system.MergeLength <= 0
-			|| !double.IsFinite(system.OverlapLength) || system.OverlapLength <= 0
-			|| !double.IsFinite(system.BranchEndHandleLength)
-			|| system.BranchEndHandleLength <= 0
-			|| !double.IsFinite(system.OutletProfile.OuterDiameterMillimetres)
-			|| !double.IsFinite(system.OutletProfile.WallThicknessMillimetres)
-			|| system.OutletProfile.OuterDiameterMillimetres <= 0
-			|| system.OutletProfile.WallThicknessMillimetres <= 0
-			|| system.OutletProfile.WallThicknessMillimetres
-				>= system.OutletProfile.OuterRadiusMillimetres)
+		if (!double.IsFinite(system.BranchEndHandleLength)
+			|| system.BranchEndHandleLength <= 0)
 		{
-			error = "Collector dimensions and outlet profile must be finite and positive.";
+			error = "The collector branch end handle must be finite and positive.";
 			return false;
 		}
 		if (system.Inlets.Any(inlet => inlet == null)

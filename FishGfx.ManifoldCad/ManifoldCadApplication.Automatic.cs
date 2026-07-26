@@ -262,7 +262,7 @@ internal sealed partial class ManifoldCadApplication
 				CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
 				if (!transaction.TryUpdate(
 						automaticCollector.Id,
-						system => system.MergeLength += rebuildIndex,
+						system => system.BranchEndHandleLength += rebuildIndex,
 						out string updateError
 					)
 					|| !transaction.Commit(out updateError))

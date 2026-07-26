@@ -276,11 +276,6 @@ public static class CadGeometryDependencyHash
 		StringBuilder value = Begin("collector");
 		Append(value, system.Id);
 		Append(value, system.OutletFrame);
-		Append(value, system.OutletProfile.OuterDiameterMillimetres);
-		Append(value, system.OutletProfile.WallThicknessMillimetres);
-		Append(value, system.OutletStubLength);
-		Append(value, system.MergeLength);
-		Append(value, system.OverlapLength);
 		Append(value, system.BranchEndHandleLength);
 		foreach (CadCollectorInlet inlet in system.Inlets.OrderBy(item => item.Id))
 		{

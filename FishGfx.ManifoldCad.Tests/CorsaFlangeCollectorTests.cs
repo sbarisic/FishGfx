@@ -204,14 +204,14 @@ public sealed class CorsaFlangeCollectorTests
 				fixture.Runners.Select(async runner => (await fixture.Document
 					.GetBuildMetricsAsync(runner.Id, cancellationToken)).Value)
 			);
-			Assert.Equal(1u, coldCollectorMetrics.Operations.MergeBooleanCount);
+			Assert.Equal(2u, coldCollectorMetrics.Operations.MergeBooleanCount);
 			Assert.Equal(0u, coldCollectorMetrics.Operations.InterfaceBooleanCount);
-			Assert.Equal(0u, coldCollectorMetrics.Operations.FinalBooleanCount);
-			Assert.Equal(0u, coldCollectorMetrics.Operations.CutCount);
+			Assert.Equal(1u, coldCollectorMetrics.Operations.FinalBooleanCount);
+			Assert.Equal(3u, coldCollectorMetrics.Operations.CutCount);
 			Assert.Equal(1u, coldCollectorMetrics.Topology.SolidCount);
 			Assert.Equal(1u, coldCollectorMetrics.Topology.ShellCount);
 			Assert.Equal(
-				(uint)((fixture.Collector.Inlets.Count + 1) * 2),
+				(uint)(fixture.Collector.Inlets.Count + 1),
 				coldCollectorMetrics.Operations.ClassificationCount
 			);
 			Assert.All(coldRunnerMetrics, metrics =>

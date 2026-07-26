@@ -398,7 +398,7 @@ int main()
 	);
 	checkpoint("negative runner built");
 
-	fgcad_runner_profile collector_branch_profile = circular(4, 0.5);
+	fgcad_runner_profile collector_branch_profile = circular(42.4, 2);
 	fgcad_runner_feature collector_runner_a = straight(
 		"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
 		{ -100, -50, 0 }, { 0, -50, 0 }, { 1, 0, 0 }, collector_branch_profile);
@@ -424,7 +424,7 @@ int main()
 	std::snprintf(collector.name, sizeof(collector.name), "%s", "Two: into, one");
 	collector.generation_revision = 1;
 	collector.outlet_frame = frame({ 200, 0, 0 }, { 1, 0, 0 });
-	collector.outlet_profile = circular(8, 0.75);
+	collector.outlet_profile = circular(42.4, 2);
 	collector.outlet_stub_length = 50;
 	collector.merge_length = 120;
 	collector.overlap_length = 12;
@@ -459,11 +459,12 @@ int main()
 		"Collector operation metrics were unavailable"
 	);
 	require(
-		collector_metrics.merge_boolean_count == 1
+		collector_metrics.merge_boolean_count == 2
 			&& collector_metrics.interface_boolean_count == 0
-			&& collector_metrics.final_boolean_count == 0
-			&& collector_metrics.cut_count == 0,
-		"Collector construction violated the one-merge-Boolean invariant"
+			&& collector_metrics.final_boolean_count == 1
+			&& collector_metrics.cut_count == 3
+			&& collector_metrics.loft_count == 0,
+		"Collector construction did not use exactly one outer fuse, one gas fuse, two outlet trims, and one hollowing cut"
 	);
 	require(
 		collector_metrics.solid_count == 1
@@ -938,7 +939,7 @@ int main()
 
 	fgcad_collector_system_spec invalid_replacement = collector;
 	invalid_replacement.generation_revision = 4;
-	invalid_replacement.overlap_length = -1;
+	invalid_replacement.branch_end_handle_length = -1;
 	require(fgcad_document_begin_collector_system_build(
 		document,
 		collector.system_id,

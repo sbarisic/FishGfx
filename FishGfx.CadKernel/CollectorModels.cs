@@ -79,6 +79,9 @@ public sealed class CadCollectorSystem
 
 	public CadFrame OutletFrame { get; set; } = CollectorFrameDefaults.Outlet;
 
+	// Retained for graph.json v3 compatibility and layout-preset defaults.
+	// Branch-only exact geometry does not generate an outlet profile, separate
+	// outlet stub, or tapered merge core.
 	public PipeProfile OutletProfile { get; set; } = new(63.5, 2);
 
 	public double OutletStubLength { get; set; } = 50;

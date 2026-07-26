@@ -422,30 +422,11 @@ internal sealed partial class ManifoldCadApplication
 				}
 				else
 				{
-					switch (index)
-					{
-						case 0:
-							system.OutletProfile = new PipeProfile(
-								value,
-								system.OutletProfile.WallThicknessMillimetres);
-							break;
-						case 1:
-							system.OutletProfile = new PipeProfile(
-								system.OutletProfile.OuterDiameterMillimetres,
-								value);
-							break;
-						case 2:
-							system.OutletStubLength = value;
-							break;
-						case 3:
-							system.MergeLength = value;
-							break;
-						case 4:
-							system.OverlapLength = value;
-							break;
-						case 5:
-							system.BranchEndHandleLength = value;
-							break;
+						switch (index)
+						{
+							case 0:
+								system.BranchEndHandleLength = value;
+								break;
 					}
 				}
 			},
