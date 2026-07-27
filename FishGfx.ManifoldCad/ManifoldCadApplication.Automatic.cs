@@ -34,6 +34,17 @@ internal sealed partial class ManifoldCadApplication
 			throw new InvalidOperationException("Automatic rotated-view validation could not pick a mate candidate.");
 		}
 
+		if (nodeCanvas.SelectedNode?.DefinitionId == RunnerNodes.CubicBezier
+			&& (viewport.DisplayedCurveOverlay == null
+				|| viewport.DisplayedCurveOverlay.Identity.OwnerKind
+					!= CurveDisplayOwnerKind.RunnerBezier
+				|| viewport.DisplayedCurveOverlay.Identity.ElementId
+					!= nodeCanvas.SelectedNode.Id))
+		{
+			throw new InvalidOperationException(
+				"Automatic exact-mesh validation lost the selected Bézier overlay.");
+		}
+
 		Console.WriteLine(
 			$"MANIFOLD_CAD_AUTO_OK renderer={window.Graphics.Capabilities.Renderer} "
 			+ $"fishUiInput=enabled vertices=exact-runner visibleSamples={autoVisibleSamples} "

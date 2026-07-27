@@ -21,6 +21,19 @@ internal sealed partial class ManifoldCadApplication
 		}
 		if (completion.Error != null)
 		{
+			if (completion.Evaluation?.RunnerId == current.Id
+				&& completion.Evaluation.EditRevision == current.EditRevision
+				&& completion.Evaluation.GenerationStamp == new CadGenerationStamp(
+					CadGenerationOwnerKind.Runner,
+					current.Id,
+					current.EditRevision))
+			{
+				evaluations[current.Id] = completion.Evaluation;
+				if (current == ActiveRunner)
+				{
+					evaluation = completion.Evaluation;
+				}
+			}
 			if (completion.Error is OperationCanceledException
 				&& completion.Request.ExactBuild
 				&& IsPublished(
@@ -53,12 +66,15 @@ internal sealed partial class ManifoldCadApplication
 			);
 			runnerBuildErrors[current.Id] = completion.Error.Message;
 			viewport.MarkRunnerStale(current.Id);
-			viewport.SetBezierInvalid(
-				current.Id,
-				completion.Evaluation?.Diagnostics
-					.FirstOrDefault(diagnostic => diagnostic.NodeId.HasValue)
-					?.NodeId
-			);
+			Guid? invalidNodeId = completion.Evaluation?.Diagnostics
+				.FirstOrDefault(diagnostic =>
+					diagnostic.Severity == CadDiagnosticSeverity.Error
+					&& diagnostic.NodeId.HasValue)
+				?.NodeId;
+			if (invalidNodeId.HasValue)
+			{
+				viewport.SetBezierInvalid(current.Id, invalidNodeId);
+			}
 			ui.SetStatus($"{current.Name}: {completion.Error.Message}", true);
 			RefreshUi();
 			return;
@@ -156,6 +172,20 @@ internal sealed partial class ManifoldCadApplication
 		}
 		if (completion.Error != null)
 		{
+			foreach ((Guid runnerId, RunnerEvaluationResult result) in completion.Evaluations)
+			{
+				CadRunner runner = project.Runners.FirstOrDefault(item => item.Id == runnerId);
+				if (runner != null
+					&& result?.EditRevision == runner.EditRevision
+					&& result.GenerationStamp == current.GenerationStamp)
+				{
+					evaluations[runnerId] = result;
+					if (runner == ActiveRunner)
+					{
+						evaluation = result;
+					}
+				}
+			}
 			if (completion.Error is OperationCanceledException
 				&& completion.Request.ExactBuild
 				&& IsPublished(
@@ -203,12 +233,19 @@ internal sealed partial class ManifoldCadApplication
 			current.IsResolved = false;
 			current.Diagnostic = completion.Error.Message;
 			viewport.MarkRunnerStale(current.Id);
+			bool geometricallyInvalid = current.Inlets.Any(inlet =>
+				inlet.BranchPath?.IsFeasible != true);
+			geometricallyInvalid |= completion.Evaluations.Values.Any(result =>
+				result.GenerationStamp == current.GenerationStamp
+				&& !result.Success);
 			viewport.SetCollectorDraft(
 				current,
 				null,
 				current.OutletFrame,
-				true,
-				evaluations
+				geometricallyInvalid,
+				evaluations,
+				createTubeMeshes: false,
+				stale: !geometricallyInvalid
 			);
 			foreach (CadCollectorInlet inlet in current.Inlets)
 			{

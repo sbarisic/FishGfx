@@ -127,6 +127,7 @@ internal sealed partial class ManifoldCadApplication
 			return;
 		}
 		project.SetActiveCollector(system.Id);
+		nodeCanvas.ClearSelection();
 		selectedPart = null;
 		selectedMate = null;
 		RefreshUi();
@@ -165,7 +166,7 @@ internal sealed partial class ManifoldCadApplication
 		);
 		CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
 		Guid? inletId = project.View.ActiveCollectorInletId;
-		if (!transaction.TryUpdate(
+		if (!transaction.TryUpdateConstrainedGeometry(
 			active.Id,
 			system =>
 			{
@@ -179,6 +180,7 @@ internal sealed partial class ManifoldCadApplication
 					system.SetOutletFramePreservingWorldInlets(frame);
 				}
 			},
+			evaluations,
 			out string error
 		) || !transaction.Commit(out error))
 		{
@@ -351,7 +353,7 @@ internal sealed partial class ManifoldCadApplication
 		}
 		collectorDraft = null;
 		CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
-		if (!transaction.TryUpdate(
+		if (!transaction.TryUpdateConstrainedGeometry(
 			draft.SystemId,
 			system =>
 			{
@@ -384,6 +386,7 @@ internal sealed partial class ManifoldCadApplication
 				system.IsResolved = draft.IsFeasible;
 				system.Diagnostic = draft.IsFeasible ? null : draft.Diagnostic;
 			},
+			evaluations,
 			out string error
 		) || !transaction.Commit(out error))
 		{

@@ -7,6 +7,7 @@ namespace FishGfx.ManifoldCad;
 
 internal sealed partial class CadViewport
 {
+	private readonly CurveDisplayOverlayState curveOverlayState = new();
 	private BezierDraftState bezierDraft;
 	private RunnerPathPointKind? activeBezierHandle;
 	private RunnerPathPointKind? selectedBezierHandle;
@@ -18,63 +19,61 @@ internal sealed partial class CadViewport
 	internal event Action<BezierDraftState> BezierCommitRequested;
 	internal event Action BezierDraftCancelled;
 	internal event Action<BezierDraftState, RunnerPathPointKind> BezierDraftPreviewChanged;
+	internal event Action<CurveDisplayOverlay, CurveDisplayControl> CurveControlSelected;
 
-	internal void SetBezierEditor(Guid runnerId, RunnerNode node, RunnerFeature feature)
+	internal CurveDisplayOverlay DisplayedCurveOverlay => curveOverlayState.Overlay;
+
+	internal void SetCurveDisplaySelection(CurveOverlayIdentity? identity)
 	{
-		if (bezierDraft?.RunnerId == runnerId && bezierDraft.NodeId == node.Id
-			&& !bezierDraft.IsDirty)
+		bool changedOwner = curveOverlayState.Selection.HasValue != identity.HasValue
+			|| (curveOverlayState.Selection.HasValue
+				&& identity.HasValue
+				&& !curveOverlayState.Selection.Value.HasSameSelection(identity.Value));
+		curveOverlayState.Select(identity);
+		if (changedOwner)
 		{
-			bezierDraft = BezierDraftState.Create(runnerId, node, feature);
-			return;
+			bezierDraft = null;
+			activeBezierHandle = null;
+			selectedBezierHandle = null;
+			activeIm3dBezierId = Im3dInteraction.InvalidId;
 		}
-		if (bezierDraft?.IsDirty == true)
-		{
-			return;
-		}
-		bezierDraft = BezierDraftState.Create(runnerId, node, feature);
-		activeBezierHandle = null;
-		selectedBezierHandle = null;
 	}
 
-	internal void RestoreBezierEditor(Guid runnerId, RunnerNode node, RunnerFeature feature)
+	internal bool TrySetCurveDisplayOverlay(CurveDisplayOverlay overlay)
 	{
-		bezierDraft = BezierDraftState.Create(runnerId, node, feature);
-		activeBezierHandle = null;
-		selectedBezierHandle = null;
+		return curveOverlayState.TryPublish(overlay);
 	}
 
 	internal void ClearBezierEditor()
 	{
-		if (bezierDraft?.IsDirty == true)
-		{
-			return;
-		}
+		curveOverlayState.Clear();
 		bezierDraft = null;
 		activeBezierHandle = null;
 		selectedBezierHandle = null;
 		activeIm3dBezierId = Im3dInteraction.InvalidId;
 	}
 
-	internal void SetBezierInvalid(Guid runnerId, Guid? nodeId)
+	internal void SetBezierInvalid(Guid ownerId, Guid? elementId)
 	{
-		if (bezierDraft?.RunnerId == runnerId
-			&& (!nodeId.HasValue || bezierDraft.NodeId == nodeId.Value))
+		curveOverlayState.MarkInvalid(ownerId, elementId);
+		if (bezierDraft?.RunnerId == ownerId
+			&& (!elementId.HasValue || bezierDraft.NodeId == elementId.Value))
 		{
 			bezierDraft.IsInvalid = true;
 		}
 	}
 
-	internal void ReloadBezierCommittedProperties(Guid runnerId, RunnerNode node)
+	internal void EndBezierDraft()
 	{
-		if (bezierDraft?.RunnerId == runnerId && bezierDraft.NodeId == node.Id)
-		{
-			bezierDraft.ReloadCommittedProperties(node);
-		}
+		curveOverlayState.EndDraft();
+		bezierDraft = null;
+		activeBezierHandle = null;
+		activeIm3dBezierId = Im3dInteraction.InvalidId;
 	}
 
 	internal bool CancelBezierDraft()
 	{
-		if (bezierDraft?.IsDirty != true && !activeBezierHandle.HasValue)
+		if (!curveOverlayState.DraftActive)
 		{
 			return false;
 		}
@@ -85,44 +84,51 @@ internal sealed partial class CadViewport
 
 	private bool TryBeginBezierHandle(PickContext context)
 	{
-		if (bezierDraft == null)
+		CurveDisplayOverlay overlay = curveOverlayState.Overlay;
+		if (overlay == null || !curveOverlayState.HasDisplayForSelection)
 		{
 			return false;
 		}
-		RunnerPathPointKind? selected = null;
+
+		CurveDisplayControl selected = null;
 		float best = 13;
-		foreach (RunnerPathPointKind kind in Enum.GetValues<RunnerPathPointKind>())
+		foreach (CurveDisplayControl control in overlay.Controls)
 		{
-			Vector3 projected = camera.WorldToScreen(ToVector(bezierDraft.Point(kind)));
+			Vector3 projected = camera.WorldToScreen(ToVector(control.Position));
 			if (!IsProjectedPointInClip(projected))
 			{
 				continue;
 			}
 			float screenDistance = Vector2.Distance(
 				new Vector2(projected.X, projected.Y),
-				context.LocalPoint
-			);
+				context.LocalPoint);
 			if (screenDistance < best)
 			{
 				best = screenDistance;
-				selected = kind;
+				selected = control;
 			}
 		}
-		if (!selected.HasValue)
+		if (selected == null)
 		{
 			return false;
 		}
-		if (selected.Value == RunnerPathPointKind.Start)
+
+		curveOverlayState.SelectControl(selected.Key);
+		selectedBezierHandle = selected.RunnerPointKind;
+		CurveControlSelected?.Invoke(overlay, selected);
+		if (!selected.Editable
+			|| !selected.RunnerPointKind.HasValue
+			|| !curveOverlayState.TryBeginDraft())
 		{
-			selectedBezierHandle = selected;
-			BezierDraftPreviewChanged?.Invoke(bezierDraft, selected.Value);
 			return true;
 		}
 
-		activeBezierHandle = selected;
-		selectedBezierHandle = selected;
-		BezierDraftPreviewChanged?.Invoke(bezierDraft, selected.Value);
-		bezierDragPoint = bezierDraft.Point(selected.Value);
+		bezierDraft = BezierDraftState.Create(overlay);
+		RunnerPathPointKind pointKind = selected.RunnerPointKind.Value;
+		activeBezierHandle = pointKind;
+		selectedBezierHandle = pointKind;
+		BezierDraftPreviewChanged?.Invoke(bezierDraft, pointKind);
+		bezierDragPoint = bezierDraft.Point(pointKind);
 		bezierDragPlanePoint = ToVector(bezierDragPoint);
 		bezierDragPlaneNormal = Vector3.Normalize(focus - camera.Position);
 		if (!TryIntersectPlane(
@@ -131,7 +137,7 @@ internal sealed partial class CadViewport
 			bezierDragPlaneNormal,
 			out bezierDragIntersection))
 		{
-			activeBezierHandle = null;
+			EndBezierDraft();
 			return false;
 		}
 		return true;
@@ -139,7 +145,7 @@ internal sealed partial class CadViewport
 
 	private void UpdateBezierDrag(CadRect bounds, Vector2 mouse)
 	{
-		if (!activeBezierHandle.HasValue)
+		if (!activeBezierHandle.HasValue || bezierDraft == null)
 		{
 			return;
 		}
@@ -157,8 +163,7 @@ internal sealed partial class CadViewport
 		bool wasDirty = bezierDraft.IsDirty;
 		bool changed = bezierDraft.MoveWorldPoint(
 			activeBezierHandle.Value,
-			bezierDragPoint + CadPoint3.FromVector3(delta)
-		);
+			bezierDragPoint + CadPoint3.FromVector3(delta));
 		if (changed)
 		{
 			if (!wasDirty)
@@ -180,22 +185,80 @@ internal sealed partial class CadViewport
 		{
 			BezierCommitRequested?.Invoke(bezierDraft);
 		}
+		else
+		{
+			EndBezierDraft();
+		}
 	}
 
 	private void DrawBezierEditor(RenderPass pass)
 	{
-		if (bezierDraft == null)
+		CurveDisplayOverlay overlay = curveOverlayState.Overlay;
+		if (bezierDraft == null
+			&& (overlay == null || !curveOverlayState.HasDisplayForSelection))
 		{
 			return;
 		}
+
 		using IDisposable stateScope = pass.PushState(pass.State with
 		{
 			DepthTestEnabled = false,
 			DepthWriteEnabled = false,
 		});
 
+		if (bezierDraft != null)
+		{
+			DrawBezierDraft(pass);
+			return;
+		}
+
+		Color polygon = new(135, 140, 150);
+		foreach (CurveDisplaySpan span in overlay.Spans)
+		{
+			Color curve = OverlayCurveColor(overlay, span);
+			CadPoint3[] polygonPoints =
+			{
+				span.Start,
+				span.Control1,
+				span.Control2,
+				span.End,
+			};
+			for (int index = 1; index < polygonPoints.Length; ++index)
+			{
+				pass.DrawLine(
+					new Vertex3(ToVector(polygonPoints[index - 1]), polygon),
+					new Vertex3(ToVector(polygonPoints[index]), polygon),
+					2);
+			}
+			DrawSampledCurve(pass, span.Samples, curve);
+		}
+
+		float radius = Math.Max(distance * 0.009f, 2);
+		foreach (CurveDisplayControl control in overlay.Controls)
+		{
+			candidateSphere.DefaultColor = control.Editable
+				? EditableControlColor(control.RunnerPointKind)
+				: new Color(145, 150, 160);
+			using (pass.PushModel(
+				Matrix4x4.CreateScale(radius)
+					* Matrix4x4.CreateTranslation(ToVector(control.Position))))
+			{
+				pass.DrawMesh(candidateSphere);
+			}
+		}
+
+		if (overlay.RunnerExitFrame.HasValue)
+		{
+			DrawBezierExitFrame(pass, overlay.RunnerExitFrame.Value, radius);
+		}
+	}
+
+	private void DrawBezierDraft(RenderPass pass)
+	{
 		Color polygon = new(135, 155, 180);
-		Color curve = bezierDraft.IsInvalid ? new Color(245, 65, 70) : new Color(70, 215, 245);
+		Color curve = bezierDraft.IsInvalid
+			? new Color(245, 65, 70)
+			: new Color(70, 215, 245);
 		CadPoint3[] controls =
 		{
 			bezierDraft.Start,
@@ -208,61 +271,97 @@ internal sealed partial class CadViewport
 			pass.DrawLine(
 				new Vertex3(ToVector(controls[index - 1]), polygon),
 				new Vertex3(ToVector(controls[index]), polygon),
-				2
-			);
+				2);
 		}
 
-		CadPoint3 previous = bezierDraft.Start;
-		for (int segment = 1; segment <= 48; ++segment)
+		CadPoint3[] samples = new CadPoint3[49];
+		for (int segment = 0; segment < samples.Length; ++segment)
 		{
-			CadPoint3 current = bezierDraft.Sample(segment / 48.0);
-			pass.DrawLine(new Vertex3(ToVector(previous), curve), new Vertex3(ToVector(current), curve), 4);
-			previous = current;
+			samples[segment] = bezierDraft.Sample(segment / 48.0);
 		}
+		DrawSampledCurve(pass, samples, curve);
 
 		float radius = Math.Max(distance * 0.009f, 2);
 		foreach (RunnerPathPointKind kind in Enum.GetValues<RunnerPathPointKind>())
 		{
-			candidateSphere.DefaultColor = kind switch
-			{
-				RunnerPathPointKind.Start => new Color(145, 150, 160),
-				RunnerPathPointKind.Control1 => new Color(255, 190, 55),
-				RunnerPathPointKind.Control2 => new Color(75, 220, 245),
-				_ => new Color(235, 90, 205),
-			};
+			candidateSphere.DefaultColor = bezierDraft.CanEdit(kind)
+				? EditableControlColor(kind)
+				: new Color(145, 150, 160);
 			using (pass.PushModel(
 				Matrix4x4.CreateScale(radius)
-				* Matrix4x4.CreateTranslation(ToVector(bezierDraft.Point(kind)))))
+					* Matrix4x4.CreateTranslation(ToVector(bezierDraft.Point(kind)))))
 			{
 				pass.DrawMesh(candidateSphere);
 			}
 		}
-		CadFrame exit = bezierDraft.AuthoritativeExitFrame;
+		DrawBezierExitFrame(pass, bezierDraft.AuthoritativeExitFrame, radius);
+	}
+
+	private static Color EditableControlColor(RunnerPathPointKind? kind)
+	{
+		return kind switch
+		{
+			RunnerPathPointKind.Control1 => new Color(255, 190, 55),
+			RunnerPathPointKind.Control2 => new Color(75, 220, 245),
+			RunnerPathPointKind.End => new Color(235, 90, 205),
+			_ => new Color(145, 150, 160),
+		};
+	}
+
+	private Color OverlayCurveColor(
+		CurveDisplayOverlay overlay,
+		CurveDisplaySpan span)
+	{
+		if (span.Validity == CurveDisplayValidity.Invalid)
+		{
+			return new Color(245, 65, 70);
+		}
+		if (curveOverlayState.EffectiveFreshness == CurveDisplayFreshness.Stale)
+		{
+			return new Color(235, 145, 55);
+		}
+		return overlay.Identity.OwnerKind == CurveDisplayOwnerKind.RunnerBezier
+			? new Color(70, 215, 245)
+			: new Color(245, 90, 210);
+	}
+
+	private static void DrawSampledCurve(
+		RenderPass pass,
+		IReadOnlyList<CadPoint3> samples,
+		Color color)
+	{
+		for (int index = 1; index < samples.Count; ++index)
+		{
+			pass.DrawLine(
+				new Vertex3(ToVector(samples[index - 1]), color),
+				new Vertex3(ToVector(samples[index]), color),
+				4);
+		}
+	}
+
+	private static void DrawBezierExitFrame(RenderPass pass, CadFrame exit, float radius)
+	{
 		float axisLength = radius * 4;
 		Vector3 exitOrigin = ToVector(exit.Origin);
 		pass.DrawLine(
 			new Vertex3(exitOrigin, Color.Red),
 			new Vertex3(exitOrigin + ToVector(exit.Tangent) * axisLength, Color.Red),
-			3
-		);
+			3);
 		pass.DrawLine(
 			new Vertex3(exitOrigin, Color.Green),
 			new Vertex3(exitOrigin + ToVector(exit.Normal) * axisLength, Color.Green),
-			3
-		);
+			3);
 		pass.DrawLine(
 			new Vertex3(exitOrigin, Color.Blue),
 			new Vertex3(exitOrigin + ToVector(exit.Binormal) * axisLength, Color.Blue),
-			3
-		);
+			3);
 	}
 
 	private static bool TryIntersectPlane(
 		PickingRay ray,
 		Vector3 planePoint,
 		Vector3 planeNormal,
-		out Vector3 intersection
-	)
+		out Vector3 intersection)
 	{
 		float denominator = Vector3.Dot(ray.Direction, planeNormal);
 		if (MathF.Abs(denominator) <= 1.0e-6f)

@@ -346,6 +346,85 @@ public sealed class CollectorSystemTests
 	}
 
 	[Fact]
+	public async Task ConstrainedFrameUpdateReseedsTerminalBezierHandles()
+	{
+		(ManifoldProject project, CadRunner first, CadRunner second) =
+			CreateTwoRunnerProject();
+		using CadDocument document = await CadDocument.CreateAsync(
+			TestContext.Current.CancellationToken);
+		Dictionary<Guid, RunnerEvaluationResult> evaluations = new();
+		foreach (CadRunner runner in project.Runners)
+		{
+			evaluations[runner.Id] = await project.EvaluateRunnerAsync(
+				document,
+				runner,
+				TestContext.Current.CancellationToken);
+		}
+		Assert.True(project.TryCreateCollectorSystem(
+			new[] { first.Id, second.Id },
+			CollectorLayoutPreset.Row,
+			"Editable collector",
+			evaluations,
+			out CadCollectorSystem system,
+			out string createError
+		), createError);
+
+		evaluations.Clear();
+		foreach (CadRunner runner in project.Runners)
+		{
+			evaluations[runner.Id] = await project.EvaluateRunnerAsync(
+				document,
+				runner,
+				TestContext.Current.CancellationToken);
+		}
+		CadCollectorInlet inlet = system.Inlets.Single(item =>
+			item.Binding.RunnerId == first.Id);
+		RunnerNode terminal = first.Graph.Nodes.Single(node =>
+			node.Id == inlet.Binding.TerminalBezierNodeId);
+		string previousStart = terminal.Properties["startHandleLength"];
+		string previousEnd = terminal.Properties["endHandleLength"];
+		long previousRevision = system.GenerationRevision;
+
+		CollectorSystemTransaction transaction = CollectorSystemTransaction.Begin(project);
+		Assert.True(transaction.TryUpdateConstrainedGeometry(
+			system.Id,
+			staged =>
+			{
+				CadCollectorInlet stagedInlet = staged.Inlets.Single(item =>
+					item.Id == inlet.Id);
+				CadFrame world = staged.GetWorldInletFrame(stagedInlet);
+				CadFrame moved = new(
+					world.Origin + new CadPoint3(45, 25, -15),
+					world.Tangent,
+					world.Normal
+				);
+				stagedInlet.LocalFrame = moved.RelativeTo(staged.OutletFrame);
+			},
+			evaluations,
+			out string updateError
+		), updateError);
+		Assert.True(transaction.Commit(out string commitError), commitError);
+
+		CadCollectorSystem updated = Assert.Single(project.CollectorSystems);
+		RunnerNode updatedTerminal = first.Graph.Nodes.Single(node =>
+			node.Id == inlet.Binding.TerminalBezierNodeId);
+		Assert.Equal(previousRevision + 1, updated.GenerationRevision);
+		Assert.True(
+			previousStart != updatedTerminal.Properties["startHandleLength"]
+				|| previousEnd != updatedTerminal.Properties["endHandleLength"],
+			"Moving a constrained inlet must reseed at least one terminal handle."
+		);
+		RunnerEvaluationResult updatedEvaluation = await project.EvaluateRunnerAsync(
+			document,
+			first,
+			TestContext.Current.CancellationToken);
+		Assert.True(updatedEvaluation.Success, string.Join(
+			Environment.NewLine,
+			updatedEvaluation.Diagnostics.Select(diagnostic => diagnostic.Message)
+		));
+	}
+
+	[Fact]
 	public void VersionFourPersistenceRecalculatesMissingCollectorBranchPaths()
 	{
 		(ManifoldProject project, CadRunner first, CadRunner second) = CreateTwoRunnerProject();

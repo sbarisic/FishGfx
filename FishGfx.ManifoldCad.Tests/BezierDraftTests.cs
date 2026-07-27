@@ -79,4 +79,51 @@ public sealed class BezierDraftTests
 		Assert.False(draft.MoveWorldPoint(RunnerPathPointKind.End, draft.End));
 		Assert.False(draft.IsDirty);
 	}
+
+	[Fact]
+	public void CollectorConstrainedDraftCommitsP1WithoutReplacingFallbackEndpoint()
+	{
+		RunnerNode node = new(RunnerNodes.CubicBezier);
+		node.Properties["control2U"] = "17";
+		node.Properties["endV"] = "23";
+		Guid runnerId = Guid.NewGuid();
+		RunnerSectionProfile profile = RunnerSectionProfile.FromCircular(new PipeProfile(42.4, 2));
+		RunnerFeature feature = new(
+			node.Id,
+			RunnerFeatureKind.CubicBezier,
+			new CadFrame(CadPoint3.Zero, new CadPoint3(1, 0, 0), new CadPoint3(0, 1, 0)),
+			new CadFrame(new CadPoint3(120, 30, 0), new CadPoint3(1, 0, 0), new CadPoint3(0, 1, 0)),
+			profile,
+			profile,
+			125,
+			CadPoint3.Zero,
+			double.PositiveInfinity,
+			0,
+			0,
+			new CadPoint3(35, 0, 0),
+			new CadPoint3(90, 30, 0));
+		CurveOverlayIdentity identity = new(
+			CurveDisplayOwnerKind.RunnerBezier,
+			runnerId,
+			node.Id,
+			1,
+			1,
+			new CadGenerationStamp(CadGenerationOwnerKind.CollectorSystem, Guid.NewGuid(), 1));
+		CurveDisplayOverlay overlay = CurveDisplayOverlay.Runner(
+			identity,
+			feature,
+			true,
+			true,
+			false);
+		BezierDraftState draft = BezierDraftState.Create(overlay);
+
+		Assert.False(draft.CanEdit(RunnerPathPointKind.Control2));
+		Assert.False(draft.MoveWorldPoint(RunnerPathPointKind.End, new CadPoint3(200, 0, 0)));
+		Assert.True(draft.MoveWorldPoint(RunnerPathPointKind.Control1, new CadPoint3(42, 5, 0)));
+		draft.Commit(node);
+
+		Assert.Equal("42", node.Properties["startHandleLength"]);
+		Assert.Equal("17", node.Properties["control2U"]);
+		Assert.Equal("23", node.Properties["endV"]);
+	}
 }

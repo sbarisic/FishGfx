@@ -31,6 +31,7 @@ internal sealed partial class CadViewport : IDisposable
 	private readonly List<CadPoint3[]> collectorDraftCurves = new();
 	private readonly List<Mesh3D> collectorDraftMeshes = new();
 	private bool collectorDraftInvalid;
+	private bool collectorDraftStale;
 	private readonly Mesh3D candidateSphere;
 	private readonly Mesh3D gridMesh;
 	private RenderTarget target;
@@ -110,6 +111,7 @@ internal sealed partial class CadViewport : IDisposable
 		collectorDraftCurves.Clear();
 		ClearCollectorDraftMeshes();
 		collectorDraftInvalid = false;
+		collectorDraftStale = false;
 		selectedFaceMesh?.Dispose();
 		selectedFaceMesh = null;
 		selectedPart = null;
@@ -119,6 +121,7 @@ internal sealed partial class CadViewport : IDisposable
 		hasDebugPickingRay = false;
 		debugPickingHit = null;
 		bezierDraft = null;
+		curveOverlayState.Clear();
 		activeBezierHandle = null;
 		activeIm3dBezierId = Im3dInteraction.InvalidId;
 		ClearPartDraft();
@@ -155,7 +158,9 @@ internal sealed partial class CadViewport : IDisposable
 		CadFrame frame,
 		bool invalid = false,
 		IReadOnlyDictionary<Guid, RunnerEvaluationResult> evaluatedRunners = null,
-		IReadOnlyDictionary<Guid, CadCollectorBranchPath> branchPaths = null
+		IReadOnlyDictionary<Guid, CadCollectorBranchPath> branchPaths = null,
+		bool createTubeMeshes = true,
+		bool stale = false
 	)
 	{
 		int index = collectorGlyphs.FindIndex(item =>
@@ -167,6 +172,7 @@ internal sealed partial class CadViewport : IDisposable
 		collectorDraftCurves.Clear();
 		ClearCollectorDraftMeshes();
 		bool hasInvalidBranch = invalid;
+		collectorDraftStale = stale;
 		CadFrame outlet = inletId.HasValue ? system.OutletFrame : frame;
 		foreach (CadCollectorInlet inlet in system.Inlets)
 		{
@@ -184,10 +190,10 @@ internal sealed partial class CadViewport : IDisposable
 					feature => feature.NodeId == inlet.Binding.TerminalBezierNodeId);
 				if (terminal != null)
 				{
-					AddCollectorDraftCurve(
+					hasInvalidBranch |= !AddCollectorDraftCurve(
 						SampleCubicBezier(terminal),
 						terminal.OutputProfile.ApproximateOuterRadiusMillimetres,
-						!invalid
+						createTubeMeshes && !invalid
 					);
 				}
 			}
@@ -204,13 +210,17 @@ internal sealed partial class CadViewport : IDisposable
 				system.BranchEndHandleLength
 			);
 			hasInvalidBranch |= !path.IsFeasible;
-			AddCollectorDraftCurve(
+			hasInvalidBranch |= !AddCollectorDraftCurve(
 				CadCollectorBranchSolver.Sample(path, outlet, inletFrame.Origin),
 				outerRadius,
-				!invalid && path.IsFeasible
+				createTubeMeshes && !invalid && path.IsFeasible
 			);
 		}
 		collectorDraftInvalid = hasInvalidBranch;
+		if (hasInvalidBranch)
+		{
+			ClearCollectorDraftMeshes();
+		}
 	}
 
 	internal bool ToggleGizmoMode()
@@ -308,6 +318,7 @@ internal sealed partial class CadViewport : IDisposable
 		collectorDraftCurves.Clear();
 		ClearCollectorDraftMeshes();
 		collectorDraftInvalid = false;
+		collectorDraftStale = false;
 		foreach (CadCollectorSystem system in project.CollectorSystems)
 		{
 			collectorGlyphs.Add(new CollectorGlyph(system.Id, null, system.OutletFrame));
@@ -323,12 +334,24 @@ internal sealed partial class CadViewport : IDisposable
 		CadCollectorSystem invalid = project.ActiveCollectorSystem;
 		if (invalid?.IsResolved == false)
 		{
+			bool geometricallyInvalid = invalid.Inlets.Any(inlet =>
+				inlet.BranchPath?.IsFeasible != true);
+			geometricallyInvalid |= invalid.Inlets.Any(inlet =>
+				inlet.Binding != null
+				&& evaluatedRunners?.TryGetValue(
+					inlet.Binding.RunnerId,
+					out RunnerEvaluationResult result
+				) == true
+				&& result.GenerationStamp == invalid.GenerationStamp
+				&& !result.Success);
 			SetCollectorDraft(
 				invalid,
 				null,
 				invalid.OutletFrame,
-				true,
-				evaluatedRunners
+				geometricallyInvalid,
+				evaluatedRunners,
+				createTubeMeshes: false,
+				stale: !geometricallyInvalid
 			);
 		}
 	}

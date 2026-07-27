@@ -169,8 +169,12 @@ internal sealed partial class ManifoldCadApplication
 		node.Properties[properties[index]] = value.ToString("G17", CultureInfo.InvariantCulture);
 		if (ActiveRunner != null)
 		{
-			viewport.ReloadBezierCommittedProperties(ActiveRunner.Id, node);
+			if (node.DefinitionId == RunnerNodes.CubicBezier)
+			{
+				viewport.EndBezierDraft();
+			}
 			CommitRunnerOrSystemEdit(ActiveRunner);
+			RefreshCurveDisplayOverlay();
 			RegenerateRunner(ActiveRunner);
 		}
 	}
@@ -275,6 +279,7 @@ internal sealed partial class ManifoldCadApplication
 		DiscardCollectorDraft();
 		DiscardPartDraft();
 		project.SetActiveCollector(null);
+		nodeCanvas.ClearSelection();
 		selectedPart = project.Parts.FirstOrDefault(part => part.Id == partId);
 		RefreshUi();
 	}
@@ -284,6 +289,7 @@ internal sealed partial class ManifoldCadApplication
 		DiscardCollectorDraft();
 		DiscardPartDraft();
 		project.SetActiveCollector(null);
+		nodeCanvas.ClearSelection();
 		selectedMate = project.Mates.FirstOrDefault(mate => mate.Id == mateId);
 		selectedPart = selectedMate == null ? selectedPart : project.Parts.FirstOrDefault(part => part.Id == selectedMate.PartId);
 		RefreshUi();

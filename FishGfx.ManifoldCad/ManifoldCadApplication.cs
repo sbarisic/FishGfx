@@ -211,6 +211,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		viewport.BezierCommitRequested += CommitBezierDraft;
 		viewport.BezierDraftCancelled += RestoreCommittedBezierDraft;
 		viewport.BezierDraftPreviewChanged += ShowBezierDraftInInspector;
+		viewport.CurveControlSelected += SelectCurveControl;
 		nodeCanvas.GraphChanged += () =>
 		{
 			if (ActiveRunner != null)
@@ -225,6 +226,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 				{
 					system.CommitEdit();
 				}
+				RefreshCurveDisplayOverlay();
 				RegenerateRunner(ActiveRunner);
 			}
 		};
@@ -378,6 +380,7 @@ internal sealed partial class ManifoldCadApplication : IDisposable
 		{
 			ui.SetNode(nodeCanvas.SelectedNode);
 		}
+		RefreshCurveDisplayOverlay();
 	}
 
 	internal static CadTransform? ResolvePartDraftTransform(

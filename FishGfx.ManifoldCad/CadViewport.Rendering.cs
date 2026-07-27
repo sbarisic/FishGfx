@@ -206,7 +206,9 @@ internal sealed partial class CadViewport
 	{
 		Color color = collectorDraftInvalid
 			? new Color(255, 70, 70)
-			: new Color(245, 90, 210);
+			: collectorDraftStale
+				? new Color(235, 145, 55)
+				: new Color(245, 90, 210);
 		foreach (Mesh3D mesh in collectorDraftMeshes)
 		{
 			mesh.DefaultColor = color;

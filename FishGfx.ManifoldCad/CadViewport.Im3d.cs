@@ -83,8 +83,7 @@ internal sealed partial class CadViewport
 
 	private void SubmitSelectedBezierGizmo()
 	{
-		if (bezierDraft == null
-			|| activeBezierHandle.HasValue
+		if (activeBezierHandle.HasValue
 			|| !selectedBezierHandle.HasValue
 			|| selectedBezierHandle == RunnerPathPointKind.Start)
 		{
@@ -92,16 +91,34 @@ internal sealed partial class CadViewport
 		}
 
 		RunnerPathPointKind pointKind = selectedBezierHandle.Value;
-		uint id = Im3dId.FromGuid(bezierDraft.NodeId, 0x425A0000u + (uint)pointKind);
-		CadPoint3 currentPoint = bezierDraft.Point(pointKind);
+		CurveDisplayOverlay overlay = curveOverlayState.Overlay;
+		if (bezierDraft == null
+			&& (!curveOverlayState.OverlayMatchesSelection
+				|| overlay == null
+				|| !overlay.Controls.Any(control =>
+					control.RunnerPointKind == pointKind && control.Editable)))
+		{
+			return;
+		}
+		if (bezierDraft != null && !bezierDraft.CanEdit(pointKind))
+		{
+			return;
+		}
+		Guid nodeId = bezierDraft?.NodeId ?? overlay.Identity.ElementId.Value;
+		uint id = Im3dId.FromGuid(nodeId, 0x425A0000u + (uint)pointKind);
+		CadPoint3 currentPoint = bezierDraft?.Point(pointKind)
+			?? overlay.Controls.Single(control =>
+				control.RunnerPointKind == pointKind).Position;
+		CadFrame entryFrame = bezierDraft?.EntryFrame
+			?? overlay.RunnerEntryFrame.Value;
 		Vector3 nextPosition;
 		Im3dInteraction interaction;
 		if (pointKind == RunnerPathPointKind.Control1)
 		{
 			(nextPosition, interaction) = im3dContext.ManipulateAxisTranslation(
 				id,
-				ToVector(bezierDraft.Start),
-				ToVector(bezierDraft.EntryFrame.Tangent),
+				ToVector(entryFrame.Origin),
+				ToVector(entryFrame.Tangent),
 				ToVector(currentPoint),
 				Color.Red);
 		}
@@ -117,9 +134,18 @@ internal sealed partial class CadViewport
 
 		if (interaction.ActivatedId == id)
 		{
+			if (bezierDraft == null)
+			{
+				if (!curveOverlayState.TryBeginDraft())
+				{
+					return;
+				}
+				bezierDraft = BezierDraftState.Create(overlay);
+				BezierDraftPreviewChanged?.Invoke(bezierDraft, pointKind);
+			}
 			activeIm3dBezierId = id;
 		}
-		if (!interaction.Changed)
+		if (!interaction.Changed || bezierDraft == null)
 		{
 			return;
 		}
@@ -149,6 +175,10 @@ internal sealed partial class CadViewport
 			if (bezierDraft?.IsDirty == true)
 			{
 				BezierCommitRequested?.Invoke(bezierDraft);
+			}
+			else
+			{
+				EndBezierDraft();
 			}
 			activeIm3dBezierId = Im3dInteraction.InvalidId;
 			return;

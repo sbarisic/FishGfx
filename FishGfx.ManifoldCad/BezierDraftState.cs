@@ -5,22 +5,33 @@ namespace FishGfx.ManifoldCad;
 
 internal sealed class BezierDraftState
 {
-	private BezierDraftState(Guid runnerId, RunnerNode node, CadFrame entryFrame, CadFrame authoritativeExitFrame)
+	private readonly bool endpointConstrained;
+
+	private BezierDraftState(
+		Guid runnerId,
+		Guid nodeId,
+		CadFrame entryFrame,
+		CadFrame authoritativeExitFrame,
+		bool endpointConstrained,
+		double? startHandleLength = null,
+		CadPoint3? control2Local = null,
+		CadPoint3? endLocal = null)
 	{
 		RunnerId = runnerId;
-		NodeId = node.Id;
+		NodeId = nodeId;
 		EntryFrame = entryFrame;
 		AuthoritativeExitFrame = authoritativeExitFrame;
-		StartHandleLength = Read(node, "startHandleLength");
-		Control2Local = new CadPoint3(
-			Read(node, "control2T"),
-			Read(node, "control2U"),
-			Read(node, "control2V")
+		this.endpointConstrained = endpointConstrained;
+		StartHandleLength = startHandleLength ?? throw new ArgumentNullException(nameof(startHandleLength));
+		Control2Local = control2Local ?? new CadPoint3(
+			0,
+			0,
+			0
 		);
-		EndLocal = new CadPoint3(
-			Read(node, "endT"),
-			Read(node, "endU"),
-			Read(node, "endV")
+		EndLocal = endLocal ?? new CadPoint3(
+			0,
+			0,
+			0
 		);
 	}
 
@@ -46,8 +57,59 @@ internal sealed class BezierDraftState
 		{
 			throw new ArgumentException("A Bezier draft requires a Cubic Bezier node.", nameof(node));
 		}
-		return new BezierDraftState(runnerId, node, feature.EntryFrame, feature.ExitFrame);
+		return new BezierDraftState(
+			runnerId,
+			node.Id,
+			feature.EntryFrame,
+			feature.ExitFrame,
+			false,
+			Read(node, "startHandleLength"),
+			new CadPoint3(
+				Read(node, "control2T"),
+				Read(node, "control2U"),
+				Read(node, "control2V")),
+			new CadPoint3(
+				Read(node, "endT"),
+				Read(node, "endU"),
+				Read(node, "endV")));
 	}
+
+	internal static BezierDraftState Create(CurveDisplayOverlay overlay)
+	{
+		ArgumentNullException.ThrowIfNull(overlay);
+		if (overlay.Identity.OwnerKind != CurveDisplayOwnerKind.RunnerBezier
+			|| !overlay.Identity.ElementId.HasValue
+			|| overlay.Spans.Count != 1
+			|| !overlay.RunnerEntryFrame.HasValue
+			|| !overlay.RunnerExitFrame.HasValue)
+		{
+			throw new ArgumentException(
+				"A Bezier draft requires one matching runner display span.",
+				nameof(overlay));
+		}
+
+		CurveDisplaySpan span = overlay.Spans[0];
+		CadFrame entry = overlay.RunnerEntryFrame.Value;
+		bool constrained = overlay.Controls.Any(control =>
+			control.RunnerPointKind is RunnerPathPointKind.Control2 or RunnerPathPointKind.End
+			&& !control.Editable);
+		return new BezierDraftState(
+			overlay.Identity.OwnerId,
+			overlay.Identity.ElementId.Value,
+			entry,
+			overlay.RunnerExitFrame.Value,
+			constrained,
+			CadPoint3.Dot(span.Control1 - span.Start, entry.Tangent),
+			ToLocal(span.Control2, entry),
+			ToLocal(span.End, entry));
+	}
+
+	internal bool CanEdit(RunnerPathPointKind kind) => kind switch
+	{
+		RunnerPathPointKind.Control1 => true,
+		RunnerPathPointKind.Control2 or RunnerPathPointKind.End => !endpointConstrained,
+		_ => false,
+	};
 
 	internal CadPoint3 Point(RunnerPathPointKind kind)
 	{
@@ -63,6 +125,11 @@ internal sealed class BezierDraftState
 
 	internal bool MoveWorldPoint(RunnerPathPointKind kind, CadPoint3 worldPoint)
 	{
+		if (!CanEdit(kind))
+		{
+			return false;
+		}
+
 		switch (kind)
 		{
 			case RunnerPathPointKind.Control1:
@@ -100,29 +167,6 @@ internal sealed class BezierDraftState
 		return true;
 	}
 
-	internal void UpdateFrames(CadFrame entryFrame, CadFrame authoritativeExitFrame)
-	{
-		EntryFrame = entryFrame;
-		AuthoritativeExitFrame = authoritativeExitFrame;
-	}
-
-	internal void ReloadCommittedProperties(RunnerNode node)
-	{
-		StartHandleLength = Read(node, "startHandleLength");
-		Control2Local = new CadPoint3(
-			Read(node, "control2T"),
-			Read(node, "control2U"),
-			Read(node, "control2V")
-		);
-		EndLocal = new CadPoint3(
-			Read(node, "endT"),
-			Read(node, "endU"),
-			Read(node, "endV")
-		);
-		IsDirty = false;
-		IsInvalid = false;
-	}
-
 	internal void Commit(RunnerNode node)
 	{
 		if (node.Id != NodeId || node.DefinitionId != RunnerNodes.CubicBezier)
@@ -132,13 +176,16 @@ internal sealed class BezierDraftState
 		Dictionary<string, string> staged = new(node.Properties)
 		{
 			["startHandleLength"] = Format(StartHandleLength),
-			["control2T"] = Format(Control2Local.X),
-			["control2U"] = Format(Control2Local.Y),
-			["control2V"] = Format(Control2Local.Z),
-			["endT"] = Format(EndLocal.X),
-			["endU"] = Format(EndLocal.Y),
-			["endV"] = Format(EndLocal.Z),
 		};
+		if (!endpointConstrained)
+		{
+			staged["control2T"] = Format(Control2Local.X);
+			staged["control2U"] = Format(Control2Local.Y);
+			staged["control2V"] = Format(Control2Local.Z);
+			staged["endT"] = Format(EndLocal.X);
+			staged["endU"] = Format(EndLocal.Y);
+			staged["endV"] = Format(EndLocal.Z);
+		}
 		node.Properties.Clear();
 		foreach ((string key, string value) in staged)
 		{
@@ -166,11 +213,16 @@ internal sealed class BezierDraftState
 
 	private CadPoint3 ToLocal(CadPoint3 world)
 	{
-		CadPoint3 relative = world - Start;
+		return ToLocal(world, EntryFrame);
+	}
+
+	private static CadPoint3 ToLocal(CadPoint3 world, CadFrame frame)
+	{
+		CadPoint3 relative = world - frame.Origin;
 		return new CadPoint3(
-			CadPoint3.Dot(relative, EntryFrame.Tangent),
-			CadPoint3.Dot(relative, EntryFrame.Normal),
-			CadPoint3.Dot(relative, EntryFrame.Binormal)
+			CadPoint3.Dot(relative, frame.Tangent),
+			CadPoint3.Dot(relative, frame.Normal),
+			CadPoint3.Dot(relative, frame.Binormal)
 		);
 	}
 

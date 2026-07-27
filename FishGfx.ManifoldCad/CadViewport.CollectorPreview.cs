@@ -9,25 +9,74 @@ internal sealed partial class CadViewport
 {
 	private const int CollectorPreviewSides = 16;
 
-	private void AddCollectorDraftCurve(
+	private bool AddCollectorDraftCurve(
 		CadPoint3[] samples,
 		double outerRadius,
 		bool createTubeMesh
 	)
 	{
 		if (samples == null || samples.Length < 2
-			|| !double.IsFinite(outerRadius) || outerRadius <= 0)
+			|| !double.IsFinite(outerRadius) || outerRadius <= 0
+			|| samples.Any(point => !point.IsFinite))
 		{
-			return;
+			return false;
 		}
 		collectorDraftCurves.Add(samples);
 		// Invalid curves remain useful as clean red centreline diagnostics.  A
 		// tube around a self-intersecting or over-curved path creates overlapping
 		// triangles that look like corrupted exact geometry, so do not create it.
-		if (createTubeMesh)
+		if (createTubeMesh && IsSafeCollectorPreviewTube(samples, outerRadius))
 		{
 			collectorDraftMeshes.Add(CreateCollectorDraftTube(samples, outerRadius));
+			return true;
 		}
+		return !createTubeMesh;
+	}
+
+	private static bool IsSafeCollectorPreviewTube(
+		IReadOnlyList<CadPoint3> samples,
+		double radius
+	)
+	{
+		const double minimumSegmentLength = 1e-5;
+		for (int index = 0; index < samples.Count; ++index)
+		{
+			if (index > 0
+				&& (samples[index] - samples[index - 1]).Length
+					<= minimumSegmentLength)
+			{
+				return false;
+			}
+		}
+
+		// A sampled tube is only a visual aid.  Refuse to build it when the
+		// polyline cannot conservatively clear its own radius; the centreline
+		// remains available as a clean diagnostic instead of overlapping faces.
+		for (int index = 1; index < samples.Count - 1; ++index)
+		{
+			CadPoint3 incoming = samples[index] - samples[index - 1];
+			CadPoint3 outgoing = samples[index + 1] - samples[index];
+			double incomingLength = incoming.Length;
+			double outgoingLength = outgoing.Length;
+			double cosine = Math.Clamp(
+				CadPoint3.Dot(incoming, outgoing)
+					/ (incomingLength * outgoingLength),
+				-1,
+				1
+			);
+			double halfSine = Math.Sqrt(Math.Max(0, (1 - cosine) * 0.5));
+			if (halfSine <= 1e-9)
+			{
+				continue;
+			}
+			double sampledRadius = Math.Min(incomingLength, outgoingLength)
+				/ (2 * halfSine);
+			if (!double.IsFinite(sampledRadius) || sampledRadius <= radius * 1.05)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private Mesh3D CreateCollectorDraftTube(

@@ -256,6 +256,32 @@ public sealed partial class CollectorSystemTransaction
 		out string error
 	)
 	{
+		return TryUpdateCore(systemId, update, null, out error);
+	}
+
+	public bool TryUpdateConstrainedGeometry(
+		Guid systemId,
+		Action<CadCollectorSystem> update,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations,
+		out string error
+	)
+	{
+		ArgumentNullException.ThrowIfNull(authoritativeEvaluations);
+		return TryUpdateCore(
+			systemId,
+			update,
+			authoritativeEvaluations,
+			out error
+		);
+	}
+
+	private bool TryUpdateCore(
+		Guid systemId,
+		Action<CadCollectorSystem> update,
+		IReadOnlyDictionary<Guid, RunnerEvaluationResult> authoritativeEvaluations,
+		out string error
+	)
+	{
 		EnsureOpen();
 		ArgumentNullException.ThrowIfNull(update);
 		CadCollectorSystem system = stagedCollectors.SingleOrDefault(item => item.Id == systemId);
@@ -264,42 +290,66 @@ public sealed partial class CollectorSystemTransaction
 			error = "The collector system does not exist.";
 			return false;
 		}
+		Dictionary<Guid, RunnerGraph> graphBackup = authoritativeEvaluations == null
+			? null
+			: CloneGraphs();
+		List<CadCollectorSystem> collectorBackup = CloneCollectors();
 		CadCollectorSystem backup = system.DeepClone();
 		try
 		{
 			update(system);
+			if (authoritativeEvaluations != null)
+			{
+				SeedTerminalHandles(system, authoritativeEvaluations);
+				ResolveCollectorBranchPaths(system, authoritativeEvaluations);
+			}
 		}
 		catch (Exception exception)
 		{
-			ReplaceCollector(systemId, backup);
+			RestoreUpdate(systemId, backup, graphBackup, collectorBackup);
 			error = exception.Message;
 			return false;
 		}
 		if (system.Id != systemId)
 		{
-			ReplaceCollector(systemId, backup);
+			RestoreUpdate(systemId, backup, graphBackup, collectorBackup);
 			error = "A collector transaction cannot change a system's stable ID.";
 			return false;
 		}
 		if (system.GenerationRevision != backup.GenerationRevision)
 		{
-			ReplaceCollector(systemId, backup);
+			RestoreUpdate(systemId, backup, graphBackup, collectorBackup);
 			error = "Collector parameter updates cannot change the generation revision directly.";
 			return false;
 		}
 		if (!HasSameBindingStructure(backup, system))
 		{
-			ReplaceCollector(systemId, backup);
+			RestoreUpdate(systemId, backup, graphBackup, collectorBackup);
 			error = "Collector parameter updates cannot change stable inlet IDs or runner bindings.";
 			return false;
 		}
 		if (!ValidateSystem(system, stagedGraphs, out error))
 		{
-			ReplaceCollector(systemId, backup);
+			RestoreUpdate(systemId, backup, graphBackup, collectorBackup);
 			return false;
 		}
 		system.CommitEdit();
 		return true;
+	}
+
+	private void RestoreUpdate(
+		Guid systemId,
+		CadCollectorSystem backup,
+		Dictionary<Guid, RunnerGraph> graphBackup,
+		List<CadCollectorSystem> collectorBackup
+	)
+	{
+		if (graphBackup == null)
+		{
+			ReplaceCollector(systemId, backup);
+			return;
+		}
+		Restore(graphBackup, collectorBackup);
 	}
 
 	public bool TryValidate(out string error)
