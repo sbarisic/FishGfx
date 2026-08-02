@@ -3,6 +3,12 @@ using System.Numerics;
 
 namespace FishGfx.Voxels;
 
+public enum VoxelRendererPresentationMode
+{
+	Material,
+	UnlitTexture,
+}
+
 public enum VoxelRenderMode
 {
 	Opaque,

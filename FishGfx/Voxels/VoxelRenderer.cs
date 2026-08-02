@@ -103,6 +103,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	private bool cullingEnabled = true;
 	private VoxelFogSettings fog = VoxelFogSettings.Disabled;
 	private VoxelSunSettings sun;
+	private VoxelRendererPresentationMode presentationMode;
+	private long surfaceTextureGeneration = 1;
 	private bool activeSetDirty = true;
 	private bool hasActiveSetAnchor;
 	private Vector3 activeSetAnchor;
@@ -257,6 +259,20 @@ public sealed partial class VoxelRenderer : IDisposable
 
 	public VoxelSurfaceTextureSet SurfaceTextures => surfaceTextures;
 
+	public long SurfaceTextureGeneration => surfaceTextureGeneration;
+
+	public VoxelRendererPresentationMode PresentationMode
+	{
+		get => presentationMode;
+		set
+		{
+			ThrowIfDisposed();
+			if (!Enum.IsDefined(value))
+				throw new ArgumentOutOfRangeException(nameof(value));
+			presentationMode = value;
+		}
+	}
+
 	public void SetSurfaceTextures(VoxelSurfaceTextureSet textures)
 	{
 		ThrowIfDisposed();
@@ -278,6 +294,7 @@ public sealed partial class VoxelRenderer : IDisposable
 
 		surfaceTextures = textures;
 		atlasTexture = textures.ModelAtlas;
+		surfaceTextureGeneration = checked(surfaceTextureGeneration + 1);
 	}
 
 	private static int ExpectedCubeMipLevels(VoxelAtlasLayout layout)

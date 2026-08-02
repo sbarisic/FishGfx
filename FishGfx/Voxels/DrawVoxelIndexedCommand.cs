@@ -10,6 +10,9 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 {
 	private readonly VoxelTransparentDrawSnapshot snapshot;
 	private readonly VoxelSurfaceTextureSet textures;
+	private readonly IDisposable textureReference;
+	private readonly VoxelRendererPresentationMode presentationMode;
+	private readonly long surfaceTextureGeneration;
 	private readonly ShaderProgram shader;
 	private readonly RenderState state;
 	private readonly VoxelSunSettings sun;
@@ -21,6 +24,8 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 	internal DrawVoxelIndexedCommand(
 		VoxelTransparentDrawSnapshot snapshot,
 		VoxelSurfaceTextureSet textures,
+		VoxelRendererPresentationMode presentationMode,
+		long surfaceTextureGeneration,
 		ShaderProgram shader,
 		RenderState state,
 		VoxelSunSettings sun,
@@ -31,6 +36,8 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 	{
 		this.snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
 		this.textures = textures ?? throw new ArgumentNullException(nameof(textures));
+		this.presentationMode = presentationMode;
+		this.surfaceTextureGeneration = surfaceTextureGeneration;
 		this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
 		this.state = state;
 		sun.Validate(nameof(sun));
@@ -38,8 +45,21 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		this.fog = fog;
 		this.gpuTimer = gpuTimer ?? throw new ArgumentNullException(nameof(gpuTimer));
 		this.shadows = shadows;
-		snapshot.RetainReference();
+		textureReference = textures.RetainForSubmission();
+		try
+		{
+			snapshot.RetainReference();
+		}
+		catch
+		{
+			textureReference.Dispose();
+			throw;
+		}
 	}
+
+	internal VoxelRendererPresentationMode PresentationMode => presentationMode;
+
+	internal long SurfaceTextureGeneration => surfaceTextureGeneration;
 
 	~DrawVoxelIndexedCommand()
 	{
@@ -68,6 +88,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 			shader.SetUniform("FogDensity", fog.Density);
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
 			shader.SetUniform("uShadowEnabled", 0);
+			shader.SetUniform("VoxelPresentationMode", (int)presentationMode);
 			shadowBindings = shadows?.Bind(shader, 3);
 			textureBindings = textures.Bind(shader);
 			shader.Bind(pass.Uniforms);
@@ -105,6 +126,7 @@ internal sealed class DrawVoxelIndexedCommand : RenderCommand, IDisposable
 		if (Interlocked.Exchange(ref disposed, 1) == 0)
 		{
 			snapshot?.ReleaseReference();
+			textureReference?.Dispose();
 		}
 	}
 }

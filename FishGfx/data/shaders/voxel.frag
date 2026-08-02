@@ -15,6 +15,7 @@ uniform sampler2DArray CubeBaseColor;
 uniform sampler2DArray CubeSurface;
 uniform sampler2D ModelAtlas;
 uniform int SurfaceMapsEnabled;
+uniform int VoxelPresentationMode;
 uniform int uVoxelLayerInfo[256];
 uniform vec3 LightDirection;
 uniform float AmbientLight;
@@ -194,13 +195,22 @@ void main()
 {
 	bool cubeSurface = frag_TextureLayer >= 0;
 	vec3 cubeCoordinate = vec3(frag_UV, float(frag_TextureLayer));
-	vec4 sampled = (cubeSurface
+	vec4 textureSample = cubeSurface
 		? texture(CubeBaseColor, cubeCoordinate)
-		: texture(ModelAtlas, frag_UV)) * frag_Clr;
+		: texture(ModelAtlas, frag_UV);
+	vec4 sampled = VoxelPresentationMode == 1
+		? textureSample
+		: textureSample * frag_Clr;
 
 	if (AlphaCutoff >= 0.0 && sampled.a < AlphaCutoff)
 	{
 		discard;
+	}
+
+	if (VoxelPresentationMode == 1)
+	{
+		OutColor = sampled;
+		return;
 	}
 
 	vec3 geometricNormal = SafeNormalize(frag_Normal, vec3(0.0, 1.0, 0.0));

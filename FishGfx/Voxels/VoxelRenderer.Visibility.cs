@@ -208,6 +208,8 @@ public sealed partial class VoxelRenderer : IDisposable
 	{
 		DrawVoxelPagesCommand command = new(
 			surfaceTextures,
+			presentationMode,
+			surfaceTextureGeneration,
 			voxelShader,
 			opaqueState,
 			sun,
@@ -250,6 +252,8 @@ public sealed partial class VoxelRenderer : IDisposable
 		DrawVoxelIndexedCommand command = new(
 			transparentSnapshot,
 			surfaceTextures,
+			presentationMode,
+			surfaceTextureGeneration,
 			waveShader,
 			transparentState,
 			sun,

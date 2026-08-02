@@ -95,6 +95,14 @@ internal sealed partial class VoxelTestApplication
 					: 2,
 			}
 		);
+		// The automatic harness validates rendering and streaming rather than the
+		// host window's frustum/aspect behavior. Keep its active set deterministic
+		// even when a desktop compositor resizes the test window before the first frame.
+		if (autoMode)
+		{
+			cullingEnabled = false;
+			renderer.IsCullingEnabled = false;
+		}
 		RenderQueue renderQueue = new RenderQueue();
 		RenderState overlayState = RenderState.Default with
 		{
@@ -557,9 +565,7 @@ internal sealed partial class VoxelTestApplication
 			lighting.Dispose();
 			voxelUi.Dispose();
 			input.Dispose();
-			textures.CubeBaseColor.Dispose();
-			textures.PackedSurface.Dispose();
-			textures.ModelAtlas.Dispose();
+			textures.DisposeTexturesWhenUnused();
 			window.Graphics.CollectGarbage();
 			window.Dispose();
 		}

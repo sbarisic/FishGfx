@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using FishGfx.Graphics;
 
 namespace FishGfx.Voxels;
@@ -7,6 +8,10 @@ namespace FishGfx.Voxels;
 public sealed class VoxelSurfaceTextureSet
 {
 	private readonly int[] layerInfo;
+	private readonly object lifetimeGate = new();
+	private int submissionReferences;
+	private bool retirementRequested;
+	private bool texturesDisposed;
 	public VoxelSurfaceTextureSet(
 		Texture modelAtlas,
 		Texture cubeBaseColor,
@@ -61,6 +66,7 @@ public sealed class VoxelSurfaceTextureSet
 
 	internal void EnsureOwner(GraphicsContext graphics)
 	{
+		ThrowIfRetired();
 		ModelAtlas.EnsureOwner(graphics);
 		CubeBaseColor.EnsureOwner(graphics);
 		PackedSurface.EnsureOwner(graphics);
@@ -69,6 +75,7 @@ public sealed class VoxelSurfaceTextureSet
 	internal IDisposable Bind(ShaderProgram shader)
 	{
 		ArgumentNullException.ThrowIfNull(shader);
+		ThrowIfRetired(allowRetainedSubmission: true);
 		shader.SetUniform("CubeBaseColor", 0);
 		shader.SetUniform("CubeSurface", 1);
 		shader.SetUniform("ModelAtlas", 2);
@@ -95,6 +102,69 @@ public sealed class VoxelSurfaceTextureSet
 
 			throw;
 		}
+	}
+
+	internal IDisposable RetainForSubmission()
+	{
+		lock (lifetimeGate)
+		{
+			if (retirementRequested)
+				throw new ObjectDisposedException(nameof(VoxelSurfaceTextureSet));
+			submissionReferences++;
+		}
+		return new SubmissionReference(this);
+	}
+
+	/// <summary>
+	/// Retires an owned texture set. Its textures are disposed immediately when
+	/// no queued voxel command references it, or after the final command releases it.
+	/// </summary>
+	public void DisposeTexturesWhenUnused()
+	{
+		bool dispose;
+		lock (lifetimeGate)
+		{
+			if (retirementRequested)
+				return;
+			retirementRequested = true;
+			dispose = submissionReferences == 0;
+			if (dispose)
+				texturesDisposed = true;
+		}
+		if (dispose)
+			DisposeTextures();
+	}
+
+	private void ReleaseSubmissionReference()
+	{
+		bool dispose;
+		lock (lifetimeGate)
+		{
+			if (submissionReferences <= 0)
+				throw new InvalidOperationException("The voxel texture submission reference count is unbalanced.");
+			submissionReferences--;
+			dispose = retirementRequested && submissionReferences == 0 && !texturesDisposed;
+			if (dispose)
+				texturesDisposed = true;
+		}
+		if (dispose)
+			DisposeTextures();
+	}
+
+	private void ThrowIfRetired(bool allowRetainedSubmission = false)
+	{
+		lock (lifetimeGate)
+		{
+			if (retirementRequested && (!allowRetainedSubmission || submissionReferences == 0))
+				throw new ObjectDisposedException(nameof(VoxelSurfaceTextureSet));
+		}
+	}
+
+	private void DisposeTextures()
+	{
+		PackedSurface.Dispose();
+		CubeBaseColor.Dispose();
+		ModelAtlas.Dispose();
 	}
 
 	private void ValidateDimensions(Texture texture, string parameterName)
@@ -197,6 +267,19 @@ public sealed class VoxelSurfaceTextureSet
 			{
 				current[index]?.Dispose();
 			}
+		}
+	}
+
+	private sealed class SubmissionReference : IDisposable
+	{
+		private VoxelSurfaceTextureSet owner;
+
+		internal SubmissionReference(VoxelSurfaceTextureSet owner) => this.owner = owner;
+
+		public void Dispose()
+		{
+			VoxelSurfaceTextureSet current = Interlocked.Exchange(ref owner, null);
+			current?.ReleaseSubmissionReference();
 		}
 	}
 }

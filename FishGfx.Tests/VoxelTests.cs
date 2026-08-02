@@ -316,7 +316,12 @@ public partial class VoxelTests
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.FogSettings)));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.AtlasTexture)));
 		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.SurfaceTextures)));
+		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.SurfaceTextureGeneration)));
+		Assert.NotNull(typeof(VoxelRenderer).GetProperty(nameof(VoxelRenderer.PresentationMode)));
 		Assert.NotNull(typeof(VoxelRenderer).GetMethod(nameof(VoxelRenderer.SetSurfaceTextures)));
+		Assert.Equal(
+			new[] { VoxelRendererPresentationMode.Material, VoxelRendererPresentationMode.UnlitTexture },
+			Enum.GetValues<VoxelRendererPresentationMode>());
 		Assert.Null(typeof(VoxelRenderer).GetMethod("UpdateMeshing"));
 		Assert.Null(typeof(VoxelRenderer).GetMethod("SubmitVisible"));
 		Assert.Null(typeof(VoxelRenderer).GetProperty("CullingEnabled"));

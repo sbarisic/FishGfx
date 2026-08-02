@@ -32,6 +32,9 @@ internal readonly struct VoxelPassEntry
 internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 {
 	private readonly VoxelSurfaceTextureSet textures;
+	private readonly IDisposable textureReference;
+	private readonly VoxelRendererPresentationMode presentationMode;
+	private readonly long surfaceTextureGeneration;
 	private readonly ShaderProgram shader;
 	private readonly RenderState state;
 	private readonly VoxelSunSettings sun;
@@ -47,6 +50,8 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 
 	internal DrawVoxelPagesCommand(
 		VoxelSurfaceTextureSet textures,
+		VoxelRendererPresentationMode presentationMode,
+		long surfaceTextureGeneration,
 		ShaderProgram shader,
 		RenderState state,
 		VoxelSunSettings sunSettings,
@@ -61,6 +66,8 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 	)
 	{
 		this.textures = textures ?? throw new ArgumentNullException(nameof(textures));
+		this.presentationMode = presentationMode;
+		this.surfaceTextureGeneration = surfaceTextureGeneration;
 		this.shader = shader ?? throw new ArgumentNullException(nameof(shader));
 		this.state = state;
 		sunSettings.Validate(nameof(sunSettings));
@@ -82,6 +89,16 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 			ReleaseGroups(opaqueGroups);
 			throw;
 		}
+		try
+		{
+			textureReference = textures.RetainForSubmission();
+		}
+		catch
+		{
+			ReleaseGroups(opaqueGroups);
+			ReleaseGroups(cutoutGroups);
+			throw;
+		}
 	}
 
 	internal int OpaqueGroupCount => opaqueGroups.Length;
@@ -91,6 +108,10 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 	internal int OpaqueCommandCount => CountCommands(opaqueGroups);
 
 	internal int CutoutCommandCount => CountCommands(cutoutGroups);
+
+	internal VoxelRendererPresentationMode PresentationMode => presentationMode;
+
+	internal long SurfaceTextureGeneration => surfaceTextureGeneration;
 
 	~DrawVoxelPagesCommand()
 	{
@@ -127,6 +148,7 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 			shader.SetUniform("LightMultiplier", fog.Enabled ? fog.LightMultiplier : 1);
 			shader.SetUniform("AlphaCutoff", -1f);
 			shader.SetUniform("uShadowEnabled", 0);
+			shader.SetUniform("VoxelPresentationMode", (int)presentationMode);
 			shadowBindings = shadows?.Bind(shader, 3);
 			textureBindings = textures.Bind(shader);
 			shader.Bind(pass.Uniforms);
@@ -209,6 +231,7 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 
 		ReleaseGroups(opaqueGroups);
 		ReleaseGroups(cutoutGroups);
+		textureReference?.Dispose();
 	}
 
 	private static VoxelPageDrawGroup[] CreateGroups(IReadOnlyList<VoxelPassEntry> entries)
