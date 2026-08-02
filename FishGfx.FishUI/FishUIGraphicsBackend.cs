@@ -7,7 +7,8 @@ using FishGfx.Graphics;
 
 namespace FishGfx.FishUI;
 
-public sealed partial class FishUIGraphicsBackend : global::FishUI.SimpleFishUIGfx, IDisposable
+public sealed partial class FishUIGraphicsBackend : global::FishUI.SimpleFishUIGfx,
+	global::FishUI.IFishUIFramebufferProvider, IDisposable
 {
 	private readonly RenderWindow window;
 	private readonly GraphicsContext graphics;
@@ -140,6 +141,23 @@ public sealed partial class FishUIGraphicsBackend : global::FishUI.SimpleFishUIG
 				isDrawing = false;
 			}
 		}
+	}
+
+	public bool TryCaptureFramebuffer(out global::FishUI.FishUIFramebuffer framebuffer)
+	{
+		RenderPass activePass = RequireDrawing();
+		RenderTarget target = activePass.Target;
+		byte[] rgba = new byte[checked(target.Width * target.Height * 4)];
+		activePass.ReadColorRgba32(rgba);
+		framebuffer = new global::FishUI.FishUIFramebuffer(
+			target.Width,
+			target.Height,
+			checked(target.Width * 4),
+			global::FishUI.FishUIPixelOrigin.BottomLeft,
+			false,
+			rgba
+		);
+		return true;
 	}
 
 	public override void BeginScissor(Vector2 position, Vector2 size)

@@ -8,6 +8,13 @@ namespace FishGfx.Tests;
 public sealed class FishUIIntegrationTests
 {
 	[Fact]
+	public void GraphicsBackendPublishesFramebufferProviderContract()
+	{
+		Assert.True(typeof(global::FishUI.IFishUIFramebufferProvider)
+			.IsAssignableFrom(typeof(FishUIGraphicsBackend)));
+	}
+
+	[Fact]
 	public void TopLeftCoordinatesConvertToFishGfxCoordinates()
 	{
 		Assert.Equal(new Vector2(12, 80), FishUIConversions.ToFishGfxPoint(new Vector2(12, 20), 100));

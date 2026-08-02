@@ -119,6 +119,16 @@ public sealed class GraphicsApiTests
 	}
 
 	[Fact]
+	public void RenderPassPublishesBoundedRgba32Readback()
+	{
+		MethodInfo method = typeof(RenderPass).GetMethod(nameof(RenderPass.ReadColorRgba32));
+
+		Assert.NotNull(method);
+		Assert.Equal(typeof(void), method.ReturnType);
+		Assert.Equal(typeof(Span<byte>), Assert.Single(method.GetParameters()).ParameterType);
+	}
+
+	[Fact]
 	public void RenderViewRejectsNegativeViewportDimensions()
 	{
 		Assert.Throws<ArgumentOutOfRangeException>(
