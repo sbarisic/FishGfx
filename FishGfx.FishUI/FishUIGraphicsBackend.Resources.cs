@@ -54,17 +54,16 @@ public sealed partial class FishUIGraphicsBackend
 
 		float lineHeight = font.LineHeight * size / font.BaseSize;
 
-		return new global::FishUI.FontRef
-		{
-			Path = fileName,
-			Userdata = font,
-			Size = size,
-			Spacing = spacing,
-			Color = color,
-			Style = style,
-			LineHeight = lineHeight,
-			IsMonospaced = IsMonospaced(font, size),
-		};
+		return new global::FishUI.FontRef(
+			path: fileName,
+			userdata: font,
+			size: size,
+			spacing: spacing,
+			color: color,
+			style: style,
+			isMonospaced: IsMonospaced(font, size),
+			lineHeight: lineHeight
+		);
 	}
 
 	public override global::FishUI.ImageRef LoadImage(string fileName)
@@ -100,14 +99,13 @@ public sealed partial class FishUIGraphicsBackend
 			}
 		}
 
-		return new global::FishUI.ImageRef
-		{
-			Path = fileName,
-			Width = resource.Texture.Width,
-			Height = resource.Texture.Height,
-			Userdata = resource,
-			Userdata2 = resource.Bitmap,
-		};
+		return new global::FishUI.ImageRef(
+			path: fileName,
+			width: resource.Texture.Width,
+			height: resource.Texture.Height,
+			userdata: resource,
+			userdata2: resource.Bitmap
+		);
 	}
 
 	public override global::FishUI.FishColor GetImageColor(

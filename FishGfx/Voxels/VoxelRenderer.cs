@@ -614,9 +614,18 @@ public sealed partial class VoxelRenderer : IDisposable
 			if (!currentUploadJob.IsComplete)
 				continue;
 
-			PublishUpload(currentUploadJob);
-			currentUploadJob.Dispose();
+			// Empty publications remove their previous GPU chunk. Detach the job first so
+			// that removal cannot cancel and clear the job that is being published.
+			VoxelUploadJob completedUploadJob = currentUploadJob;
 			currentUploadJob = null;
+			try
+			{
+				PublishUpload(completedUploadJob);
+			}
+			finally
+			{
+				completedUploadJob.Dispose();
+			}
 			acceptedMeshes++;
 			completedUploadJobs++;
 			uploaded++;
