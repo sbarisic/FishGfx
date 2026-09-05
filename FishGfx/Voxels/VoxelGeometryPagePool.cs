@@ -14,6 +14,7 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 	private readonly int pageVertexCapacity;
 	private readonly List<VoxelGeometryPage> pages = new();
 	private bool disposed;
+	private int nextPageId;
 
 	internal VoxelGeometryPagePool(GraphicsContext graphics, int pageSizeBytes)
 	{
@@ -109,7 +110,7 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 			return false;
 		int capacity = AlignUp(vertexCount, VertexAlignment);
 		int pageCapacity = Math.Max(pageVertexCapacity, capacity);
-		pages.Add(new VoxelGeometryPage(graphics, pages.Count, pageCapacity));
+		pages.Add(new VoxelGeometryPage(graphics, nextPageId++, pageCapacity));
 		return true;
 	}
 
@@ -118,7 +119,7 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 		ThrowIfDisposed();
 		if (!HasActivePage || HasSparePage)
 			return false;
-		pages.Add(new VoxelGeometryPage(graphics, pages.Count, pageVertexCapacity));
+		pages.Add(new VoxelGeometryPage(graphics, nextPageId++, pageVertexCapacity));
 		return true;
 	}
 
@@ -154,6 +155,23 @@ internal sealed class VoxelGeometryPagePool : IDisposable
 	{
 		if (allocation != null)
 			allocation.VertexCount = vertexCount;
+	}
+
+	/// <summary>Called once at a frame boundary on the graphics thread. Retained allocations count as live.</summary>
+	internal bool TrimEmptyPages(double nowSeconds)
+	{
+		ThrowIfDisposed();
+		bool spare = false;
+		for (int i = 0; i < pages.Count; i++)
+		{
+			VoxelGeometryPage page = pages[i];
+			if (page.AllocationCount != 0) { page.EmptySince = null; continue; }
+			page.EmptySince ??= nowSeconds;
+			if (!spare) { spare = true; continue; }
+			if (nowSeconds - page.EmptySince.Value < 2) continue;
+			page.Dispose(); pages.RemoveAt(i); return true;
+		}
+		return false;
 	}
 
 	public void Dispose()
@@ -258,6 +276,7 @@ internal sealed class VoxelGeometryPage : IDisposable
 	}
 
 	internal int PageIndex { get; }
+	internal double? EmptySince { get; set; }
 
 	internal int VertexCapacity { get; }
 
@@ -320,6 +339,7 @@ internal sealed class VoxelGeometryPage : IDisposable
 
 			int originIndex = AllocateOriginIndex();
 			AllocationCount++;
+			EmptySince = null;
 
 			return new VoxelGeometryAllocation(
 				this,

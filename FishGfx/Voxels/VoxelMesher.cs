@@ -131,7 +131,9 @@ public static partial class VoxelMesher
 		}
 
 		options ??= new VoxelMeshingOptions();
-		GeometryCounts counts = CountGeometry(snapshot, palette);
+		if (!Enum.IsDefined(options.CubeMeshingMode)) throw new ArgumentOutOfRangeException(nameof(options));
+		using MeshingScratch scratch = new(options.CubeMeshingMode == VoxelCubeMeshingMode.GreedyOpaque);
+		GeometryCounts counts = CountGeometry(snapshot, palette, scratch);
 		VoxelVertex[] opaque = CreateVertexBuffer(
 			counts.OpaqueVertices,
 			poolOutputBuffers
@@ -173,12 +175,7 @@ public static partial class VoxelMesher
 
 						if (material.Models != null)
 						{
-							Vector3 worldOrigin = snapshot.Coordinate.WorldOrigin;
-							VoxelModel model = material.Models.Select(
-								(int)worldOrigin.X + x,
-								(int)worldOrigin.Y + y,
-								(int)worldOrigin.Z + z
-							);
+							VoxelModel model = scratch.Models[x + 16 * (y + 16 * z)];
 							AppendCustomModel(
 								model,
 								material,
@@ -197,18 +194,11 @@ public static partial class VoxelMesher
 							continue;
 						}
 
-						foreach (FaceDefinition face in Faces)
+						for (int faceIndex = 0; faceIndex < Faces.Length; faceIndex++)
 						{
-							ushort neighborId = snapshot.GetMaterialUnchecked(
-								x + face.Neighbor.X,
-								y + face.Neighbor.Y,
-								z + face.Neighbor.Z
-							);
-
-							if (!ShouldEmit(materialId, material, neighborId, palette))
-							{
-								continue;
-							}
+							FaceDefinition face = Faces[faceIndex];
+							int cellIndex = x + 16 * (y + 16 * z);
+							if ((scratch.Visibility[cellIndex] & (1 << faceIndex)) == 0) continue;
 
 							int vertexCount = WriteFace(
 								snapshot,
@@ -234,6 +224,8 @@ public static partial class VoxelMesher
 							switch (material.RenderMode)
 							{
 								case VoxelRenderMode.Opaque:
+									if (scratch.MergeOffsets != null && !material.DoubleSided && !material.Wave.HasValue && IsUniform(written))
+										scratch.MergeOffsets[faceIndex * 4096 + cellIndex] = opaqueIndex;
 									written.CopyTo(opaque.AsSpan(opaqueIndex));
 									opaqueIndex += vertexCount;
 									break;
@@ -271,6 +263,20 @@ public static partial class VoxelMesher
 				}
 			}
 
+			if (scratch.MergeOffsets != null)
+			{
+				opaqueIndex = MergeOpaqueFaces(snapshot, opaque.AsSpan(0, opaqueIndex), scratch.MergeOffsets);
+				if (!poolOutputBuffers && opaque.Length != opaqueIndex) Array.Resize(ref opaque, opaqueIndex);
+				else if (poolOutputBuffers && opaqueIndex < opaque.Length / 2)
+				{
+					// Ready-queue accounting must not hide an entire culled buffer behind
+					// a tiny merged vertex count. Keep normal pool rounding, not the old capacity.
+					VoxelVertex[] compact = CreateVertexBuffer(opaqueIndex, pooled: true);
+					opaque.AsSpan(0, opaqueIndex).CopyTo(compact);
+					ArrayPool<VoxelVertex>.Shared.Return(opaque);
+					opaque = compact;
+				}
+			}
 			return poolOutputBuffers
 				? new VoxelMeshData(
 					snapshot.Coordinate,
@@ -338,7 +344,8 @@ public static partial class VoxelMesher
 
 	private static GeometryCounts CountGeometry(
 		VoxelChunkSnapshot snapshot,
-		VoxelPalette palette
+		VoxelPalette palette,
+		MeshingScratch scratch
 	)
 	{
 		GeometryCounts counts = new GeometryCounts();
@@ -373,12 +380,14 @@ public static partial class VoxelMesher
 							(int)origin.Y + y,
 							(int)origin.Z + z
 						);
+						scratch.Models[x + 16 * (y + 16 * z)] = model;
 						counts.AddModel(material, model);
 						continue;
 					}
 
-					foreach (FaceDefinition face in Faces)
+					for (int faceIndex = 0; faceIndex < Faces.Length; faceIndex++)
 					{
+						FaceDefinition face = Faces[faceIndex];
 						ushort neighborId = snapshot.GetMaterialUnchecked(
 							x + face.Neighbor.X,
 							y + face.Neighbor.Y,
@@ -387,6 +396,7 @@ public static partial class VoxelMesher
 
 						if (ShouldEmit(materialId, material, neighborId, palette))
 						{
+							scratch.Visibility[x + 16 * (y + 16 * z)] |= (byte)(1 << faceIndex);
 							counts.AddFace(material);
 						}
 					}

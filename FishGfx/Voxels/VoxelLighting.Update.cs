@@ -11,9 +11,12 @@ public sealed partial class VoxelLighting
 	)
 	{
 		int processed = 0;
+		long started = System.Diagnostics.Stopwatch.GetTimestamp();
 
 		while (true)
 		{
+			if (!double.IsPositiveInfinity(timeBudgetMilliseconds) && processed > 0 && (processed & 63) == 0
+				&& System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds >= timeBudgetMilliseconds) break;
 			if (transaction == null && incrementalTransaction == null)
 			{
 				if (fullRebuildRequested)

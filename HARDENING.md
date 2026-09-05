@@ -1,5 +1,9 @@
 # Graphics and UI audit implementation
 
+The subsequent [voxel performance work](VOXEL_PERFORMANCE.md) changes meshing,
+scheduling, transparent scratch storage and geometry retention. Measurements and
+test totals below describe the earlier hardening delivery, not that later change.
+
 This report covers the September 2026 FishGfx and nested FishUI audit. The changes retain Windows x64, .NET 10, OpenGL 4.0 fallback, existing bitmap-font record bytes, voxel ownership, and the supported modern API. Legacy projects outside the modern solution were inspected but are not migrated wholesale. FishUI's upstream CI removal is preserved; no new CI or NuGet publication is claimed.
 
 ## Correctness and API changes

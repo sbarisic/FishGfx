@@ -237,117 +237,44 @@ internal sealed class DrawVoxelPagesCommand : RenderCommand, IDisposable
 	private static VoxelPageDrawGroup[] CreateGroups(IReadOnlyList<VoxelPassEntry> entries)
 	{
 		ArgumentNullException.ThrowIfNull(entries);
-
-		if (entries.Count == 0)
-		{
-			return Array.Empty<VoxelPageDrawGroup>();
-		}
-
-		VoxelGeometryPage[] pages = ArrayPool<VoxelGeometryPage>.Shared.Rent(entries.Count);
-		int[] counts = ArrayPool<int>.Shared.Rent(entries.Count);
-		int pageCount = 0;
-
+		if (entries.Count == 0) return Array.Empty<VoxelPageDrawGroup>();
+		using VoxelPageGrouping grouped = new(entries);
+		VoxelPageDrawGroup[] groups = new VoxelPageDrawGroup[grouped.Count];
+		int created = 0;
 		try
 		{
-			for (int index = 0; index < entries.Count; index++)
+			for (int group = 0; group < grouped.Count; group++)
 			{
-				VoxelGeometryPage page = entries[index].Allocation.Page;
-				int groupIndex = FindPage(pages, pageCount, page);
-
-				if (groupIndex < 0)
+				int count = grouped.Counts[group];
+				var commands = ArrayPool<DrawArraysIndirectCommand>.Shared.Rent(count);
+				var allocations = ArrayPool<VoxelGeometryAllocation>.Shared.Rent(count);
+				int retained = 0;
+				try
 				{
-					groupIndex = pageCount++;
-					pages[groupIndex] = page;
-					counts[groupIndex] = 0;
-				}
-
-				counts[groupIndex]++;
-			}
-
-			VoxelPageDrawGroup[] groups = new VoxelPageDrawGroup[pageCount];
-			int created = 0;
-
-			try
-			{
-				for (int groupIndex = 0; groupIndex < pageCount; groupIndex++)
-				{
-					int count = counts[groupIndex];
-					DrawArraysIndirectCommand[] commands = ArrayPool<DrawArraysIndirectCommand>.Shared.Rent(count);
-					VoxelGeometryAllocation[] allocations = ArrayPool<VoxelGeometryAllocation>.Shared.Rent(count);
-					int retained = 0;
-
-					try
+					for (int index = grouped.First[group]; index >= 0; index = grouped.Next[index])
 					{
-						for (int index = 0; index < entries.Count; index++)
-						{
-							VoxelGeometryAllocation allocation = entries[index].Allocation;
-
-							if (!ReferenceEquals(allocation.Page, pages[groupIndex]))
-							{
-								continue;
-							}
-
-							allocation.Retain();
-							allocations[retained] = allocation;
-							commands[retained] = allocation.CreateDrawCommand();
-							retained++;
-						}
+						var allocation = entries[index].Allocation;
+						allocation.Retain(); allocations[retained] = allocation;
+						commands[retained++] = allocation.CreateDrawCommand();
 					}
-					catch
-					{
-						for (int index = 0; index < retained; index++)
-						{
-							allocations[index].ReleaseRetained();
-						}
-
-						ArrayPool<DrawArraysIndirectCommand>.Shared.Return(commands);
-						ArrayPool<VoxelGeometryAllocation>.Shared.Return(allocations, clearArray: true);
-						throw;
-					}
-
-					groups[groupIndex] = new VoxelPageDrawGroup(
-						pages[groupIndex],
-						commands,
-						allocations,
-						retained
-					);
+					groups[group] = new VoxelPageDrawGroup(grouped.Pages[group], commands, allocations, retained);
 					created++;
 				}
-
-				return groups;
-			}
-			catch
-			{
-				for (int index = 0; index < created; index++)
+				catch
 				{
-					groups[index].Release();
+					for (int i = 0; i < retained; i++) allocations[i].ReleaseRetained();
+					ArrayPool<DrawArraysIndirectCommand>.Shared.Return(commands);
+					ArrayPool<VoxelGeometryAllocation>.Shared.Return(allocations, clearArray: true);
+					throw;
 				}
-
-				throw;
 			}
+			return groups;
 		}
-		finally
+		catch
 		{
-			ArrayPool<VoxelGeometryPage>.Shared.Return(pages, clearArray: true);
-			ArrayPool<int>.Shared.Return(counts);
+			for (int i = 0; i < created; i++) groups[i].Release();
+			throw;
 		}
-	}
-
-	private static int FindPage(
-		VoxelGeometryPage[] pages,
-		int pageCount,
-		VoxelGeometryPage page
-	)
-	{
-		for (int index = 0; index < pageCount; index++)
-		{
-			if (ReferenceEquals(pages[index], page))
-			{
-				return index;
-			}
-		}
-
-		return -1;
 	}
 
 	private static void ReleaseGroups(VoxelPageDrawGroup[] groups)

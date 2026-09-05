@@ -20,7 +20,7 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 	private readonly int maxWorkers;
 	private readonly bool poolMeshVertexBuffers;
 	private readonly object sync = new object();
-	private readonly HashSet<ChunkCoordinate> dirty = new HashSet<ChunkCoordinate>();
+	private readonly DirtyChunkIndex dirty = new();
 	private readonly Dictionary<ChunkCoordinate, MeshJobRevision> inFlight =
 		new Dictionary<ChunkCoordinate, MeshJobRevision>();
 	private readonly ConcurrentQueue<MeshJob> jobs = new ConcurrentQueue<MeshJob>();
@@ -83,6 +83,7 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 		VoxelMeshingOptions sourceOptions = options ?? new VoxelMeshingOptions();
 		this.options = new VoxelMeshingOptions
 		{
+			CubeMeshingMode = sourceOptions.CubeMeshingMode,
 			AmbientOcclusion = sourceOptions.AmbientOcclusion,
 			AoLevel1 = sourceOptions.AoLevel1,
 			AoLevel2 = sourceOptions.AoLevel2,
@@ -133,6 +134,22 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 			{
 				return dirty.Count + inFlight.Count + completed.Count + failures.Count;
 			}
+		}
+	}
+
+	internal VoxelMeshingWork GetWork(VoxelMeshingFocus? focus)
+	{
+		lock (sync)
+		{
+			int eligible = 0, blocked = 0;
+			foreach (ChunkCoordinate coordinate in dirty)
+			{
+				if (focus.HasValue && !focus.Value.ShouldSchedule(coordinate)) continue;
+				eligible++;
+				if (lighting != null && lighting.IsResident(coordinate)
+					&& !lighting.TryCaptureSnapshotSource(coordinate, out _)) blocked++;
+			}
+			return new(dirty.Count, eligible, dirty.Count - eligible, blocked, inFlight.Count, completed.Count, failures.Count);
 		}
 	}
 
@@ -208,7 +225,7 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 			}
 
 			int selectionLimit = Math.Max(64, available * 4);
-			SelectPending(dirty, focus, selectionLimit, selectionQueue, selectionScratch);
+			SelectPending(dirty.Candidates(focus), focus, selectionLimit, selectionQueue, selectionScratch);
 			LastSelectionCount = selectionScratch.Count;
 
 			foreach (ChunkCoordinate coordinate in selectionScratch)

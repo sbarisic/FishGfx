@@ -66,22 +66,23 @@ public static partial class VoxelMesher
 		bool animatedSurface = material.Wave.HasValue
 			&& snapshot.GetMaterialUnchecked(x, y + 1, z) != snapshot.GetMaterialUnchecked(x, y, z);
 
-		for (int i = 0; i < FrontFaceOrder.Length; i++)
+		Span<VoxelVertex> corners = stackalloc VoxelVertex[4];
+		for (int i = 0; i < 4; i++)
 		{
-			int cornerIndex = FrontFaceOrder[i];
+			int cornerIndex = i;
 			Vector3 corner = face.GetCorner(cornerIndex);
 			byte ao = options.AmbientOcclusion
 				? CalculateAo(snapshot, palette, options, face, corner, x, y, z)
 				: byte.MaxValue;
-			destination[i] = new VoxelVertex(
+			corners[i] = new VoxelVertex(
 				blockPosition + corner,
 				ApplyAo(material.Tint, ao),
 				MapFaceUv(face.GetUv(cornerIndex)),
 				face.Normal
 			);
-			destination[i].TextureLayer = tile;
-			destination[i].WaveParameters = CreateWaveData(material, face, corner, animatedSurface);
-			destination[i].PackedLightChannels = SampleCubeLight(
+			corners[i].TextureLayer = tile;
+			corners[i].WaveParameters = CreateWaveData(material, face, corner, animatedSurface);
+			corners[i].PackedLightChannels = SampleCubeLight(
 				lightSnapshot,
 				face,
 				corner,
@@ -92,10 +93,9 @@ public static partial class VoxelMesher
 			);
 		}
 
-		Vector4 frontTangent = CalculateFaceTangent(
-			destination[..FrontFaceOrder.Length],
-			face.Normal
-		);
+		for (int i = 0; i < FrontFaceOrder.Length; i++) destination[i] = corners[FrontFaceOrder[i]];
+
+		Vector4 frontTangent = face.FrontTangent;
 
 		for (int index = 0; index < FrontFaceOrder.Length; index++)
 		{
@@ -109,41 +109,15 @@ public static partial class VoxelMesher
 
 		for (int i = 0; i < BackFaceOrder.Length; i++)
 		{
-			int cornerIndex = BackFaceOrder[i];
-			Vector3 corner = face.GetCorner(cornerIndex);
-			byte ao = options.AmbientOcclusion
-				? CalculateAo(snapshot, palette, options, face, corner, x, y, z)
-				: byte.MaxValue;
-			int destinationIndex = FrontFaceOrder.Length + i;
-			destination[destinationIndex] = new VoxelVertex(
-				blockPosition + corner,
-				ApplyAo(material.Tint, ao),
-				MapFaceUv(face.GetUv(cornerIndex)),
-				-face.Normal
-			);
-			destination[destinationIndex].TextureLayer = tile;
-			destination[destinationIndex].WaveParameters = CreateWaveData(
-				material,
-				face,
-				corner,
-				animatedSurface
-			);
-			destination[destinationIndex].PackedLightChannels = SampleCubeLight(
-				lightSnapshot,
-				face,
-				corner,
-				material.Light.Emission,
-				x,
-				y,
-				z
-			);
+			destination[6 + i] = corners[BackFaceOrder[i]];
+			destination[6 + i].Normal = -face.Normal;
 		}
 
 		Span<VoxelVertex> backVertices = destination.Slice(
 			FrontFaceOrder.Length,
 			BackFaceOrder.Length
 		);
-		Vector4 backTangent = CalculateFaceTangent(backVertices, -face.Normal);
+		Vector4 backTangent = face.BackTangent;
 
 		for (int index = 0; index < backVertices.Length; index++)
 		{
@@ -260,8 +234,17 @@ public static partial class VoxelMesher
 			UV1 = uv1;
 			UV2 = uv2;
 			UV3 = uv3;
+			FrontTangent = BackTangent = default;
+			ReadOnlySpan<int> frontOrder = [0, 1, 2, 3, 0, 2], backOrder = [2, 1, 0, 2, 0, 3];
+			Span<VoxelVertex> triangle = stackalloc VoxelVertex[6];
+			for (int i = 0; i < 6; i++) triangle[i] = new(GetCorner(frontOrder[i]), default, MapFaceUv(GetUv(frontOrder[i])), normal);
+			FrontTangent = CalculateFaceTangent(triangle, normal);
+			for (int i = 0; i < 6; i++) triangle[i] = new(GetCorner(backOrder[i]), default, MapFaceUv(GetUv(backOrder[i])), -normal);
+			BackTangent = CalculateFaceTangent(triangle, -normal);
 		}
 
+		public Vector4 FrontTangent { get; }
+		public Vector4 BackTangent { get; }
 		public VoxelFace Face { get; }
 		public Int3 Neighbor { get; }
 		public Vector3 Normal { get; }

@@ -39,6 +39,7 @@ public struct VoxelVertex
 
 	/// <summary>
 	/// Amplitude, wave number, angular speed, and vertex influence consumed by the wave shader.
+	/// Opaque merged cubes reserve W=-1 for per-voxel texture repetition; their amplitude remains zero.
 	/// </summary>
 	internal Vector4 WaveParameters;
 

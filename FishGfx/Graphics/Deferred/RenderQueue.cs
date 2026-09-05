@@ -9,7 +9,7 @@ namespace FishGfx.Graphics;
 /// <summary>
 /// Collects immutable render items for later inspection, sorting, and pass-side execution.
 /// </summary>
-public sealed class RenderQueue
+public sealed class RenderQueue : IDisposable
 {
 	private readonly Dictionary<RenderQueueBucket, List<RenderItem>> items = new();
 	private readonly Dictionary<RenderQueueBucket, ReadOnlyCollection<RenderItem>> readOnlyItems = new();
@@ -18,6 +18,7 @@ public sealed class RenderQueue
 	private readonly ReadOnlyCollection<RenderQueueBucket> readOnlyBuckets;
 	private long nextSequence;
 	private bool isExecuting;
+	private bool disposed;
 
 	public RenderQueue()
 	{
@@ -281,6 +282,7 @@ public sealed class RenderQueue
 
 	internal void BeginExecution()
 	{
+		ObjectDisposedException.ThrowIf(disposed, this);
 		RenderCommandReplay.Begin("render queue", ref isExecuting);
 	}
 
@@ -319,8 +321,17 @@ public sealed class RenderQueue
 		return created;
 	}
 
+	public void Dispose()
+	{
+		if (disposed) return;
+		EnsureMutable();
+		try { Clear(); }
+		finally { disposed = true; }
+	}
+
 	private void EnsureMutable()
 	{
+		ObjectDisposedException.ThrowIf(disposed, this);
 		if (isExecuting)
 		{
 			throw new InvalidOperationException(

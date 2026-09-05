@@ -12,6 +12,7 @@ public sealed partial class VoxelLighting : IDisposable
 	private readonly Dictionary<ushort, ushort[]> uniformMaterialSignatures =
 		new Dictionary<ushort, ushort[]>();
 	private readonly int updateBudget;
+	private readonly double timeBudgetMilliseconds;
 	private readonly Dictionary<ChunkCoordinate, ResidentChunk> residents =
 		new Dictionary<ChunkCoordinate, ResidentChunk>();
 	private readonly HashSet<ChunkCoordinate> dirtyWorldChunks =
@@ -41,7 +42,9 @@ public sealed partial class VoxelLighting : IDisposable
 		this.world = world ?? throw new ArgumentNullException(nameof(world));
 		this.palette = palette ?? throw new ArgumentNullException(nameof(palette));
 		materialSignatureLookup = CreateMaterialSignatureLookup(palette);
-		updateBudget = (options ?? new VoxelLightingOptions()).UpdateBudget;
+		options ??= new VoxelLightingOptions();
+		updateBudget = options.UpdateBudget;
+		timeBudgetMilliseconds = options.TimeBudgetMilliseconds;
 		world.ContentChanged += HandleWorldContentChanged;
 	}
 

@@ -75,7 +75,16 @@ internal static class GraphicsProbes
             allocations[0].ReleaseRetained();
             Check(pool.AllocationCount == 0, "Released allocations remain active.");
         }, 1);
-        Console.WriteLine(JsonSerializer.Serialize(new { name = "geometry-retention", retainedPages = pool.PageCount, activeAllocations = pool.AllocationCount, nominalRetainedVertexBytes = pool.PageCount * 1024 * 1024, candidate = "Reclaim empty pages only after queued references are released; production reclamation remains deferred." }));
+        int before = pool.PageCount;
+        var retained = pool.Update(null, vertices, Vector3.Zero);
+        retained.Retain(); retained.ReleaseOwner();
+        pool.TrimEmptyPages(0);
+        for (int i = 0; i < before; i++) pool.TrimEmptyPages(3);
+        Check(pool.AllocationCount == 1 && pool.PageCount == 2, "Trim released queued geometry or retained extra pages.");
+        retained.ReleaseRetained();
+        for (int i = 0; i < before; i++) pool.TrimEmptyPages(6);
+        Check(pool.PageCount == 1, "Empty pages were not reclaimed.");
+        Console.WriteLine(JsonSerializer.Serialize(new { name = "geometry-retention", beforePages = before, retainedPages = pool.PageCount, activeAllocations = pool.AllocationCount, nominalRetainedVertexBytes = pool.PageCount * 1024 * 1024, queuedOwnershipVerified = true }));
     }
 
     internal static void CpuExperiments(Action<string, Action, int> measure)
@@ -93,7 +102,7 @@ internal static class GraphicsProbes
             measure("sort-scratch-visible-no-clear", () => ArrayPool<SortScratch>.Shared.Return(ArrayPool<SortScratch>.Shared.Rent(1000), false), 100);
         }
         finally { source.ReleaseOwner(); }
-        RenderQueue queue = new();
+        using RenderQueue queue = new();
         RenderCommandBatch batch = new(new RenderCommand[] { new Noop() });
         measure("queue-1000-submit-clear", () => { for (int i = 0; i < 1000; i++) queue.SubmitOpaque(batch, Matrix4x4.Identity); queue.Clear(); }, 5);
         List<int> reusable = new(1024);

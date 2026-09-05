@@ -164,12 +164,20 @@ internal sealed class VoxelTransparentOrderingScheduler : IDisposable
 		ArgumentNullException.ThrowIfNull(request.Source);
 		long allocatedStart = GC.GetAllocatedBytesForCurrentThread();
 		long sortStart = Stopwatch.GetTimestamp();
-		int faceCapacity = Math.Max(1, request.Source.FaceCapacity);
+		float distanceSquared = request.MaxRenderDistance * request.MaxRenderDistance;
+		int faceCapacity = 0;
+		foreach (VoxelTransparentOrderingChunk chunk in request.Source.Chunks)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			if (!request.CullingEnabled || (Vector3.DistanceSquared(request.CameraPosition, chunk.Bounds.Center) <= distanceSquared
+				&& request.Frustum.Intersects(chunk.Bounds)))
+				faceCapacity = checked(faceCapacity + chunk.Allocation.FaceRecords.Length);
+		}
+		faceCapacity = Math.Max(1, faceCapacity);
 		VoxelTransparentSortEntry[] entries = ArrayPool<VoxelTransparentSortEntry>.Shared.Rent(faceCapacity);
 		int faceCount = 0;
 		int indexCount = 0;
 		int visibleChunkCount = 0;
-		float distanceSquared = request.MaxRenderDistance * request.MaxRenderDistance;
 		uint[] indices = null;
 
 		try
@@ -253,7 +261,7 @@ internal sealed class VoxelTransparentOrderingScheduler : IDisposable
 				ArrayPool<uint>.Shared.Return(indices);
 			}
 
-			ArrayPool<VoxelTransparentSortEntry>.Shared.Return(entries, clearArray: true);
+			ArrayPool<VoxelTransparentSortEntry>.Shared.Return(entries, clearArray: false);
 		}
 	}
 

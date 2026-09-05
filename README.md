@@ -344,6 +344,13 @@ dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -c Release -- --
 dotnet run --project FishGfx.VoxelTest/FishGfx.VoxelTest.csproj -c Release -- --streaming-benchmark
 ```
 
+See [Voxel performance](VOXEL_PERFORMANCE.md) for camera-specific settlement,
+filtered benchmarks, optional greedy opaque meshing, lighting deadlines and empty
+page reclamation. `--greedy` selects the experimental merge path. Voxel rendering
+still requires OpenGL 4.3; `--gl40` verifies that the voxel app rejects 4.0, while
+the primitive gallery supports its 4.0 fallback. The default remains culled meshing. Render-queue owners
+should call `Dispose` before renderer/context shutdown to release queued draws.
+
 The streaming benchmark renders throughout startup with the interactive four-column generation budget, a 24-mesh upload limit, and a 2 ms upload-time ceiling. It excludes the first five warm-up frames and reports frame/phase percentiles plus garbage-collection and allocation totals.
 
 ### Fonts and console

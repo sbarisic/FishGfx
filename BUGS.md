@@ -8,6 +8,13 @@ This document tracks defects found during the .NET 10 migration and source revie
 
 ## September 2026 audit
 
+The subsequent [voxel performance work](VOXEL_PERFORMANCE.md) also fixes:
+
+| ID | Severity | Fixed defect | Verification |
+|---|---|---|---|
+| BUG-039 | Medium | Streaming benchmarks waited for global idleness, including deliberately deferred chunks, and lost results on timeout. | Reproduced 60-second timeout; five paired completed runs with eligible-work diagnostics and partial timeout reporting. |
+| BUG-040 | Low | Live mouse input moved the benchmark camera and invalidated framebuffer comparisons. | Benchmark controls disabled; fixed camera transforms recorded in capture sidecars and repeated pixel comparisons. |
+
 The implementation and reproductions are recorded in [HARDENING.md](HARDENING.md). BUG-001 through BUG-030 below retain their historical verification context. Nested FishUI defects are tracked in [its hardening guide](thirdparty/FishUI/docs/HARDENING.md).
 
 | ID | Severity | Fixed defect | Verification |

@@ -87,6 +87,27 @@ internal readonly struct VoxelMeshingFocus
 		this.cullingEnabled = cullingEnabled;
 	}
 
+	internal bool TryGetColumnBounds(out int minX, out int maxX, out int minZ, out int maxZ)
+	{
+		minX = maxX = minZ = maxZ = 0;
+		if (!cullingEnabled || !float.IsFinite(schedulingDistanceSquared)
+			|| !float.IsFinite(cameraPosition.X) || !float.IsFinite(cameraPosition.Z)) return false;
+		double radius = Math.Sqrt(schedulingDistanceSquared);
+		minX = (int)Math.Clamp(Math.Floor((cameraPosition.X - radius - 8) / 16), int.MinValue, int.MaxValue);
+		maxX = (int)Math.Clamp(Math.Ceiling((cameraPosition.X + radius - 8) / 16), int.MinValue, int.MaxValue);
+		minZ = (int)Math.Clamp(Math.Floor((cameraPosition.Z - radius - 8) / 16), int.MinValue, int.MaxValue);
+		maxZ = (int)Math.Clamp(Math.Ceiling((cameraPosition.Z + radius - 8) / 16), int.MinValue, int.MaxValue);
+		return true;
+	}
+
+	internal bool ShouldScheduleColumn(int x, int z)
+	{
+		if (!cullingEnabled) return true;
+		float dx = x * (float)VoxelWorld.ChunkSize + 8 - cameraPosition.X;
+		float dz = z * (float)VoxelWorld.ChunkSize + 8 - cameraPosition.Z;
+		return dx * dx + dz * dz <= schedulingDistanceSquared;
+	}
+
 	internal bool ShouldSchedule(ChunkCoordinate coordinate)
 	{
 		if (!cullingEnabled)

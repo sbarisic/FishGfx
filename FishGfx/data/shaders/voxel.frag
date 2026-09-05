@@ -8,6 +8,7 @@ in vec3 frag_WorldPosition;
 in vec4 frag_Light;
 in float frag_WaveAmplitude;
 flat in int frag_TextureLayer;
+flat in int frag_RepeatCube;
 
 layout (location = 0) out vec4 OutColor;
 
@@ -194,9 +195,11 @@ float SampleSunVisibility(vec3 worldPosition, vec3 normal, float nDotL)
 void main()
 {
 	bool cubeSurface = frag_TextureLayer >= 0;
-	vec3 cubeCoordinate = vec3(frag_UV, float(frag_TextureLayer));
+	// Derivatives must come from the continuous coordinates, before tile wrapping.
+	vec2 cubeDx = dFdx(frag_UV), cubeDy = dFdy(frag_UV);
+	vec3 cubeCoordinate = vec3(frag_RepeatCube != 0 ? fract(frag_UV) : frag_UV, float(frag_TextureLayer));
 	vec4 textureSample = cubeSurface
-		? texture(CubeBaseColor, cubeCoordinate)
+		? textureGrad(CubeBaseColor, cubeCoordinate, cubeDx, cubeDy)
 		: texture(ModelAtlas, frag_UV);
 	vec4 sampled = VoxelPresentationMode == 1
 		? textureSample
@@ -225,7 +228,7 @@ void main()
 	bool useSpecularMap = surfaceEligible && (layerInfo & 2) == 0;
 
 	vec4 packedSurface = useSurfaceMaps || useSpecularMap
-		? texture(CubeSurface, cubeCoordinate)
+		? textureGrad(CubeSurface, cubeCoordinate, cubeDx, cubeDy)
 		: vec4(0.5, 0.5, 0.0, 1.0);
 
 	if (useSurfaceMaps)

@@ -31,7 +31,7 @@ internal static partial class PrimitiveScenes
 		commandListScene?.Clear();
 		commandListScene = null;
 
-		deferredQueueScene?.Clear();
+		deferredQueueScene?.Dispose();
 		deferredQueueScene = null;
 		deferredOpaqueCommands = null;
 		deferredTransparentCommands = null;

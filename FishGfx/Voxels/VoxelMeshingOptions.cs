@@ -1,7 +1,11 @@
 namespace FishGfx.Voxels;
 
+public enum VoxelCubeMeshingMode { Culled, GreedyOpaque }
+
 public sealed class VoxelMeshingOptions
 {
+	public VoxelCubeMeshingMode CubeMeshingMode { get; set; }
+
 	public bool AmbientOcclusion { get; set; } = true;
 
 	public byte AoLevel1 { get; set; } = 210;

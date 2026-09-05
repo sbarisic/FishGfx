@@ -17,6 +17,7 @@ out vec3 frag_WorldPosition;
 out vec4 frag_Light;
 out float frag_WaveAmplitude;
 flat out int frag_TextureLayer;
+flat out int frag_RepeatCube;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -61,5 +62,6 @@ void main()
 	frag_Light = Light;
 	frag_WaveAmplitude = Wave.x;
 	frag_TextureLayer = TextureLayer;
+	frag_RepeatCube = 0;
 	gl_Position = uProjection * uView * worldPosition;
 }
