@@ -4,7 +4,7 @@ This document tracks defects found during the .NET 10 migration and source revie
 
 ## Open issues
 
-No open defects are currently recorded here. This does not imply that the project is defect-free; newly confirmed bugs should receive the next `BUG-NNN` identifier and include a reproduction, impact, and verification plan.
+**BUG-038 (High, legacy project):** `Test/packages.config` still pins Newtonsoft.Json 12.0.3, affected by [GHSA-5crp-9r3c-p9vr](https://github.com/advisories/GHSA-5crp-9r3c-p9vr). GitHub Dependabot alert 3 was confirmed open after publication. The .NET Framework 4.6.2 `Test` project is excluded from `FishGfx.Modern.sln` and references obsolete graphics APIs; supported applications do not consume this package. Follow-up: update its package and assembly hint path to a patched release (13.0.1 or later), then validate its JSON level loader as part of the separate legacy-project migration. This task does not claim the whole repository has no dependency alerts.
 
 ## September 2026 audit
 
