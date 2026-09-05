@@ -94,7 +94,7 @@ internal sealed class ContextMenu
 			return;
 		}
 
-		SearchText = SearchText.Substring(0, SearchText.Length - 1);
+		SearchText = SearchText.Substring(0, System.Globalization.StringInfo.ParseCombiningCharacters(SearchText)[^1]);
 		Refilter();
 	}
 

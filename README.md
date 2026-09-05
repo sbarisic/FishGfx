@@ -98,7 +98,7 @@ The rendering API is intentionally pass-driven. The former `Gfx`, `RenderAPI`, `
 
 ### FishUI adapter
 
-FishUI is included as the `thirdparty/FishUI` git submodule, pinned to commit `fc2b733e34c3769e5510abde2820c323a69d1448`. FishUI and its bundled assets use the MIT license. `FishGfx.FishUI` references the upstream project directly and provides:
+FishUI is included as the `thirdparty/FishUI` git submodule, pinned to commit `18285683769e38ac0842af1f63efc9d033b5bacd` by the reviewed `thirdparty/FishUI` gitlink. FishUI and its bundled assets use the MIT license. `FishGfx.FishUI` references the upstream project directly and provides:
 
 - `FishUIGraphicsBackend`, a disposable `SimpleFishUIGfx` backend bound to a caller-owned `RenderPass` through `UseRenderPass`.
 - `FishUIInputAdapter`, a disposable `RenderWindow` input adapter with queued keys/characters, mouse transitions, scrolling, clipboard access, and an `Enabled` interaction gate.
@@ -359,7 +359,7 @@ using TrueTypeFont font = new("data/fonts/Aaargh.ttf");
 pass.DrawText(font, new Vector2(100, 100), "Smooth SDF text", Color.White, 64);
 ```
 
-`GraphicsFont` uses explicit sizes for `Layout` and `Measure`; it has no mutable global scale. `TrueTypeFont` preloads printable ASCII and lazily adds Unicode BMP glyphs to a growable per-context atlas. `BitmapFont` parses binary AngelCode BMFont v3 descriptors. Complex shaping, combining-mark handling, right-to-left layout, and supplementary Unicode planes are not supported yet.
+`GraphicsFont` uses explicit sizes for `Layout` and `Measure`; it has no mutable global scale. `TrueTypeFont` preloads printable ASCII and batches missing Unicode scalar glyphs into an atomic CPU atlas with per-context uploads. Warm measurement uses cached metrics without changing the atlas. `BitmapFont` parses binary AngelCode BMFont v3 descriptors, including valid supplementary codepoint IDs. Complex shaping, combining-mark positioning, and right-to-left layout remain follow-ups. See [HARDENING.md](HARDENING.md) for migrations, regressions and measured performance.
 
 The smoke gallery also integrates the tile/text-based developer console. Press F1 to toggle it and use `help` to list gallery commands.
 

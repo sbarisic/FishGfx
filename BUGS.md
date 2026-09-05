@@ -6,6 +6,20 @@ This document tracks defects found during the .NET 10 migration and source revie
 
 No open defects are currently recorded here. This does not imply that the project is defect-free; newly confirmed bugs should receive the next `BUG-NNN` identifier and include a reproduction, impact, and verification plan.
 
+## September 2026 audit
+
+The implementation and reproductions are recorded in [HARDENING.md](HARDENING.md). BUG-001 through BUG-030 below retain their historical verification context. Nested FishUI defects are tracked in [its hardening guide](thirdparty/FishUI/docs/HARDENING.md).
+
+| ID | Severity | Fixed defect | Verification |
+|---|---|---|---|
+| BUG-031 | High | Failed font packing moved existing glyphs. | Atlas exhaustion, batch and fallback regressions. |
+| BUG-032 | High | Process cancellation skipped cleanup during stdin delivery. | Build/execution cancellation, descendants, output cap and editor shutdown tests. |
+| BUG-033 | High | Collected native deletions bypassed binding invalidation. | Real 4.0/4.6 buffer and VAO finalization probes. |
+| BUG-034 | Medium | Binary read/write managed sizes disagreed. | Boolean, enums, packed records and truncated reads. |
+| BUG-035 | Medium | Supplementary glyph/input values were truncated. | Scalar layout and nested UI grapheme tests. |
+| BUG-036 | Medium | Disabled culling retained a spatial candidate limit. | Distant resident chunk toggle regression and voxel smoke. |
+| BUG-037 | High | Full geometry pages reported available capacity. | Unit capacity check and real eight-page fill/release probe. |
+
 ## Resolved issues
 
 | ID | Severity | Resolution | Regression coverage |

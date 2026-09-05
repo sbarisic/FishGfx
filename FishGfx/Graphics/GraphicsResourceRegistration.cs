@@ -64,6 +64,7 @@ internal sealed class GraphicsResourceRegistration
 		}
 
 		owner.EnsureCurrent();
+		owner.InvalidateStateCache();
 
 		try
 		{

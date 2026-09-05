@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Collections.Generic;
 using System.Numerics;
 using FishGfx.Graphics;
@@ -12,12 +13,16 @@ public enum FontRenderMode
 }
 
 public readonly record struct GlyphMetrics(
-	char Character,
+	Rune Character,
 	Vector2 AtlasPosition,
 	Vector2 AtlasSize,
 	Vector2 Offset,
 	float Advance
-);
+)
+{
+    public GlyphMetrics(char character, Vector2 atlasPosition, Vector2 atlasSize, Vector2 offset, float advance)
+        : this(Rune.TryCreate(character, out Rune rune) ? rune : Rune.ReplacementChar, atlasPosition, atlasSize, offset, advance) { }
+}
 
 public readonly record struct PositionedGlyph(
 	GlyphMetrics Glyph,
@@ -61,6 +66,13 @@ public abstract class GraphicsFont : IDisposable
 		out Vector2 measuredSize
 	)
 	{
+        List<PositionedGlyph> positioned = new(text?.Length ?? 0);
+        LayoutInto(text, size, characterSpacing, positioned, out measuredSize);
+        return positioned.ToArray();
+    }
+
+    internal void LayoutInto(string text, float size, float characterSpacing, List<PositionedGlyph> positioned, out Vector2 measuredSize)
+	{
 		ArgumentNullException.ThrowIfNull(text);
 		ValidateLayout(size, characterSpacing);
 
@@ -68,48 +80,50 @@ public abstract class GraphicsFont : IDisposable
 		{
 			measuredSize = Vector2.Zero;
 
-			return Array.Empty<PositionedGlyph>();
+			positioned.Clear();
+            return;
 		}
 
 		float scale = size / BaseSize;
 		float scaledLineHeight = LineHeight * scale;
 		float scaledTabWidth = TabWidth * scale;
-		List<PositionedGlyph> positioned = new(text.Length);
+		positioned.Clear();
+        PrepareLayoutGlyphs(text);
 		float cursorX = 0;
 		float cursorY = 0;
 		float maximumLineAdvance = 0;
 		int lineCount = 1;
-		char previous = '\0';
+		Rune previous = default;
 
-		foreach (char character in text)
+		foreach (Rune character in text.EnumerateRunes())
 		{
-			if (character == '\r')
+			if (character.Value == '\r')
 			{
 				continue;
 			}
 
-			if (character == '\n')
+			if (character.Value == '\n')
 			{
 				maximumLineAdvance = Math.Max(maximumLineAdvance, cursorX);
 				cursorX = 0;
 				cursorY -= scaledLineHeight;
 				lineCount++;
-				previous = '\0';
+				previous = default;
 
 				continue;
 			}
 
-			if (character == '\t')
+			if (character.Value == '\t')
 			{
 				cursorX += scaledTabWidth;
-				previous = '\0';
+				previous = default;
 
 				continue;
 			}
 
 			GlyphMetrics glyph = GetGlyphOrFallback(character);
 
-			if (previous != '\0')
+			if (previous.Value != 0)
 			{
 				cursorX += GetKerning(previous, character) * scale;
 				cursorX += characterSpacing;
@@ -150,7 +164,7 @@ public abstract class GraphicsFont : IDisposable
 			lineCount * scaledLineHeight
 		);
 
-		return positioned.ToArray();
+		return;
 	}
 
 	public Vector2 Measure(string text, float size)
@@ -160,10 +174,46 @@ public abstract class GraphicsFont : IDisposable
 
 	public Vector2 Measure(string text, float size, float characterSpacing)
 	{
-		LayoutAndMeasure(text, size, characterSpacing, out Vector2 measuredSize);
-
-		return measuredSize;
+        ArgumentNullException.ThrowIfNull(text);
+        ValidateLayout(size, characterSpacing);
+        if (text.Length == 0) return Vector2.Zero;
+        float scale = size / BaseSize, cursor = 0, maximum = 0;
+        int lines = 1;
+        Rune previous = default;
+        foreach (Rune character in text.EnumerateRunes())
+        {
+            if (character.Value == '\r') continue;
+            if (character.Value == '\n') { maximum = Math.Max(maximum, cursor); cursor = 0; lines++; previous = default; continue; }
+            if (character.Value == '\t') { cursor += TabWidth * scale; previous = default; continue; }
+            if (previous.Value != 0) cursor += GetKerning(previous, character) * scale + characterSpacing;
+            cursor += GetAdvance(character) * scale;
+            previous = character;
+        }
+        return new Vector2(Math.Max(maximum, cursor), lines * LineHeight * scale);
 	}
+
+    /// <summary>Writes prefix advances and the kerning/spacing before each scalar, indexed by UTF-16 offset.</summary>
+    public void MeasureAdvances(string text, float size, float spacing, Span<float> advances, Span<float> leading)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ValidateLayout(size, spacing);
+        if (advances.Length < text.Length + 1 || leading.Length < text.Length + 1) throw new ArgumentException("Metric buffers are too small.");
+        float scale = size / BaseSize, cursor = 0;
+        Rune previous = default;
+        int offset = 0;
+        advances[0] = 0;
+        leading[..(text.Length + 1)].Clear();
+        foreach (Rune rune in text.EnumerateRunes())
+        {
+            float before = previous.Value == 0 ? 0 : GetKerning(previous, rune) * scale + spacing;
+            if (rune.Value == '\r') { before = 0; }
+            else if (rune.Value == '\n') { before = 0; cursor = 0; previous = default; }
+            else if (rune.Value == '\t') { before = 0; cursor += TabWidth * scale; previous = default; }
+            else { cursor += before + GetAdvance(rune) * scale; previous = rune; }
+            leading[offset] = before;
+            for (int i = 0; i < rune.Utf16SequenceLength; i++) advances[++offset] = cursor;
+        }
+    }
 
 	public Vector2 Measure(IReadOnlyList<PositionedGlyph> glyphs)
 	{
@@ -213,11 +263,16 @@ public abstract class GraphicsFont : IDisposable
 		return 0;
 	}
 
+    public virtual GlyphMetrics? GetGlyph(Rune character) => GetGlyph(character.IsBmp ? (char)character.Value : '?');
+    public virtual float GetKerning(Rune first, Rune second) => first.IsBmp && second.IsBmp ? GetKerning((char)first.Value, (char)second.Value) : 0;
+    public virtual float GetAdvance(Rune character) => GetGlyphOrFallback(character).Advance;
+    protected virtual void PrepareLayoutGlyphs(string text) { }
+
 	public abstract FontAtlas PrepareAtlas(GraphicsContext graphics, string text);
 
 	public abstract void Dispose();
 
-	private GlyphMetrics GetGlyphOrFallback(char character)
+	private GlyphMetrics GetGlyphOrFallback(Rune character)
 	{
 		GlyphMetrics? glyph = GetGlyph(character) ?? GetGlyph('?');
 

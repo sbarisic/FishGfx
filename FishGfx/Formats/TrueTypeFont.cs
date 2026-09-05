@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,12 +31,14 @@ public sealed class TrueTypeFontOptions
 public sealed unsafe partial class TrueTypeFont : GraphicsFont
 {
 	private readonly byte[] fontData;
-	private readonly GCHandle fontDataHandle;
+	private GCHandle fontDataHandle;
 	private readonly stbtt_fontinfo fontInfo;
 	private readonly TrueTypeFontOptions options;
-	private readonly Dictionary<char, Glyph> glyphs = new();
+	private readonly Dictionary<Rune, Glyph> glyphs = new();
+    private readonly Dictionary<Rune, float> advances = new();
+    private readonly Dictionary<(Rune, Rune), float> kerning = new();
 	private readonly Dictionary<GraphicsContext, AtlasCache> atlases = new();
-	private readonly char fallback;
+	private readonly Rune fallback;
 	private readonly float scale;
 	private readonly int ascentPixels;
 	private readonly float lineHeight;
@@ -92,18 +95,16 @@ public sealed unsafe partial class TrueTypeFont : GraphicsFont
 		lineHeight = Math.Max(1, MathF.Ceiling((ascent - descent + lineGap) * scale));
 		atlasSize = this.options.InitialAtlasSize;
 		atlasPixels = new byte[atlasSize * atlasSize];
-		fallback = stbtt_FindGlyphIndex(fontInfo, 0xFFFD) != 0 ? '\uFFFD' : '?';
+		fallback = new Rune(stbtt_FindGlyphIndex(fontInfo, 0xFFFD) != 0 ? 0xFFFD : '?');
 		AddGlyph(fallback);
+        if (!glyphs.ContainsKey(fallback)) throw new ArgumentException("The fallback glyph does not fit the maximum atlas size.", nameof(options));
 
 		if (this.options.PreloadPrintableAscii)
 		{
-			for (char character = ' '; character <= '~'; character++)
-			{
-				AddGlyph(character);
-			}
+			PrepareGlyphs(new string(System.Linq.Enumerable.Range(32, 95).Select(c => (char)c).ToArray()));
 		}
 
-		tabWidth = Math.Max(1, ResolveGlyph(' ').Advance * 4);
+		tabWidth = Math.Max(1, ResolveGlyph(new Rune(' ')).Advance * 4);
 	}
 
 	public override string Name { get; }
@@ -122,10 +123,27 @@ public sealed unsafe partial class TrueTypeFont : GraphicsFont
 	) / options.SdfPixelDistanceScale;
 
 	internal int AtlasSize => atlasSize;
+    public int MetricsVersion => atlasVersion;
 
 	internal int GlyphCount => glyphs.Values.Distinct().Count();
 
-	public override GlyphMetrics? GetGlyph(char character)
+    public override GlyphMetrics? GetGlyph(char character) => GetGlyph(Rune.TryCreate(character, out Rune rune) ? rune : Rune.ReplacementChar);
+    public override float GetKerning(char first, char second) => GetKerning(Rune.TryCreate(first, out Rune a) ? a : Rune.ReplacementChar, Rune.TryCreate(second, out Rune b) ? b : Rune.ReplacementChar);
+    public override float GetAdvance(Rune character)
+    {
+        ThrowIfDisposed();
+        if (advances.TryGetValue(character, out float cached)) return cached;
+        Rune normalized = Normalize(character);
+        int advance, bearing;
+        stbtt_GetCodepointHMetrics(fontInfo, normalized.Value, &advance, &bearing);
+        float measured = MathF.Round(advance * scale);
+        if (advances.Count >= 4096) advances.Clear();
+        advances[character] = measured;
+        return measured;
+    }
+    protected override void PrepareLayoutGlyphs(string text) => PrepareGlyphs(text);
+
+	public override GlyphMetrics? GetGlyph(Rune character)
 	{
 		ThrowIfDisposed();
 		Glyph glyph = ResolveGlyph(character);
@@ -135,17 +153,21 @@ public sealed unsafe partial class TrueTypeFont : GraphicsFont
 			new Vector2(glyph.X, glyph.Y),
 			new Vector2(glyph.Width, glyph.Height),
 			new Vector2(glyph.XOffset, glyph.YOffset),
-			glyph.Advance
+			GetAdvance(character)
 		);
 	}
 
-	public override float GetKerning(char first, char second)
+	public override float GetKerning(Rune first, Rune second)
 	{
 		ThrowIfDisposed();
-		first = Normalize(first);
-		second = Normalize(second);
-
-		return MathF.Round(stbtt_GetCodepointKernAdvance(fontInfo, first, second) * scale);
+        var pair = (first, second);
+        if (kerning.TryGetValue(pair, out float cached)) return cached;
+        first = Normalize(first);
+        second = Normalize(second);
+        float measured = MathF.Round(stbtt_GetCodepointKernAdvance(fontInfo, first.Value, second.Value) * scale);
+        if (kerning.Count >= 4096) kerning.Clear();
+        kerning[pair] = measured;
+        return measured;
 	}
 
 	public override void Dispose()

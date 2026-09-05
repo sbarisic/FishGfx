@@ -209,7 +209,7 @@ internal sealed class VisualInlineEditor
 	{
 		if (IsActive && Text.Length > 0)
 		{
-			Text = Text.Substring(0, Text.Length - 1);
+			Text = Text.Substring(0, System.Globalization.StringInfo.ParseCombiningCharacters(Text)[^1]);
 		}
 	}
 

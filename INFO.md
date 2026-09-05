@@ -17,7 +17,7 @@ Current core dependencies are:
 - StbTrueTypeSharp 1.26.12 for TrueType metrics and SDF glyph generation.
 - The bundled Windows x64 `glfw3.dll` and managed bindings under `FishGfx/Glfw3`.
 
-The optional `FishGfx.FishUI` integration references the MIT-licensed FishUI repository through `thirdparty/FishUI`, pinned to commit `fc2b733e34c3769e5510abde2820c323a69d1448`. FishUI targets .NET 9 and brings YamlDotNet 16.3.0 for themes and layouts; the adapter and VoxelTest target .NET 10.
+The optional `FishGfx.FishUI` integration references the MIT-licensed FishUI repository through `thirdparty/FishUI`, pinned to commit `18285683769e38ac0842af1f63efc9d033b5bacd` by the reviewed `thirdparty/FishUI` gitlink. FishUI targets .NET 9 and brings YamlDotNet 18.1.0 for themes and layouts; the adapter and VoxelTest target .NET 10.
 
 Intel RealSense support has been removed. Linux and macOS are not part of the modern supported baseline.
 
@@ -103,7 +103,7 @@ Two implementations are supported:
 - `BitmapFont` parses binary AngelCode BMFont v3 descriptors, pages, glyph metrics, and kerning pairs.
 - `TrueTypeFont` uses stb_truetype to generate SDF glyphs, grows and repacks CPU atlas data, and caches an uploaded `FontAtlas` per `GraphicsContext`.
 
-TrueType layout handles individual Unicode BMP characters, multiline text, tabs, fallback glyphs, and pair kerning. Complex shaping, combining-mark behavior, right-to-left layout, and supplementary Unicode planes are not implemented.
+TrueType layout handles Unicode scalars, multiline text, tabs, fallback glyphs, and pair kerning. Editing in the FishUI adapter uses grapheme boundaries; rendering still has no complex shaping, combining-mark positioning, or right-to-left layout. See [HARDENING.md](HARDENING.md) for API migrations and measurements.
 
 ## FishUI integration
 
@@ -129,7 +129,7 @@ Voxel materials select opaque, alpha-cutout, or transparent rendering; uniform o
 
 `EnqueueVisible` distance- and frustum-culls GPU chunks and submits retained batches to a caller-owned `RenderQueue`. Opaque and cutout passes share the opaque bucket with stable sort keys. Transparent faces from all visible chunks are transformed to world space, stably sorted back-to-front, uploaded to one persistent stream, and submitted once to the transparent bucket. `pass.Execute(queue)` applies the required opaque-then-transparent order.
 
-`VoxelRenderer.SunSettings` changes directional-light uniforms without relighting or remeshing. `VoxelRenderer.FogSettings` changes reusable distance fog and lighting attenuation without recreating geometry. Transparent cube waves use `RenderPassDescriptor.Time` and do not rebuild meshes. `IsCullingEnabled`, `Statistics`, and `FrameDiagnostics` expose runtime control and diagnostics.
+`VoxelRenderer.SunSettings` changes directional-light uniforms without relighting or remeshing. `VoxelRenderer.FogSettings` changes reusable distance fog and lighting attenuation without recreating geometry. Transparent cube waves use `RenderPassDescriptor.Time` and do not rebuild meshes. `IsCullingEnabled`, `Statistics`, and `FrameDiagnostics` expose runtime control and diagnostics. Disabling culling includes every resident GPU chunk, regardless of distance; it does not generate or mesh nonresident world data.
 
 `VoxelRaycast` provides bounded DDA traversal through positive and negative coordinates. `VoxelMediumQuery` identifies the voxel material containing a world-space position.
 

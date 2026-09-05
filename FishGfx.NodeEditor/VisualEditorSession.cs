@@ -325,7 +325,8 @@ internal sealed class VisualEditorSession : IDisposable
 	public void Dispose()
 	{
 		Stop();
-		executionCancellation?.Dispose();
+        try { execution?.GetAwaiter().GetResult(); }
+        finally { executionCancellation?.Dispose(); executionCancellation = null; execution = null; }
 	}
 
 	private bool Restore(string json)

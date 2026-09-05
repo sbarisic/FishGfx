@@ -69,6 +69,19 @@ public sealed partial class VoxelRenderer
 			}
 		}
 
+		if (!cullingEnabled)
+        {
+            foreach (GpuChunk chunk in gpuChunks.Values)
+            {
+                activeSetTestedChunks++;
+                if (!nextActiveCoordinates.Add(chunk.Coordinate)) continue;
+                nextActiveGpuChunks.Add(chunk);
+                activeSetAdditions++;
+                transparentMembershipChanged |= HasTransparentGeometry(chunk.Transparent);
+            }
+        }
+        else
+        {
 		float activationRadius = renderDistance + options.ActivationMargin;
 		float activationRadiusSquared = activationRadius * activationRadius;
 		int minimumChunkX = (int)MathF.Floor(
@@ -118,6 +131,8 @@ public sealed partial class VoxelRenderer
 				transparentMembershipChanged |= HasTransparentGeometry(chunk.Transparent);
 			}
 		}
+
+        }
 
 		bool membershipChanged = activeSetAdditions != 0 || activeSetRemovals != 0;
 		(activeCoordinates, nextActiveCoordinates) = (nextActiveCoordinates, activeCoordinates);

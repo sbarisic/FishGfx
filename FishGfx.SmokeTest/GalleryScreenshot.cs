@@ -74,6 +74,13 @@ internal static unsafe class GalleryScreenshot
 
 	internal static string FindPicturesDirectory()
 	{
+		string captureRoot = Environment.GetEnvironmentVariable("FISHGFX_CAPTURE_ROOT");
+		if (!string.IsNullOrWhiteSpace(captureRoot))
+		{
+			if (!Path.IsPathFullyQualified(captureRoot))
+				throw new ArgumentException("FISHGFX_CAPTURE_ROOT must be an absolute path.");
+			return Path.GetFullPath(captureRoot);
+		}
 		DirectoryInfo directory = new(AppContext.BaseDirectory);
 
 		while (directory != null)

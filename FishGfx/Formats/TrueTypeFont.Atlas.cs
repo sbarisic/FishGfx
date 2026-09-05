@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using FishGfx.Graphics;
 
 namespace FishGfx.Formats;
@@ -56,25 +57,22 @@ public sealed unsafe partial class TrueTypeFont
 		return atlas;
 	}
 
-	private void PrepareGlyphs(string text)
-	{
-		foreach (char character in text)
-		{
-			if (character is '\r' or '\n' or '\t')
-			{
-				continue;
-			}
-
-			if (char.IsSurrogate(character))
-			{
-				AddAlias(character, fallback);
-			}
-			else
-			{
-				AddGlyph(character);
-			}
-		}
-	}
+    private void PrepareGlyphs(string text)
+    {
+        System.Collections.Generic.List<Rune> added = null;
+        foreach (Rune character in text.EnumerateRunes())
+        {
+            if (character.Value is '\r' or '\n' or '\t' || glyphs.ContainsKey(character)) continue;
+            Rune normalized = Normalize(character);
+            if (normalized != character) { AddAlias(character, fallback); continue; }
+            glyphs.Add(character, RasterizeGlyph(character));
+            (added ??= new()).Add(character);
+        }
+        if (added == null || Repack()) return;
+        // Retry individually so a large request still admits the glyphs that fit.
+        foreach (Rune character in added) glyphs.Remove(character);
+        foreach (Rune character in added) AddGlyph(character);
+    }
 
 	private byte[] FlipAtlasVertically()
 	{

@@ -36,6 +36,30 @@ internal static unsafe class Internal_OpenGL
 
 	internal static bool Is45OrAbove { get; private set; }
 
+    internal sealed record ContextState(GL Api, string[] ExtensionNames, string VersionText, string RendererText, int Major, int Minor, bool DebugInitialized);
+
+    internal static ContextState InitializeContext()
+    {
+        GL = GL.GetApi(Glfw.GetProcAddress);
+        openGlInitialized = false;
+        SetupOpenGL();
+        return new ContextState(GL, Extensions, Version, Renderer, MajorVersion, MinorVersion, openGlInitialized);
+    }
+
+    internal static void RestoreContext(ContextState state)
+    {
+        GL = state.Api;
+        Extensions = state.ExtensionNames;
+        Version = state.VersionText;
+        Renderer = state.RendererText;
+        MajorVersion = state.Major;
+        MinorVersion = state.Minor;
+        Is42OrAbove = MajorVersion > 4 || MajorVersion == 4 && MinorVersion >= 2;
+        Is43OrAbove = MajorVersion > 4 || MajorVersion == 4 && MinorVersion >= 3;
+        Is45OrAbove = MajorVersion > 4 || MajorVersion == 4 && MinorVersion >= 5;
+        openGlInitialized = state.DebugInitialized;
+    }
+
 	internal static void InitGLFW()
 	{
 		EnsureGlfwThread();

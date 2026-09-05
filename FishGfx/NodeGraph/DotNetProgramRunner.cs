@@ -26,8 +26,11 @@ public sealed class DotNetProgramBuildResult : IDisposable
 	private bool disposed;
 
 	public bool Success { get; internal set; }
+	public bool Cancelled { get; internal set; }
 	public int ExitCode { get; internal set; }
 	public string Output { get; internal set; } = "";
+	public bool OutputTruncated { get; internal set; }
+	public bool ErrorTruncated { get; internal set; }
 	public string Error { get; internal set; } = "";
 	public string WorkingDirectory { get; internal set; }
 	public string AssemblyPath { get; internal set; }
@@ -65,6 +68,8 @@ public sealed class DotNetProgramRunResult
 	public bool Cancelled { get; internal set; }
 	public int ExitCode { get; internal set; }
 	public string Output { get; internal set; } = "";
+	public bool OutputTruncated { get; internal set; }
+	public bool ErrorTruncated { get; internal set; }
 	public string Error { get; internal set; } = "";
 	public IReadOnlyList<DotNetBuildDiagnostic> Diagnostics { get; internal set; } =
 		Array.Empty<DotNetBuildDiagnostic>();
@@ -105,12 +110,12 @@ public sealed partial class DotNetProgramRunner
 				Path.Combine(workingDirectory, ProjectFileName),
 				ProjectFile(),
 				cancellationToken
-			);
+			).ConfigureAwait(false);
 			await File.WriteAllTextAsync(
 				Path.Combine(workingDirectory, SourceFileName),
 				generation.Source,
 				cancellationToken
-			);
+			).ConfigureAwait(false);
 
 			ProcessResult process = await RunProcessAsync(
 				"dotnet",
@@ -125,10 +130,13 @@ public sealed partial class DotNetProgramRunner
 				workingDirectory,
 				null,
 				cancellationToken
-			);
+			).ConfigureAwait(false);
 
 			result.ExitCode = process.ExitCode;
+			result.Cancelled = process.Cancelled;
 			result.Output = process.Output;
+            result.OutputTruncated = process.OutputTruncated;
+            result.ErrorTruncated = process.ErrorTruncated;
 			result.Error = process.Error;
 			result.Success = !process.Cancelled && process.ExitCode == 0;
 			result.AssemblyPath = Path.Combine(
@@ -160,15 +168,18 @@ public sealed partial class DotNetProgramRunner
 	{
 		try
 		{
-			using DotNetProgramBuildResult build = await BuildAsync(generation, cancellationToken);
+			using DotNetProgramBuildResult build = await BuildAsync(generation, cancellationToken).ConfigureAwait(false);
 
 			if (!build.Success)
 			{
 				return new DotNetProgramRunResult
 				{
 					Success = false,
+					Cancelled = build.Cancelled,
 					ExitCode = build.ExitCode,
 					Output = build.Output,
+                    OutputTruncated = build.OutputTruncated,
+                    ErrorTruncated = build.ErrorTruncated,
 					Error = build.Error,
 					Diagnostics = build.Diagnostics,
 				};
@@ -183,7 +194,7 @@ public sealed partial class DotNetProgramRunner
 				build.WorkingDirectory,
 				standardInput,
 				cancellationToken
-			);
+			).ConfigureAwait(false);
 
 			return new DotNetProgramRunResult
 			{
@@ -191,6 +202,8 @@ public sealed partial class DotNetProgramRunner
 				Cancelled = process.Cancelled,
 				ExitCode = process.ExitCode,
 				Output = process.Output,
+                OutputTruncated = process.OutputTruncated,
+                ErrorTruncated = process.ErrorTruncated,
 				Error = process.Error,
 				Diagnostics = build.Diagnostics,
 			};
@@ -218,7 +231,7 @@ public sealed partial class DotNetProgramRunner
 		}
 	}
 
-	private static async Task<ProcessResult> RunProcessAsync(
+	internal static async Task<ProcessResult> RunProcessAsync(
 		string fileName,
 		IEnumerable<string> arguments,
 		string workingDirectory,
@@ -263,38 +276,54 @@ public sealed partial class DotNetProgramRunner
 			);
 		}
 
-		Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
-		Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+        Task<CapturedOutput> output = CaptureAsync(process.StandardOutput.BaseStream);
+        Task<CapturedOutput> error = CaptureAsync(process.StandardError.BaseStream);
+        bool cancelled = false;
+        try
+        {
+            if (standardInput != null)
+                await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken).ConfigureAwait(false);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            cancelled = true;
+        }
+        finally
+        {
+            // Covers stdin failures as well as cancellation while waiting for exit.
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) when (process.HasExited) { }
+            }
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            await Task.WhenAll(output, error).ConfigureAwait(false);
+        }
+        CapturedOutput stdout = await output.ConfigureAwait(false);
+        CapturedOutput stderr = await error.ConfigureAwait(false);
+        return new ProcessResult(cancelled ? -1 : process.ExitCode, stdout.Text, stderr.Text, cancelled,
+            stdout.Truncated, stderr.Truncated);
+    }
 
-		if (standardInput != null)
-		{
-			await process.StandardInput.WriteAsync(standardInput.AsMemory(), cancellationToken);
-		}
+    private readonly record struct CapturedOutput(string Text, bool Truncated);
 
-		process.StandardInput.Close();
-		bool cancelled = false;
-
-		try
-		{
-			await process.WaitForExitAsync(cancellationToken);
-		}
-		catch (OperationCanceledException)
-		{
-			cancelled = true;
-
-			if (!process.HasExited)
-			{
-				process.Kill(true);
-			}
-		}
-
-		return new ProcessResult(
-			cancelled ? -1 : process.ExitCode,
-			await output,
-			await error,
-			cancelled
-		);
-	}
+    private static async Task<CapturedOutput> CaptureAsync(Stream stream)
+    {
+        const int maximumBytes = 1024 * 1024;
+        byte[] buffer = new byte[8192];
+        using MemoryStream retained = new();
+        bool truncated = false;
+        int count;
+        while ((count = await stream.ReadAsync(buffer).ConfigureAwait(false)) != 0)
+        {
+            int accepted = Math.Min(count, maximumBytes - (int)retained.Length);
+            retained.Write(buffer, 0, accepted);
+            truncated |= accepted != count;
+        }
+        return new CapturedOutput(Encoding.UTF8.GetString(retained.GetBuffer(), 0, (int)retained.Length), truncated);
+    }
 
 	private static IReadOnlyList<DotNetBuildDiagnostic> ParseDiagnostics(
 		string text,
@@ -375,19 +404,23 @@ public sealed partial class DotNetProgramRunner
 			""";
 	}
 
-	private readonly struct ProcessResult
+	internal readonly struct ProcessResult
 	{
 		internal int ExitCode { get; }
 		internal string Output { get; }
 		internal string Error { get; }
 		internal bool Cancelled { get; }
+        internal bool OutputTruncated { get; }
+        internal bool ErrorTruncated { get; }
 
-		internal ProcessResult(int exitCode, string output, string error, bool cancelled)
+		internal ProcessResult(int exitCode, string output, string error, bool cancelled, bool outputTruncated = false, bool errorTruncated = false)
 		{
 			ExitCode = exitCode;
 			Output = output;
 			Error = error;
 			Cancelled = cancelled;
+            OutputTruncated = outputTruncated;
+            ErrorTruncated = errorTruncated;
 		}
 	}
 }

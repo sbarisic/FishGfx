@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace FishGfx.Graphics;
 
 internal sealed partial class ImmediateRenderer
 {
+    private readonly List<PositionedGlyph> textGlyphs = new();
+    private Vertex2[] textVertices = Array.Empty<Vertex2>();
 	internal Vector2 DrawText(
 		RenderPass pass,
 		GraphicsFont font,
@@ -35,16 +38,12 @@ internal sealed partial class ImmediateRenderer
 		}
 
 		FontAtlas atlas = font.PrepareAtlas(context, text);
-		PositionedGlyph[] glyphs = font.LayoutAndMeasure(
-			text,
-			size,
-			characterSpacing,
-			out Vector2 measuredSize
-		);
+        List<PositionedGlyph> glyphs = textGlyphs;
+        font.LayoutInto(text, size, characterSpacing, glyphs, out Vector2 measuredSize);
 
 		ValidateAtlas(atlas);
 
-		if (glyphs.Length > 0)
+		if (glyphs.Count > 0)
 		{
 			ShaderProgram shader = SelectTextShader(atlas);
 			Vertex2[] vertices = CreateTextVertices(
@@ -54,7 +53,7 @@ internal sealed partial class ImmediateRenderer
 				color
 			);
 
-			DrawTexturedTriangles(pass, vertices, atlas.Texture, shader);
+			DrawTexturedTriangles(pass, vertices.AsSpan(0, glyphs.Count * 6), atlas.Texture, shader);
 		}
 
 		if (debugDraw)
@@ -102,17 +101,19 @@ internal sealed partial class ImmediateRenderer
 		}
 	}
 
-	private static Vertex2[] CreateTextVertices(
-		PositionedGlyph[] glyphs,
+	private Vertex2[] CreateTextVertices(
+		List<PositionedGlyph> glyphs,
 		Vector2 position,
 		FontAtlas atlas,
 		Color color
 	)
 	{
-		Vertex2[] vertices = new Vertex2[checked(glyphs.Length * 6)];
+		int needed = checked(glyphs.Count * 6);
+        if (textVertices.Length < needed) Array.Resize(ref textVertices, Math.Max(needed, textVertices.Length * 2));
+        Vertex2[] vertices = textVertices;
 		Vector2 inverseAtlasSize = new(1f / atlas.Width, 1f / atlas.Height);
 
-		for (int index = 0; index < glyphs.Length; index++)
+		for (int index = 0; index < glyphs.Count; index++)
 		{
 			PositionedGlyph positionedGlyph = glyphs[index];
 			GlyphMetrics glyph = positionedGlyph.Glyph;
@@ -145,13 +146,13 @@ internal sealed partial class ImmediateRenderer
 	private void DrawTextDebugBounds(
 		RenderPass pass,
 		GraphicsFont font,
-		PositionedGlyph[] glyphs,
+		List<PositionedGlyph> glyphs,
 		Vector2 position
 	)
 	{
 		FillRectangle(pass, position.X, position.Y, 5, 5, Color.Yellow);
 
-		if (glyphs.Length == 0)
+		if (glyphs.Count == 0)
 		{
 			return;
 		}

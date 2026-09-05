@@ -138,6 +138,13 @@ public sealed partial class FishUIGraphicsBackend
 		resource.Texture.SetSampling(new TextureSamplingState(filter, filter));
 	}
 
+    public override bool TryMeasureTextAdvances(global::FishUI.FontRef font, string text, Span<float> advances, Span<float> leading)
+    {
+        GetFont(font).MeasureAdvances(text, font.Size, font.Spacing, advances, leading);
+        return true;
+    }
+    public override long GetTextMetricsVersion(global::FishUI.FontRef font) => GetFont(font).MetricsVersion;
+
 	public override Vector2 MeasureText(global::FishUI.FontRef fontReference, string text)
 	{
 		if (string.IsNullOrEmpty(text))

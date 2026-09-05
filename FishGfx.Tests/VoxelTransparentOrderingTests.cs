@@ -8,6 +8,7 @@ using Xunit;
 
 namespace FishGfx.Tests;
 
+[Collection("Allocation isolation")]
 public sealed class VoxelTransparentOrderingTests
 {
 	[Fact]
@@ -374,3 +375,6 @@ public sealed class VoxelTransparentOrderingTests
 		return camera;
 	}
 }
+
+[CollectionDefinition("Allocation isolation", DisableParallelization = true)]
+public sealed class AllocationIsolationCollection { }

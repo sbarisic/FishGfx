@@ -20,7 +20,8 @@ public static class BinaryExtensions
 	{
 		ArgumentNullException.ThrowIfNull(reader);
 
-		Span<byte> bytes = stackalloc byte[Marshal.SizeOf<T>()];
+		T value = default;
+		Span<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref value, 1));
 		reader.BaseStream.ReadExactly(bytes);
 
 		return MemoryMarshal.Read<T>(bytes);

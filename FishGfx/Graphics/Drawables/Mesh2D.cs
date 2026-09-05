@@ -21,6 +21,8 @@ public sealed class Mesh2D : IDisposable
 	private int elementCount;
 	private bool hasColors;
 	private bool disposed;
+    private Vector2[] stagedPositions = Array.Empty<Vector2>(), stagedUvs = Array.Empty<Vector2>();
+    private Color[] stagedColors = Array.Empty<Color>();
 
 	internal Mesh2D(
 		GraphicsContext owner,
@@ -49,11 +51,13 @@ public sealed class Mesh2D : IDisposable
 
 	internal VertexArray VertexArray { get; }
 
-	public void SetVertices(Vector2[] vertices)
+	public void SetVertices(Vector2[] vertices) => SetVertices((ReadOnlySpan<Vector2>)vertices);
+
+	public void SetVertices(ReadOnlySpan<Vector2> vertices)
 	{
 		ThrowIfDisposed();
 
-		if (vertices == null || vertices.Length == 0)
+		if (vertices.Length == 0)
 		{
 			VertexArray.AttribEnable(VertexAttribute, false);
 			vertexCount = 0;
@@ -80,11 +84,13 @@ public sealed class Mesh2D : IDisposable
 		VertexArray.AttribEnable(VertexAttribute);
 	}
 
-	public void SetColors(Color[] colors)
+	public void SetColors(Color[] colors) => SetColors((ReadOnlySpan<Color>)colors);
+
+	public void SetColors(ReadOnlySpan<Color> colors)
 	{
 		ThrowIfDisposed();
 
-		if (colors == null || colors.Length == 0)
+		if (colors.Length == 0)
 		{
 			VertexArray.AttribEnable(ColorAttribute, false);
 			hasColors = false;
@@ -116,11 +122,13 @@ public sealed class Mesh2D : IDisposable
 		hasColors = true;
 	}
 
-	public void SetUVs(Vector2[] uvs)
+	public void SetUVs(Vector2[] uvs) => SetUVs((ReadOnlySpan<Vector2>)uvs);
+
+	public void SetUVs(ReadOnlySpan<Vector2> uvs)
 	{
 		ThrowIfDisposed();
 
-		if (uvs == null || uvs.Length == 0)
+		if (uvs.Length == 0)
 		{
 			VertexArray.AttribEnable(UvAttribute, false);
 
@@ -159,11 +167,11 @@ public sealed class Mesh2D : IDisposable
 
 		if (elementBuffer == null)
 		{
-			elementBuffer = CreateBuffer(elements, BufferBindFlags.Index);
+			elementBuffer = CreateBuffer<uint>(elements, BufferBindFlags.Index);
 		}
 		else
 		{
-			Upload(elementBuffer, elements);
+			Upload<uint>(elementBuffer, elements);
 		}
 
 		VertexArray.BindElementBuffer(elementBuffer);
@@ -171,12 +179,21 @@ public sealed class Mesh2D : IDisposable
 	}
 
 	public void SetVertices(params Vertex2[] vertices)
-	{
-		ArgumentNullException.ThrowIfNull(vertices);
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        SetVertices((ReadOnlySpan<Vertex2>)vertices);
+    }
 
-		Vector2[] positions = new Vector2[vertices.Length];
-		Vector2[] uvs = new Vector2[vertices.Length];
-		Color[] colors = new Color[vertices.Length];
+    public void SetVertices(ReadOnlySpan<Vertex2> vertices)
+    {
+
+		if (stagedPositions.Length < vertices.Length)
+        {
+            int capacity = Math.Max(vertices.Length, stagedPositions.Length * 2);
+            Array.Resize(ref stagedPositions, capacity); Array.Resize(ref stagedUvs, capacity); Array.Resize(ref stagedColors, capacity);
+        }
+        Span<Vector2> positions = stagedPositions.AsSpan(0, vertices.Length), uvs = stagedUvs.AsSpan(0, vertices.Length);
+        Span<Color> colors = stagedColors.AsSpan(0, vertices.Length);
 
 		for (int index = 0; index < vertices.Length; index++)
 		{
@@ -238,15 +255,15 @@ public sealed class Mesh2D : IDisposable
 	}
 
 	private GraphicsBuffer CreateBuffer<T>(
-		T[] data,
+		ReadOnlySpan<T> data,
 		BufferBindFlags flags
 	)
 		where T : unmanaged
 	{
-		return owner.CreateBuffer(data, flags, usage);
+		return owner.CreateBuffer<T>(data, flags, usage);
 	}
 
-	private static void Upload<T>(GraphicsBuffer buffer, T[] data)
+	private static void Upload<T>(GraphicsBuffer buffer, ReadOnlySpan<T> data)
 		where T : unmanaged
 	{
 		int size = checked(data.Length * Unsafe.SizeOf<T>());
@@ -261,7 +278,7 @@ public sealed class Mesh2D : IDisposable
 			buffer.ResizeDiscard(size);
 		}
 
-		buffer.Write(data);
+		buffer.Write<T>(data);
 	}
 
 	private void ThrowIfDisposed()

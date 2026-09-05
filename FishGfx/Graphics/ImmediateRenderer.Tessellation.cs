@@ -23,12 +23,11 @@ internal sealed partial class ImmediateRenderer
 
 	private void DrawTexturedTriangles(
 		RenderPass pass,
-		Vertex2[] vertices,
+		ReadOnlySpan<Vertex2> vertices,
 		Texture texture,
 		ShaderProgram shader
 	)
 	{
-		ArgumentNullException.ThrowIfNull(vertices);
 
 		if (vertices.Length == 0)
 		{

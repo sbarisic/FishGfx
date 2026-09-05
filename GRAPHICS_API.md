@@ -126,3 +126,7 @@ Recorded arrays are copied. Referenced textures, fonts, shaders, meshes, and mod
 The supported build boundary is `FishGfx.Modern.sln`. Legacy demos and tools outside it still target the removed global/static API and are intentionally excluded until separately migrated. No obsolete aliases or forwarding shims are provided.
 
 See [README.md](README.md) for runnable examples, [INFO.md](INFO.md) for project architecture, and [BUGS.md](BUGS.md) for correctness history.
+
+## September audit contracts
+
+See [HARDENING.md](HARDENING.md) for the scalar glyph and FishUI input migrations, managed binary representation, bounded process output, atomic atlas updates, and per-context setup cache. GPU resource deletion invalidates binding state even after its managed wrapper has been collected. Text layout captures glyph positions after atlas preparation; measurement does not allocate positioned glyphs. Culling disabled includes all resident GPU chunks. These changes retain the ownership and pass rules above.

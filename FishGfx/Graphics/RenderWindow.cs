@@ -10,6 +10,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 {
 	private readonly Thread ownerThread;
 	private Glfw.Window nativeWindow;
+    private static RenderWindow nativeCurrentWindow;
+    private Internal_OpenGL.ContextState backendState;
 	private Color[] pixelData = Array.Empty<Color>();
 	private Glfw.Monitor selectedMonitor;
 	private MonitorVideoMode? exclusiveVideoMode;
@@ -326,7 +328,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 		Glfw.SetWindowShouldClose(nativeWindow, true);
 		Graphics?.Dispose();
-		Glfw.DestroyWindow(nativeWindow);
+		if (ReferenceEquals(nativeCurrentWindow, this)) nativeCurrentWindow = null;
+        Glfw.DestroyWindow(nativeWindow);
 		disposed = true;
 	}
 
@@ -347,14 +350,19 @@ public unsafe sealed partial class RenderWindow : IDisposable
 		return new Vector2(videoMode.Width, videoMode.Height);
 	}
 
-	internal void MakeNativeCurrent()
-	{
-		EnsureOwnerThread();
-		Glfw.MakeContextCurrent(nativeWindow);
-		Internal_OpenGL.InitOpenGL();
-		Internal_OpenGL.SetupOpenGL();
-		Internal_OpenGL.GL.Enable(EnableCap.Multisample);
-	}
+    internal void MakeNativeCurrent()
+    {
+        EnsureOwnerThread();
+        if (ReferenceEquals(nativeCurrentWindow, this)) return;
+        Glfw.MakeContextCurrent(nativeWindow);
+        if (backendState == null)
+        {
+            backendState = Internal_OpenGL.InitializeContext();
+            Internal_OpenGL.GL.Enable(EnableCap.Multisample);
+        }
+        else Internal_OpenGL.RestoreContext(backendState);
+        nativeCurrentWindow = this;
+    }
 
 	internal void SwapNativeBuffers()
 	{
@@ -506,7 +514,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 			Glfw.MakeContextCurrent(Glfw.Window.None);
 		}
 
-		Glfw.DestroyWindow(nativeWindow);
+		if (ReferenceEquals(nativeCurrentWindow, this)) nativeCurrentWindow = null;
+        Glfw.DestroyWindow(nativeWindow);
 		nativeWindow = Glfw.Window.None;
 	}
 

@@ -279,7 +279,7 @@ internal sealed class VoxelGeometryPage : IDisposable
 				}
 			}
 
-			return best;
+			return best == int.MaxValue ? 0 : best;
 		}
 	}
 

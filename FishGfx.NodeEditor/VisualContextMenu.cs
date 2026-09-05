@@ -88,7 +88,7 @@ internal sealed class VisualContextMenu
 	{
 		if (IsOpen && SearchText.Length > 0)
 		{
-			SearchText = SearchText.Substring(0, SearchText.Length - 1);
+			SearchText = SearchText.Substring(0, System.Globalization.StringInfo.ParseCombiningCharacters(SearchText)[^1]);
 			Refilter();
 		}
 	}

@@ -10,7 +10,7 @@ namespace FishGfx.Formats;
 
 public sealed class BitmapFont : GraphicsFont
 {
-	private readonly Dictionary<char, CharacterRecord> characters = new();
+	private readonly Dictionary<Rune, CharacterRecord> characters = new();
 	private readonly Dictionary<ulong, short> kerningPairs = new();
 	private readonly Dictionary<GraphicsContext, FontAtlas> atlases = new();
 	private readonly string textureDirectory;
@@ -48,7 +48,9 @@ public sealed class BitmapFont : GraphicsFont
 
 	public override float SdfPixelRange => 0;
 
-	public override GlyphMetrics? GetGlyph(char character)
+	public override GlyphMetrics? GetGlyph(char character) => GetGlyph(Rune.TryCreate(character, out Rune rune) ? rune : Rune.ReplacementChar);
+
+	public override GlyphMetrics? GetGlyph(Rune character)
 	{
 		ThrowIfDisposed();
 
@@ -66,10 +68,12 @@ public sealed class BitmapFont : GraphicsFont
 		);
 	}
 
-	public override float GetKerning(char first, char second)
+	public override float GetKerning(char first, char second) => GetKerning(new Rune(first), new Rune(second));
+
+	public override float GetKerning(Rune first, Rune second)
 	{
 		ThrowIfDisposed();
-		ulong key = ((ulong)first << 32) | second;
+		ulong key = ((ulong)first.Value << 32) | (uint)second.Value;
 
 		return kerningPairs.TryGetValue(key, out short amount) ? amount : 0;
 	}
@@ -246,12 +250,12 @@ public sealed class BitmapFont : GraphicsFont
 		{
 			CharacterRecord character = reader.ReadStruct<CharacterRecord>();
 
-			if (character.Id > char.MaxValue || character.Page != 0)
+			if (!Rune.IsValid((int)character.Id) || character.Page != 0)
 			{
 				continue;
 			}
 
-			characters[(char)character.Id] = character;
+			characters[new Rune((int)character.Id)] = character;
 		}
 	}
 
