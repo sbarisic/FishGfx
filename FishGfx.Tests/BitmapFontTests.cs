@@ -16,5 +16,7 @@ public sealed class BitmapFontTests
 
 		Assert.Equal("Open Sans", font.Name);
 		Assert.NotNull(font.GetGlyph('A'));
+		Assert.Equal(font.GetKerning(System.Text.Rune.ReplacementChar, new System.Text.Rune('A')),
+			font.GetKerning('\uD800', 'A'));
 	}
 }

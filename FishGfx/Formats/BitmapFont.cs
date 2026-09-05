@@ -68,7 +68,9 @@ public sealed class BitmapFont : GraphicsFont
 		);
 	}
 
-	public override float GetKerning(char first, char second) => GetKerning(new Rune(first), new Rune(second));
+	public override float GetKerning(char first, char second) => GetKerning(
+		Rune.TryCreate(first, out Rune a) ? a : Rune.ReplacementChar,
+		Rune.TryCreate(second, out Rune b) ? b : Rune.ReplacementChar);
 
 	public override float GetKerning(Rune first, Rune second)
 	{
