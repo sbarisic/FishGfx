@@ -29,6 +29,9 @@ internal sealed partial class VoxelTestApplication
 	private static readonly Color UnderwaterTint = new Color(20, 101, 140, 48);
 	private readonly bool autoMode;
 	private readonly bool benchmarkMode;
+	private readonly bool greedy;
+	private readonly bool exactGl40;
+	private readonly string captureWorld;
 	private Vector2 mouseDelta;
 	private float scrollDelta;
 	private bool boundaryBlockEnabled = true;
@@ -37,6 +40,15 @@ internal sealed partial class VoxelTestApplication
 	internal VoxelTestApplication(string[] args)
 	{
 		autoMode = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
+		greedy = args.Contains("--greedy", StringComparer.OrdinalIgnoreCase);
+		exactGl40 = args.Contains("--gl40", StringComparer.OrdinalIgnoreCase);
+		int captureIndex = Array.IndexOf(args, "--capture-world");
+		if (captureIndex >= 0)
+		{
+			if (autoMode) throw new ArgumentException("Use --capture-world with --streaming-benchmark, separately from --auto validation.");
+			if (captureIndex + 1 >= args.Length) throw new ArgumentException("--capture-world requires an output path.");
+			captureWorld = System.IO.Path.GetFullPath(args[captureIndex + 1]);
+		}
 		benchmarkMode = args.Contains(
 			"--streaming-benchmark",
 			StringComparer.OrdinalIgnoreCase
@@ -45,7 +57,9 @@ internal sealed partial class VoxelTestApplication
 
 	internal void Run()
 	{
-		RenderWindow window = new RenderWindow(Width, Height, "FishGfx Voxel Chunk Renderer");
+		RenderWindow window = new RenderWindow(new RenderWindowOptions {
+			Width = Width, Height = Height, Title = "FishGfx Voxel Chunk Renderer",
+			PreferredVersion = exactGl40 ? new(4, 0) : new(4, 6), RequireExactVersion = exactGl40 });
 		InputManager input = new InputManager(window);
 		string rendererName = window.Graphics.Capabilities.Renderer;
 		window.CaptureCursor = !autoMode && !benchmarkMode;
@@ -88,6 +102,7 @@ internal sealed partial class VoxelTestApplication
 			new VoxelRendererOptions
 			{
 				WorkerCount = Math.Max(2, Environment.ProcessorCount - 1),
+				Meshing = new VoxelMeshingOptions(),
 				MaxRenderDistance = MaxRenderDistance,
 				MeshUploadBudget = autoMode ? 96 : 24,
 				MeshUploadTimeBudgetMilliseconds = autoMode
@@ -121,6 +136,7 @@ internal sealed partial class VoxelTestApplication
 		List<double> benchmarkLighting = new List<double>();
 		List<double> benchmarkMeshing = new List<double>();
 		int benchmarkFrame = 0;
+		bool benchmarkTimedOut = false;
 		int benchmarkGen0Start = GC.CollectionCount(0);
 		int benchmarkGen1Start = GC.CollectionCount(1);
 		int benchmarkGen2Start = GC.CollectionCount(2);
@@ -164,7 +180,7 @@ internal sealed partial class VoxelTestApplication
 					window.IsCloseRequested = true;
 				}
 
-				if (!autoMode)
+				if (!autoMode && !benchmarkMode)
 				{
 					if (input.WasKeyPressed(Key.Tab))
 					{
@@ -175,10 +191,10 @@ internal sealed partial class VoxelTestApplication
 					}
 				}
 
-				voxelUi.InteractionEnabled = !autoMode && uiMode;
+				voxelUi.InteractionEnabled = !autoMode && !benchmarkMode && uiMode;
 				voxelUi.TickUpdate(deltaTime, (float)now);
 
-				if (!autoMode)
+				if (!autoMode && !benchmarkMode)
 				{
 					UpdateHotbar(input, hotbar);
 
@@ -305,7 +321,7 @@ internal sealed partial class VoxelTestApplication
 						DepthLoadAction = RenderLoadAction.Clear,
 						StencilLoadAction = RenderLoadAction.Clear,
 						ClearColor = underwater ? UnderwaterClearColor : AirClearColor,
-						Time = (float)now,
+						Time = captureWorld == null ? (float)now : 0,
 					}
 				))
 				{
@@ -314,6 +330,15 @@ internal sealed partial class VoxelTestApplication
 						renderer.EnqueueVisible(renderQueue, camera);
 						worldPass.Execute(renderQueue);
 					}
+				}
+
+				if (captureWorld != null && !worldPixelsValidated && streamer.IsSettled && lighting.IsIdle && renderer.GetPendingWork(camera).IsSettled)
+				{
+					window.ReadPixels();
+					System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(captureWorld));
+					System.IO.File.WriteAllBytes(captureWorld, System.Runtime.InteropServices.MemoryMarshal.AsBytes(window.PixelData.Span).ToArray());
+					System.IO.File.WriteAllText(captureWorld + ".json", System.Text.Json.JsonSerializer.Serialize(new { width = window.Width, height = window.Height, greedy, rendererName, cameraPosition = new[] { camera.Position.X, camera.Position.Y, camera.Position.Z }, cameraRotation = new[] { camera.Rotation.X, camera.Rotation.Y, camera.Rotation.Z, camera.Rotation.W } }));
+					worldPixelsValidated = true;
 				}
 
 				if (
@@ -360,7 +385,7 @@ internal sealed partial class VoxelTestApplication
 						ColorLoadAction = RenderLoadAction.Load,
 						DepthLoadAction = RenderLoadAction.Load,
 						StencilLoadAction = RenderLoadAction.Load,
-						Time = (float)now,
+						Time = captureWorld == null ? (float)now : 0,
 					}
 				))
 				{
@@ -532,16 +557,16 @@ internal sealed partial class VoxelTestApplication
 					benchmarkMode
 						&& streamer.IsSettled
 						&& lighting.IsIdle
-						&& renderer.IsIdle
+						&& renderer.GetPendingWork(camera).IsSettled
 				)
 				{
 					window.IsCloseRequested = true;
 				}
 				else if (benchmarkMode && timer.Elapsed.TotalSeconds > 60)
 				{
-					throw new TimeoutException(
-						"Voxel streaming benchmark did not settle within 60 seconds."
-					);
+					Console.Error.WriteLine($"Streaming timeout: stream={streamer.PendingHorizontalCount}, lighting={lighting.PendingCount}, work={renderer.GetPendingWork(camera)}");
+					benchmarkTimedOut = true;
+					window.IsCloseRequested = true;
 				}
 			}
 
@@ -561,6 +586,7 @@ internal sealed partial class VoxelTestApplication
 		}
 		finally
 		{
+			renderQueue.Clear();
 			renderer.Dispose();
 			lighting.Dispose();
 			voxelUi.Dispose();
@@ -601,6 +627,7 @@ internal sealed partial class VoxelTestApplication
 					+ $"allocated={(GC.GetTotalAllocatedBytes() - benchmarkAllocatedStart) / 1_048_576d:F1}MiB"
 			);
 		}
+		if (benchmarkTimedOut) throw new TimeoutException("Streaming benchmark timed out; partial measurements were reported above.");
 	}
 
 	private static double Percentile(double[] ordered, double percentile)

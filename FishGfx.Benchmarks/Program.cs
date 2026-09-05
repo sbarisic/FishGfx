@@ -8,6 +8,11 @@ using UnitTest;
 string filter = args.FirstOrDefault() ?? "";
 if (filter == "verify-graphics") { GraphicsProbes.Verify(); return; }
 if (filter.Contains("geometry")) { GraphicsProbes.Geometry(Run); return; }
+if (filter == "" || filter.StartsWith("mesh") || filter.StartsWith("sort-") || filter.StartsWith("schedule") || filter.StartsWith("group"))
+{
+    VoxelPerformanceProbes.Run(Run);
+    if (filter != "") return;
+}
 GraphicsProbes.CpuExperiments(Run);
 string fontPath = Path.Combine(AppContext.BaseDirectory, "data", "fonts", "Consolas-Regular.ttf");
 if (!File.Exists(fontPath)) fontPath = Path.GetFullPath("thirdparty/FishGfx/FishGfx/data/fonts/Consolas-Regular.ttf");
@@ -39,7 +44,8 @@ Run("wrap-2048", () =>
 void Run(string name, Action action, int repetitions)
 {
     if (!name.Contains(filter, StringComparison.OrdinalIgnoreCase)) return;
-    for (int i = 0; i < 5; i++) action();
+    long warmup = Stopwatch.GetTimestamp();
+    for (int i = 0; i < 5 || Stopwatch.GetElapsedTime(warmup).TotalMilliseconds < 300; i++) action();
     double[] timings = new double[30];
     long allocated = 0;
     for (int sample = 0; sample < timings.Length; sample++)

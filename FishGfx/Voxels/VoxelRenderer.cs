@@ -310,6 +310,15 @@ public sealed partial class VoxelRenderer : IDisposable
 		&& pendingTransparentOrderingResult == null
 		&& transparentOrdering.IsIdle;
 
+	/// <summary>Reports work eligible for the supplied camera without changing global IsIdle semantics.</summary>
+	public VoxelRendererWork GetPendingWork(Camera camera)
+	{
+		ThrowIfDisposed();
+		VoxelMeshingFocus focus = new(camera, options.MaxRenderDistance, options.DeactivationMargin, cullingEnabled);
+		return new(scheduler.GetWork(focus), pendingUploads.Count + (currentUploadJob == null ? 0 : 1),
+			transparentIndexUploadJob != null || pendingTransparentOrderingResult != null || !transparentOrdering.IsIdle);
+	}
+
 	public bool IsCullingEnabled
 	{
 		get => cullingEnabled;

@@ -136,6 +136,22 @@ public sealed partial class VoxelMeshingScheduler : IDisposable
 		}
 	}
 
+	internal VoxelMeshingWork GetWork(VoxelMeshingFocus? focus)
+	{
+		lock (sync)
+		{
+			int eligible = 0, blocked = 0;
+			foreach (ChunkCoordinate coordinate in dirty)
+			{
+				if (focus.HasValue && !focus.Value.ShouldSchedule(coordinate)) continue;
+				eligible++;
+				if (lighting != null && lighting.IsResident(coordinate)
+					&& !lighting.TryCaptureSnapshotSource(coordinate, out _)) blocked++;
+			}
+			return new(dirty.Count, eligible, dirty.Count - eligible, blocked, inFlight.Count, completed.Count, failures.Count);
+		}
+	}
+
 	public int InFlightCount
 	{
 		get
