@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 
 namespace FishGfx.Graphics;
@@ -39,6 +40,12 @@ public sealed partial class RenderPass
 	}
 
 	public void DrawLineStrip(Vertex2[] points, float thickness = 1)
+	{
+		EnsureActive();
+		context.Renderer.DrawLineStrip(this, points, thickness);
+	}
+
+	public void DrawLineStrip(ReadOnlySpan<Vertex2> points, float thickness = 1)
 	{
 		EnsureActive();
 		context.Renderer.DrawLineStrip(this, points, thickness);

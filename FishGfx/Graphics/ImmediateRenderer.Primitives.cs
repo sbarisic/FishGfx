@@ -67,6 +67,12 @@ internal sealed partial class ImmediateRenderer
 
 	internal void DrawLineStrip(RenderPass pass, Vertex2[] points, float thickness)
 	{
+		ArgumentNullException.ThrowIfNull(points);
+		DrawLineStrip(pass, points, thickness, PrimitiveType.LineStrip);
+	}
+
+	internal void DrawLineStrip(RenderPass pass, ReadOnlySpan<Vertex2> points, float thickness)
+	{
 		DrawLineStrip(pass, points, thickness, PrimitiveType.LineStrip);
 	}
 
@@ -99,12 +105,11 @@ internal sealed partial class ImmediateRenderer
 
 	private void DrawLineStrip(
 		RenderPass pass,
-		Vertex2[] points,
+		ReadOnlySpan<Vertex2> points,
 		float thickness,
 		PrimitiveType primitiveType
 	)
 	{
-		ArgumentNullException.ThrowIfNull(points);
 		PrimitiveTessellator.ValidateThickness(thickness);
 
 		if (points.Length == 0)
