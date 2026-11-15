@@ -14,9 +14,15 @@ public unsafe sealed partial class RenderWindow
 	private Glfw.WindowSizeFunc windowSizeCallback;
 	private Glfw.FramebufferSizeFunc framebufferSizeCallback;
 	private Glfw.WindowPosFunc windowPositionCallback;
+	private Glfw.RawDropFunc dropCallback;
 
 	private void RegisterCallbacks()
 	{
+		Glfw.SetRawDropCallback(nativeWindow, dropCallback = (_, count, paths) =>
+		{
+			FilesDropped?.Invoke(this, FilesDroppedEventArgs.FromNativePaths(count, paths));
+		});
+
 		Vector2 previousMousePosition = Vector2.Zero;
 		bool hasPreviousMousePosition = false;
 

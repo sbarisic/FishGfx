@@ -1520,6 +1520,12 @@ namespace Glfw3
 		/// callback.</param>
 		public static void SetDropCallback(Window window, DropFunc callback) => glfwSetDropCallback(window.Ptr, Marshal.GetFunctionPointerForDelegate(callback));
 
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+		internal delegate void RawDropFunc(IntPtr window, int count, IntPtr paths);
+
+		internal static void SetRawDropCallback(Window window, RawDropFunc callback) =>
+			glfwSetDropCallback(window.Ptr, Marshal.GetFunctionPointerForDelegate(callback));
+
 		[DllImport(kLibrary, CallingConvention = CallingConvention.Cdecl), SuppressUnmanagedCodeSecurity]
 		static extern IntPtr glfwSetDropCallback(IntPtr window, IntPtr callback);
 

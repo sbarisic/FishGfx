@@ -151,6 +151,9 @@ public unsafe sealed partial class RenderWindow : IDisposable
 
 	public event EventHandler<ScrollEventArgs> Scrolled;
 
+	/// <summary>Files dropped onto this window, delivered during PollEvents on the window thread.</summary>
+	public event EventHandler<FilesDroppedEventArgs> FilesDropped;
+
 	public event EventHandler<WindowResizeEventArgs> Resized;
 
 	public event EventHandler<WindowResizeEventArgs> FramebufferResized;

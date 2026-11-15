@@ -1,5 +1,9 @@
 # FishGfx
 
+`RenderWindow.FilesDropped` reports files dragged onto a window during
+`PollEvents`. Its event arguments contain copied UTF-8 paths, including Unicode
+filenames. Queue expensive file loading off the window thread.
+
 FishGfx is a Windows-first C# graphics and game-framework library built on OpenGL 4, GLFW, and Silk.NET. The modern core targets .NET 10 and includes immediate 2D primitives, GPU resource abstractions, bitmap and SDF text, retained drawables, editable voxel chunks, reflected function-node graphs, and interactive validation applications.
 
 - [Architecture and project information](INFO.md)
