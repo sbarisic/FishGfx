@@ -87,13 +87,14 @@ internal sealed partial class ImmediateRenderer
 		RenderPass pass,
 		Mesh3D mesh,
 		Texture texture,
-		ShaderProgram shader
+		ShaderProgram shader,
+        int instances = 1
 	)
 	{
 		ArgumentNullException.ThrowIfNull(mesh);
 		EnsureMeshOwner(mesh.Owner, mesh.IsDisposed, nameof(mesh));
 		Ensure3DResources(mesh.PrimitiveType);
-		DrawMesh3D(pass, mesh, texture ?? whiteTexture, shader ?? default3D);
+		DrawMesh3D(pass, mesh, texture ?? whiteTexture, shader ?? default3D, instances);
 	}
 
 	private void DrawLineStrip(
@@ -136,10 +137,11 @@ internal sealed partial class ImmediateRenderer
 		RenderPass pass,
 		Mesh3D mesh,
 		Texture texture,
-		ShaderProgram shader
+		ShaderProgram shader,
+        int instances = 1
 	)
 	{
-		DrawBound(pass, texture, shader, mesh.Draw);
+		DrawBound(pass, texture, shader, instances == 1 ? mesh.Draw : () => mesh.DrawInstances(instances));
 	}
 
 	private void DrawBound(

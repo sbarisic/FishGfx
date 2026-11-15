@@ -16,6 +16,27 @@ public sealed class InputManager : IDisposable
 	private readonly HashSet<MouseButton> mouseButtonsReleased = new();
 	private Vector2 nativeMousePosition;
 	private bool disposed;
+	private readonly HashSet<Key> syntheticKeys = new();
+	private readonly HashSet<MouseButton> syntheticButtons = new();
+	private bool suppressPhysical;
+	public bool SuppressPhysical
+	{
+		get => suppressPhysical;
+		set { if (value != suppressPhysical) { keysDown.Clear(); mouseButtonsDown.Clear(); } suppressPhysical = value; }
+	}
+	public bool PhysicalEscapePressed { get; private set; }
+	public Vector2? SyntheticPointer { get; set; }
+	public Vector2 PointerTopLeft => SyntheticPointer ?? window.MousePosition;
+	public void SetSynthetic(Key[] keys, MouseButton[] buttons)
+	{
+		foreach (var key in keys) if (!syntheticKeys.Contains(key)) keysPressed.Add(key);
+		foreach (var key in syntheticKeys) if (!keys.Contains(key)) keysReleased.Add(key);
+		foreach (var button in buttons) if (!syntheticButtons.Contains(button)) mouseButtonsPressed.Add(button);
+		foreach (var button in syntheticButtons) if (!buttons.Contains(button)) mouseButtonsReleased.Add(button);
+		syntheticKeys.Clear(); syntheticKeys.UnionWith(keys);
+		syntheticButtons.Clear(); syntheticButtons.UnionWith(buttons);
+	}
+	public void ReleaseSynthetic() { SetSynthetic(Array.Empty<Key>(), Array.Empty<MouseButton>()); SyntheticPointer = null; }
 
 	public InputManager(RenderWindow window)
 	{
@@ -45,6 +66,7 @@ public sealed class InputManager : IDisposable
 	{
 		ThrowIfDisposed();
 		keysPressed.Clear();
+		PhysicalEscapePressed = false;
 		keysReleased.Clear();
 		mouseButtonsPressed.Clear();
 		mouseButtonsReleased.Clear();
@@ -54,7 +76,7 @@ public sealed class InputManager : IDisposable
 	{
 		ThrowIfDisposed();
 
-		return keysDown.Contains(key);
+		return syntheticKeys.Contains(key) || !SuppressPhysical && keysDown.Contains(key);
 	}
 
 	public bool WasKeyPressed(Key key)
@@ -75,7 +97,7 @@ public sealed class InputManager : IDisposable
 	{
 		ThrowIfDisposed();
 
-		return mouseButtonsDown.Contains(button);
+		return syntheticButtons.Contains(button) || !SuppressPhysical && mouseButtonsDown.Contains(button);
 	}
 
 	public bool WasMouseButtonPressed(MouseButton button)
@@ -107,6 +129,8 @@ public sealed class InputManager : IDisposable
 
 	private void HandleKeyChanged(object sender, KeyEventArgs args)
 	{
+		if (args.Key == Key.Escape && args.IsPressed && !args.IsRepeat) PhysicalEscapePressed = true;
+		if (SuppressPhysical) return;
 		if (args.IsRepeat)
 		{
 			return;
@@ -125,6 +149,7 @@ public sealed class InputManager : IDisposable
 
 	private void HandleMouseButtonChanged(object sender, MouseButtonEventArgs args)
 	{
+		if (SuppressPhysical) return;
 		if (args.IsRepeat)
 		{
 			return;

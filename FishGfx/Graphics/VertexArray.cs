@@ -25,7 +25,7 @@ internal unsafe sealed partial class VertexArray : GraphicsResource
 
 	internal bool HasElementBuffer => elementBuffer != null;
 
-	internal void Draw(int first, int count)
+	internal void Draw(int first, int count, int instances = 1)
 	{
 		EnsureCurrentOwner();
 
@@ -39,23 +39,24 @@ internal unsafe sealed partial class VertexArray : GraphicsResource
 			throw new ArgumentOutOfRangeException(nameof(count));
 		}
 
-		if (count == 0)
+		if (instances < 0) throw new ArgumentOutOfRangeException(nameof(instances));
+		if (count == 0 || instances == 0)
 		{
 			return;
 		}
 
 		ValidateBuffers();
-		WithBound(() => Internal_OpenGL.GL.DrawArrays(
-			ToOpenGl(PrimitiveType),
-			first,
-			(uint)count
-		));
+		WithBound(() => {
+            if (instances == 1) Internal_OpenGL.GL.DrawArrays(ToOpenGl(PrimitiveType), first, (uint)count);
+            else Internal_OpenGL.GL.DrawArraysInstanced(ToOpenGl(PrimitiveType), first, (uint)count, (uint)instances);
+        });
 	}
 
 	internal void DrawElements(
 		int offset = 0,
 		int count = -1,
-		IndexElementType elementType = IndexElementType.UnsignedShort
+		IndexElementType elementType = IndexElementType.UnsignedShort,
+        int instances = 1
 	)
 	{
 		EnsureCurrentOwner();
@@ -80,7 +81,8 @@ internal unsafe sealed partial class VertexArray : GraphicsResource
 			);
 		}
 
-		if (count == 0)
+		if (instances < 0) throw new ArgumentOutOfRangeException(nameof(instances));
+		if (count == 0 || instances == 0)
 		{
 			return;
 		}
@@ -97,12 +99,10 @@ internal unsafe sealed partial class VertexArray : GraphicsResource
 		}
 
 		ValidateBuffers();
-		WithBound(() => Internal_OpenGL.GL.DrawElements(
-			ToOpenGl(PrimitiveType),
-			(uint)count,
-			ToOpenGl(elementType),
-			(void*)(offset * elementSize)
-		));
+		WithBound(() => {
+            if (instances == 1) Internal_OpenGL.GL.DrawElements(ToOpenGl(PrimitiveType), (uint)count, ToOpenGl(elementType), (void*)(offset * elementSize));
+            else Internal_OpenGL.GL.DrawElementsInstanced(ToOpenGl(PrimitiveType), (uint)count, ToOpenGl(elementType), (void*)(offset * elementSize), (uint)instances);
+        });
 	}
 
 	internal void BindElementBuffer(GraphicsBuffer buffer)

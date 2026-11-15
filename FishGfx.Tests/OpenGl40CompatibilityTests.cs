@@ -141,12 +141,24 @@ public sealed class OpenGl40CompatibilityTests
 			.OrderBy(path => path, StringComparer.Ordinal);
 	}
 
-	private static GraphicsCapabilities CreateCapabilities(OpenGlVersion version)
+	[Fact]
+	public void BlockCompressionUsesCoreVersionOrExtensionSupport()
+	{
+		Assert.False(CreateCapabilities(new OpenGlVersion(4, 0)).SupportsBc7);
+		Assert.True(CreateCapabilities(new OpenGlVersion(4, 2)).SupportsBc7);
+		Assert.True(CreateCapabilities(new OpenGlVersion(4, 0), "GL_ARB_texture_compression_bptc").SupportsBc7);
+		Assert.True(CreateCapabilities(new OpenGlVersion(4, 0)).SupportsBc5);
+		Assert.False(CreateCapabilities(new OpenGlVersion(2, 1)).SupportsBc5);
+		Assert.True(CreateCapabilities(new OpenGlVersion(2, 1), "GL_ARB_texture_compression_rgtc").SupportsBc5);
+	}
+
+	private static GraphicsCapabilities CreateCapabilities(OpenGlVersion version, params string[] extensions)
 	{
 		return new GraphicsCapabilities(
 			version,
 			string.Empty,
-			Array.Empty<string>(),
+			extensions,
+			1,
 			1,
 			1,
 			1,

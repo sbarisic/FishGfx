@@ -22,6 +22,13 @@ internal static class GlfwNativeExtensions
 	private const long ExtendedStaticEdge = 0x00020000L;
 	private const int DefaultDpi = 96;
 
+    internal static void ShowWithoutActivation(Glfw.Window window)
+    {
+        if (OperatingSystem.IsWindows()) ShowWindow(GetWin32Window(window.Ptr), 4); // SW_SHOWNOACTIVATE
+        else Glfw.ShowWindow(window);
+    }
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr handle, int command);
+
 	internal static void EnablePerMonitorDpiAwareness()
 	{
 		if (!OperatingSystem.IsWindows())

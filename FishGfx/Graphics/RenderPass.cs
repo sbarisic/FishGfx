@@ -122,6 +122,17 @@ public sealed partial class RenderPass : IDisposable
 		});
 	}
 
+    /// <summary>Fixed sample location in the currently bound target's pixel.</summary>
+    public unsafe Vector2 GetSamplePosition(int sample)
+    {
+        EnsureActive();
+        if (sample < 0 || sample >= target.SampleCount) throw new ArgumentOutOfRangeException(nameof(sample));
+        if (target.SampleCount == 1) return new Vector2(.5f);
+        float* position = stackalloc float[2];
+        Internal_OpenGL.GL.GetMultisample(GLEnum.SamplePosition, (uint)sample, position);
+        return new Vector2(position[0], position[1]);
+    }
+
 	public void Clear(
 		Color color,
 		bool clearColor = true,

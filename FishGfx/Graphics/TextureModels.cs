@@ -45,6 +45,8 @@ public enum TextureFormat
 	Depth32Float,
 	Depth24Stencil8,
 	Depth32FloatStencil8,
+	BC7Unorm,
+	BC5Unorm,
 }
 
 public enum TextureDataFormat

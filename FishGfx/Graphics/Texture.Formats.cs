@@ -71,6 +71,8 @@ public unsafe sealed partial class Texture
 			TextureFormat.RG8Unorm => InternalFormat.RG8,
 			TextureFormat.RGB8Unorm => InternalFormat.Rgb8,
 			TextureFormat.RGBA8Unorm => InternalFormat.Rgba8,
+			TextureFormat.BC7Unorm => (InternalFormat)0x8E8C,
+			TextureFormat.BC5Unorm => (InternalFormat)0x8DBD,
 			TextureFormat.SRGB8 => InternalFormat.Srgb8,
 			TextureFormat.SRGB8Alpha8 => InternalFormat.Srgb8Alpha8,
 			TextureFormat.R16Unorm => InternalFormat.R16,

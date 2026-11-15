@@ -20,6 +20,9 @@ public sealed class RenderWindowOptions
 
 	public bool VSync { get; set; }
 
+    public bool Visible { get; set; } = true;
+    public bool FocusOnShow { get; set; } = true;
+
 	public OpenGlVersion PreferredVersion { get; set; } = new(4, 6);
 
 	public OpenGlVersion MinimumVersion { get; set; } = new(4, 0);

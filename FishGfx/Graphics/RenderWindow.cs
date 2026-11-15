@@ -57,6 +57,8 @@ public unsafe sealed partial class RenderWindow : IDisposable
 		GlfwNativeExtensions.EnablePerMonitorDpiAwareness();
 		Internal_OpenGL.InitGLFW();
 		Glfw.WindowHint(Glfw.Hint.Resizable, options.Resizable);
+        Glfw.WindowHint(Glfw.Hint.Focused, options.FocusOnShow);
+        Glfw.WindowHint(Glfw.Hint.Visible, options.Visible && options.FocusOnShow);
 		selectedMonitor = ResolveInitialMonitor(options.MonitorIndex);
 		exclusiveVideoMode = options.ExclusiveVideoMode;
 
@@ -114,6 +116,7 @@ public unsafe sealed partial class RenderWindow : IDisposable
 				Center();
 			}
 
+            if (options.Visible && !options.FocusOnShow) GlfwNativeExtensions.ShowWithoutActivation(nativeWindow);
 			CaptureWindowedBounds();
 			CaptureCursor = false;
 			Graphics = new GraphicsContext(this);

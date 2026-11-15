@@ -7,7 +7,7 @@ using Silk.NET.OpenGL;
 
 namespace FishGfx.Graphics.Drawables;
 
-public sealed class Mesh3D : IDisposable
+public sealed partial class Mesh3D : IDisposable
 {
 	private const uint VertexAttribute = 0;
 	private const uint ColorAttribute = 1;
@@ -21,6 +21,8 @@ public sealed class Mesh3D : IDisposable
 	private GraphicsBuffer uvBuffer;
 	private GraphicsBuffer normalBuffer;
 	private GraphicsBuffer elementBuffer;
+    private GraphicsBuffer jointBuffer,weightBuffer;
+    private int jointBinding=-1,weightBinding=-1;
 	private int vertexBinding = -1;
 	private int colorBinding = -1;
 	private int uvBinding = -1;
@@ -125,6 +127,15 @@ public sealed class Mesh3D : IDisposable
 		vertexCount = vertices.Length;
 	}
 
+    /// <summary>Optional four-influence skin streams at attribute locations 4 and 5.</summary>
+    public void SetSkinning(ReadOnlySpan<Vector4> joints,ReadOnlySpan<Vector4> weights)
+    {
+        ThrowIfDisposed();
+        if(joints.Length!=vertexCount||weights.Length!=vertexCount)throw new ArgumentException("Skin streams must match vertices.");
+        SetAttribute(ref jointBuffer,ref jointBinding,joints,4,4,VertexElementType.Float,false,0,16);
+        SetAttribute(ref weightBuffer,ref weightBinding,weights,5,4,VertexElementType.Float,false,0,16);
+    }
+
 	public void SetColors(Color[] colors)
 	{
 		ThrowIfDisposed();
@@ -142,6 +153,14 @@ public sealed class Mesh3D : IDisposable
 		);
 	}
 
+    /// <summary>Texture coordinates with two additional per-vertex shader values.</summary>
+    public void SetUVs(Vector4[] uvs)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(uvs);
+        SetAttribute(ref uvBuffer, ref uvBinding, uvs, UvAttribute, 4,
+            VertexElementType.Float, false, 0, sizeof(float) * 4);
+    }
 	public void SetUVs(Vector2[] uvs)
 	{
 		ThrowIfDisposed();
@@ -296,10 +315,13 @@ public sealed class Mesh3D : IDisposable
 		uvBuffer?.Dispose();
 		normalBuffer?.Dispose();
 		elementBuffer?.Dispose();
+        jointBuffer?.Dispose();weightBuffer?.Dispose();
 		VertexArray.Dispose();
 	}
 
-	internal void Draw()
+	internal void Draw() => DrawInstances(1);
+
+    internal void DrawInstances(int instances)
 	{
 		ThrowIfDisposed();
 		Internal_OpenGL.GL.PolygonMode(
@@ -316,12 +338,12 @@ public sealed class Mesh3D : IDisposable
 		{
 			VertexArray.DrawElements(
 				count: elementCount,
-				elementType: IndexElementType.UnsignedInt
+				elementType: IndexElementType.UnsignedInt, instances: instances
 			);
 		}
 		else
 		{
-			VertexArray.Draw(0, vertexCount);
+			VertexArray.Draw(0, vertexCount, instances);
 		}
 	}
 

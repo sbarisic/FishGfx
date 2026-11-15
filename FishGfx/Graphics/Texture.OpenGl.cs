@@ -8,6 +8,19 @@ public unsafe sealed partial class Texture
 {
 	private void Allocate()
 	{
+		if (Format is TextureFormat.BC7Unorm or TextureFormat.BC5Unorm && !Internal_OpenGL.Is42OrAbove)
+		{
+			WithBound(() =>
+			{
+				for (int mip = 0; mip < MipLevels; mip++)
+				{
+					var (width, height) = GetMipSize(mip);
+					Internal_OpenGL.GL.CompressedTexImage2D(target, mip, (GLEnum)internalFormat,
+						(uint)width, (uint)height, 0, (uint)(((width + 3) / 4) * ((height + 3) / 4) * 16), null);
+				}
+			});
+			return;
+		}
 		if (Multisampled)
 		{
 			AllocateMultisampleStorage();

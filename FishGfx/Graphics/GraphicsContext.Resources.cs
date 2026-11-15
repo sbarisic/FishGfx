@@ -141,6 +141,25 @@ public sealed partial class GraphicsContext
 		return new ShaderProgram(this, stages);
 	}
 
+	public string ShaderCacheFingerprint
+	{
+		get
+		{
+			EnsureCurrent();
+			return string.Join("|", Internal_OpenGL.GL.GetStringS(Silk.NET.OpenGL.StringName.Vendor),
+				Internal_OpenGL.GL.GetStringS(Silk.NET.OpenGL.StringName.Renderer),
+				Internal_OpenGL.GL.GetStringS(Silk.NET.OpenGL.StringName.Version),
+				Internal_OpenGL.GL.GetStringS(Silk.NET.OpenGL.StringName.ShadingLanguageVersion));
+		}
+	}
+
+	public ShaderProgram CreateShaderProgramBinary(ReadOnlySpan<byte> binary)
+	{
+		EnsureCurrent();
+		if (Capabilities.Version < new OpenGlVersion(4, 1)) throw new NotSupportedException("Program binaries require OpenGL 4.1.");
+		return new ShaderProgram(this, binary);
+	}
+
 	public GraphicsQuery CreateQuery(GraphicsQueryType type)
 	{
 		EnsureCurrent();

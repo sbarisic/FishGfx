@@ -5,7 +5,7 @@ using Silk.NET.OpenGL;
 
 namespace FishGfx.Graphics;
 
-public unsafe sealed class ShaderProgram : GraphicsResource
+public unsafe sealed partial class ShaderProgram : GraphicsResource
 {
 	private readonly Dictionary<string, int> uniformLocations = new();
 	private readonly Stack<uint> previousPrograms = new();
@@ -371,6 +371,8 @@ public unsafe sealed class ShaderProgram : GraphicsResource
 
 	private void Link()
 	{
+		if (Owner.Capabilities.Version >= new OpenGlVersion(4, 1))
+			Internal_OpenGL.GL.ProgramParameter(Handle, (GLEnum)0x8257, 1);
 		foreach (ShaderStage stage in stages)
 		{
 			Internal_OpenGL.GL.AttachShader(Handle, stage.Handle);

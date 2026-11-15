@@ -156,11 +156,11 @@ public sealed class RenderTarget : IDisposable
 			);
 		}
 
-		if (descriptor.ColorFormats.Count > capabilities.MaximumColorAttachments)
+		if (descriptor.ColorFormats.Count > capabilities.MaximumColorAttachments || descriptor.ColorFormats.Count > capabilities.MaximumDrawBuffers)
 		{
 			throw new ArgumentOutOfRangeException(
 				nameof(descriptor),
-				$"Color attachment count exceeds the context limit of {capabilities.MaximumColorAttachments}."
+				$"Color attachment count exceeds the context limits ({capabilities.MaximumColorAttachments} attachments, {capabilities.MaximumDrawBuffers} draw buffers)."
 			);
 		}
 	}

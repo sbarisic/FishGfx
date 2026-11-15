@@ -92,6 +92,13 @@ public unsafe sealed partial class Texture
 		GraphicsCapabilities capabilities
 	)
 	{
+		if (descriptor.Format == TextureFormat.BC7Unorm && !capabilities.SupportsBc7
+			|| descriptor.Format == TextureFormat.BC5Unorm && !capabilities.SupportsBc5)
+			throw new NotSupportedException("Requested block compression is unavailable.");
+		if (descriptor.Format is TextureFormat.BC7Unorm or TextureFormat.BC5Unorm
+			&& (descriptor.Dimension != TextureDimension.Texture2D
+				|| (descriptor.Usage & (TextureUsageFlags.ColorAttachment | TextureUsageFlags.DepthStencilAttachment)) != 0))
+			throw new NotSupportedException("Block-compressed textures must be sampled 2D resources.");
 		int limit = descriptor.Dimension switch
 		{
 			TextureDimension.Cube => capabilities.MaximumCubeTextureSize,

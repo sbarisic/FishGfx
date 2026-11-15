@@ -72,6 +72,7 @@ public sealed class GraphicsCapabilities
 		int maximumCubeTextureSize,
 		int maximumSamples,
 		int maximumColorAttachments,
+		int maximumDrawBuffers,
 		float maximumAnisotropy
 	)
 	{
@@ -93,6 +94,7 @@ public sealed class GraphicsCapabilities
 		MaximumCubeTextureSize = maximumCubeTextureSize;
 		MaximumSamples = Math.Max(1, maximumSamples);
 		MaximumColorAttachments = maximumColorAttachments;
+		MaximumDrawBuffers = maximumDrawBuffers;
 		MaximumAnisotropy = Math.Max(1, maximumAnisotropy);
 		extensionSet = new HashSet<string>(extensionCopy, StringComparer.Ordinal);
 	}
@@ -118,6 +120,9 @@ public sealed class GraphicsCapabilities
 	public bool SupportsAnisotropy => SupportsExtension("GL_EXT_texture_filter_anisotropic")
 		|| SupportsExtension("GL_ARB_texture_filter_anisotropic");
 
+	public bool SupportsBc7 => Version >= new OpenGlVersion(4, 2) || SupportsExtension("GL_ARB_texture_compression_bptc");
+	public bool SupportsBc5 => Version >= new OpenGlVersion(3, 0) || SupportsExtension("GL_ARB_texture_compression_rgtc");
+
 	public int MaximumTexture2DSize { get; }
 
 	public int MaximumTexture3DSize { get; }
@@ -129,6 +134,8 @@ public sealed class GraphicsCapabilities
 	public int MaximumSamples { get; }
 
 	public int MaximumColorAttachments { get; }
+
+	public int MaximumDrawBuffers { get; }
 
 	public float MaximumAnisotropy { get; }
 

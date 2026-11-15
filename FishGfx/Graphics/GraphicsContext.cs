@@ -223,7 +223,12 @@ public sealed partial class GraphicsContext : IDisposable
 		Internal_OpenGL.GL.GetInteger((GetPName)0x88FF, out int maximumTextureArrayLayers);
 		Internal_OpenGL.GL.GetInteger(GetPName.MaxCubeMapTextureSize, out int maximumCubeTextureSize);
 		Internal_OpenGL.GL.GetInteger((GetPName)0x8D57, out int maximumSamples);
+        Internal_OpenGL.GL.GetInteger((GetPName)0x910E, out int maximumColorTextureSamples);
+        Internal_OpenGL.GL.GetInteger((GetPName)0x910F, out int maximumDepthTextureSamples);
+        // Render targets use texture attachments, including floating-point G-buffers.
+        maximumSamples = Math.Min(maximumSamples, Math.Min(maximumColorTextureSamples, maximumDepthTextureSamples));
 		Internal_OpenGL.GL.GetInteger(GetPName.MaxColorAttachments, out int maximumColorAttachments);
+		Internal_OpenGL.GL.GetInteger(GetPName.MaxDrawBuffers, out int maximumDrawBuffers);
 
 		bool supportsAnisotropy = Array.IndexOf(
 			Internal_OpenGL.Extensions,
@@ -249,6 +254,7 @@ public sealed partial class GraphicsContext : IDisposable
 			maximumCubeTextureSize,
 			maximumSamples,
 			maximumColorAttachments,
+			maximumDrawBuffers,
 			maximumAnisotropy
 		);
 	}
